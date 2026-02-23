@@ -9,38 +9,34 @@ on:
 jobs:
   testkit:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Preparar env de test
         run: |
-          cp test/.env.test.example test/.env.test
+          cp .env.test.example .env.test
 
       - name: Doctor
         run: |
-          cd test
           chmod +x bin/testkit scripts/*.sh || true
           ./bin/testkit doctor
 
       - name: Levantar stack (MySQL)
         run: |
-          cd test
           ./bin/testkit up -d
           ./bin/testkit ps
 
       - name: Seeds
         run: |
-          cd test
           ./scripts/seed.sh
 
       - name: Tests
         run: |
-          cd test
           ./bin/testkit run --rm testkit php runTest.php
 
       - name: Apagar
         if: always()
         run: |
-          cd test
           ./bin/testkit down -v
