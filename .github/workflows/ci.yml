@@ -39,4 +39,4 @@ jobs:
       - name: Apagar
         if: always()
         run: |
-          ./bin/testkit down -v
+          ./bin/testkit down -vc
