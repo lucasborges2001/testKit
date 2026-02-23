@@ -264,7 +264,7 @@ Si en alg√∫n proyecto cambia eso: agreg√° un wrapper o flags nuevos, pero manten
 
 El reporte incluye **Top WHERE**, **Top JOIN/ON** y **Combos** (candidatos de √≠ndice compuesto) para ayudarte a priorizar qu√© revisar con `EXPLAIN`.
 
-## CrÈdito / AutorÌa
-Este proyecto est· bajo licencia MIT. Si lo reutiliz·s o redistribuÌs, conserv· el archivo LICENSE y el NOTICE.
+## Cr√©dito / Autor√≠a
+Este proyecto est√° bajo licencia MIT. Si lo reutiliz√°s o redistribu√≠s, conserv√° el archivo LICENSE y el NOTICE.
 Repo original: https://github.com/lucasborges2001/test
 
