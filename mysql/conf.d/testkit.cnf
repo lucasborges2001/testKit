@@ -1,0 +1,9 @@
+[mysqld]
+# Logs útiles para tests y profiling
+slow_query_log=ON
+long_query_time=0.2
+log_output=FILE
+slow_query_log_file=/var/lib/mysql/slow.log
+
+# Performance Schema suele estar ON en MySQL 8, lo explicitamos.
+performance_schema=ON

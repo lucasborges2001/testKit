@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${HERE}/.env.test"
+BASE="${HERE}/compose.yaml"
+PG="${HERE}/compose.pg.yaml"
+
+ROOT="$(cd "${HERE}/.." && pwd)"
+
+doctor() {
+  local ok=1
+  echo "== TestKit doctor =="
+
+  # Repo contract
+  if [[ -d "${ROOT}/back" ]]; then
+    echo "[OK] back/"
+  else
+    echo "[FAIL] falta ${ROOT}/back"; ok=0
+  fi
+  if [[ -d "${ROOT}/public_html" ]]; then
+    echo "[OK] public_html/"
+  else
+    echo "[FAIL] falta ${ROOT}/public_html"; ok=0
+  fi
+
+  # Env
+  if [[ -f "$ENV_FILE" ]]; then
+    echo "[OK] ${ENV_FILE}"
+  else
+    echo "[FAIL] falta ${ENV_FILE} (copiá .env.test.example)"; ok=0
+  fi
+
+  # Out dir
+  mkdir -p "${HERE}/_out" >/dev/null 2>&1 || true
+  if [[ -w "${HERE}/_out" ]]; then
+    echo "[OK] test/_out writable"
+  else
+    echo "[FAIL] test/_out no es escribible"; ok=0
+  fi
+
+  # Docker
+  if command -v docker >/dev/null 2>&1; then
+    echo "[OK] docker CLI"
+  else
+    echo "[FAIL] docker no está instalado/en PATH"; ok=0
+  fi
+
+  if docker info >/dev/null 2>&1; then
+    echo "[OK] docker daemon"
+  else
+    echo "[FAIL] docker daemon no responde (¿Docker Desktop/servicio?)"; ok=0
+  fi
+
+  if docker compose version >/dev/null 2>&1; then
+    echo "[OK] docker compose v2"
+  else
+    echo "[FAIL] docker compose v2 no disponible"; ok=0
+  fi
+
+  # Node/PHP local (solo info; en Docker viene incluido)
+  if command -v php >/dev/null 2>&1; then
+    echo "[INFO] php local: $(php -r 'echo PHP_VERSION;' 2>/dev/null || true)"
+  fi
+  if command -v node >/dev/null 2>&1; then
+    echo "[INFO] node local: $(node -v 2>/dev/null || true)"
+  fi
+
+  if [[ "$ok" -eq 1 ]]; then
+    echo ""
+    echo "Doctor: OK"
+    return 0
+  fi
+  echo ""
+  echo "Doctor: FAIL (ver arriba)" >&2
+  return 1
+}
+
+if [[ "${1:-}" == "doctor" ]]; then
+  doctor
+  exit $?
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Falta ${ENV_FILE}. Copiá test/.env.test.example -> test/.env.test" >&2
+  exit 1
+fi
+
+FILES=( -f "$BASE" )
+if [[ "${1:-}" == "--pg" ]]; then
+  FILES+=( -f "$PG" )
+  shift
+fi
+
+exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "$@"

@@ -1,0 +1,2 @@
+-- Postgres schema seed (ejemplo)
+-- CREATE TABLE example (...);
