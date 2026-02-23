@@ -263,3 +263,8 @@ Si en algÃºn proyecto cambia eso: agregÃ¡ un wrapper o flags nuevos, pero manten
 - Reporte: `./bin/testkit run --rm testkit php scripts/query_report.php`
 
 El reporte incluye **Top WHERE**, **Top JOIN/ON** y **Combos** (candidatos de Ã­ndice compuesto) para ayudarte a priorizar quÃ© revisar con `EXPLAIN`.
+
+## Crédito / Autoría
+Este proyecto está bajo licencia MIT. Si lo reutilizás o redistribuís, conservá el archivo LICENSE y el NOTICE.
+Repo original: https://github.com/lucasborges2001/test
+
