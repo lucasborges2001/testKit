@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+// File: test/scripts/query_report.php
 // Lee test/_out/querylog.jsonl y genera un reporte de “hot tables/columns”.
 
 $root = dirname(__DIR__);

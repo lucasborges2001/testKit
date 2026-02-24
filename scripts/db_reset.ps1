@@ -1,3 +1,4 @@
+# File: test/scripts/db_reset.ps1
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
