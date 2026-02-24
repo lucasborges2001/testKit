@@ -1,7 +1,6 @@
 # Notas / ejemplos (NO contractuales)
 
-Este archivo existe para dejarte “miguitas de pan” (a vos o a alguien que lo descargue) sobre
-posibles variantes, setups y patrones.
+Este archivo existe para dejar constancia sobre posibles variantes, setups y patrones.
 
 **No forma parte del contrato del TestKit**. Si entra en conflicto con los docs de quickstart,
 seeds, coverage, etc., lo contractual es lo que está en `docs/`.
