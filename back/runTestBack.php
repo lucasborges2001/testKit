@@ -25,6 +25,11 @@ declare(strict_types=1);
 $testsRoot = __DIR__;                // .../test/back
 $repoRoot  = dirname($testsRoot, 2);  // .../repo
 
+// Preferred location for project tests (so the kit can be updated without overwriting tests):
+//   test/back/tests/**/*.test.php
+// Back-compat: if test/back/tests/ doesn't exist, we scan test/back/ directly.
+$testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+
 // utils (contrato + UI)
 $constPath = $repoRoot . '/test/utils/constants.php';
 $uiPath    = $repoRoot . '/test/utils/php/ui.php';
@@ -32,7 +37,7 @@ if (is_file($constPath)) require_once $constPath;
 if (is_file($uiPath)) require_once $uiPath;
 
 $scope    = strtolower(getenv('TEST_SCOPE') ?: (defined('TEST_SCOPE_DEFAULT') ? TEST_SCOPE_DEFAULT : 'all'));
-$failFast = (getenv('TEST_FAIL_FAST') ?: '0') === '1';
+$failFast = (getenv('TEST_FAIL_FAST') ?: '1') === '1';
 $match    = getenv('TEST_MATCH') ?: '';
 $listOnly = (getenv('TEST_LIST') ?: '0') === '1';
 
@@ -48,11 +53,22 @@ $coverageDir    = getenv('TEST_COVERAGE_DIR') ?: ($repoRoot . '/test/_out/covera
 $prepend        = $repoRoot . '/test/utils/php/coverage_prepend.php';
 
 // env defaults
-$envCandidates = [$repoRoot . '/env.test', $repoRoot . '/env.debug', $repoRoot . '/.env'];
+// Contract: prefer root/test/.env.test, support root/.env.test.
+// If neither exists and DB_ENV_PATH isn't set, we fall back to legacy candidates (warn).
+$envCandidatesPrimary = [$repoRoot . '/test/.env.test', $repoRoot . '/.env.test'];
+$envCandidatesLegacy  = [$repoRoot . '/env.test', $repoRoot . '/.env.debug', $repoRoot . '/env.debug', $repoRoot . '/back/.env.test', $repoRoot . '/back/.env.debug', $repoRoot . '/back/.env', $repoRoot . '/.env'];
 $dbEnvPath = getenv('DB_ENV_PATH');
 if (!$dbEnvPath) {
-  foreach ($envCandidates as $p) {
+  foreach ($envCandidatesPrimary as $p) {
     if (is_file($p)) { $dbEnvPath = $p; break; }
+  }
+  if (!$dbEnvPath) {
+    foreach ($envCandidatesLegacy as $p) {
+      if (is_file($p)) { $dbEnvPath = $p; break; }
+    }
+    if ($dbEnvPath) {
+      fwrite(STDERR, "WARN: usando env legacy (no contractual): {$dbEnvPath}. Recomendado: test/.env.test o .env.test en root.\n");
+    }
   }
 }
 
@@ -80,7 +96,7 @@ function scope_match(string $file, string $scope): bool {
   return str_contains($p, '/' . $scope . '/');
 }
 
-$all = discover_tests($testsRoot);
+$all = discover_tests($testsDir);
 $tests = [];
 foreach ($all as $f) {
   if (!scope_match($f, $scope)) continue;

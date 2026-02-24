@@ -6,7 +6,7 @@
  * - Soporta loader ESM para redirigir imports test/front -> public_html.
  *
  * Uso:
- *   node test/front/run.mjs
+ *   node test/front/runFrontTest.mjs
  *
  * Variables:
  *   TEST_SCOPE=unit|integration|e2e|all   (default: all)
@@ -33,12 +33,15 @@ import { PVT_EXIT_PASS, PVT_EXIT_FAIL, PVT_EXIT_SKIP, PVT_EXIT_ERROR } from "../
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// run.mjs está en: <repoRoot>/test/front/run.mjs
+// runFrontTest.mjs está en: <repoRoot>/test/front/runFrontTest.mjs
 const repoRoot = path.resolve(__dirname, "..", "..");
-const testsDir = path.join(repoRoot, "test", "front");
+// Preferred: <repo>/test/front/tests (so kit updates don't overwrite tests)
+// Back-compat: <repo>/test/front
+const testsDirPreferred = path.join(repoRoot, "test", "front", "tests");
+const testsDir = fs.existsSync(testsDirPreferred) ? testsDirPreferred : path.join(repoRoot, "test", "front");
 
 const scope = (process.env.TEST_SCOPE || "all").toLowerCase();
-const failFast = (process.env.TEST_FAIL_FAST || "0") === "1";
+const failFast = (process.env.TEST_FAIL_FAST || "1") === "1";
 const match = (process.env.TEST_MATCH || "").toLowerCase();
 const listOnly = (process.env.TEST_LIST || "0") === "1";
 

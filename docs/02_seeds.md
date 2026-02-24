@@ -49,12 +49,28 @@ cd test
 ./scripts/seed.sh
 ```
 
+Windows (PowerShell):
+
+```powershell
+cd .\test
+.\bin\testkit.ps1 up -d
+.\scripts\seed.ps1
+```
+
 ### Activar Postgres + seeds
 
 ```bash
 cd test
 ./bin/testkit --pg up -d
 ./scripts/seed.sh
+```
+
+Windows (PowerShell):
+
+```powershell
+cd .\test
+.\bin\testkit.ps1 --pg up -d
+.\scripts\seed.ps1
 ```
 
 ---
@@ -64,6 +80,9 @@ cd test
 - Evitá `DROP DATABASE` / `CREATE DATABASE` dentro de las seeds.
 - Preferí `CREATE TABLE IF NOT EXISTS` si tu flujo lo permite.
 - Si necesitás reset total, usá `./scripts/db_reset.sh` (baja volúmenes).
+
+> Nota: los scripts de seed usan las variables **dentro de los contenedores** (`MYSQL_DATABASE`, `POSTGRES_DB`, etc.),
+> así que no dependés de exportar variables en tu host.
 
 ---
 

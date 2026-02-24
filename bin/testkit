@@ -2,11 +2,86 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${HERE}/.env.test"
 BASE="${HERE}/compose.yaml"
 PG="${HERE}/compose.pg.yaml"
 
 ROOT="$(cd "${HERE}/.." && pwd)"
+
+# Env contract:
+# - Preferred: <repo>/test/.env.test
+# - Supported: <repo>/.env.test
+# - Override:  TESTKIT_ENV_FILE=/abs/path/to/.env.test
+pick_env_file() {
+  local override="${TESTKIT_ENV_FILE:-}"
+  if [[ -n "$override" ]]; then
+    if [[ -f "$override" ]]; then
+      echo "$override"; return 0
+    fi
+    echo ""; return 1
+  fi
+
+  local a="${HERE}/.env.test"          # <repo>/test/.env.test
+  local b="${ROOT}/.env.test"          # <repo>/.env.test
+  if [[ -f "$a" ]]; then echo "$a"; return 0; fi
+  if [[ -f "$b" ]]; then echo "$b"; return 0; fi
+  echo ""; return 1
+}
+
+env_file_to_container_db_env_path() {
+  # maps host env file location -> path inside container (volume mounts ..:/app)
+  local env_file="$1"
+  if [[ "$env_file" == "${HERE}/.env.test" ]]; then
+    echo "/app/test/.env.test"; return 0
+  fi
+  if [[ "$env_file" == "${ROOT}/.env.test" ]]; then
+    echo "/app/.env.test"; return 0
+  fi
+  # fallback: try to infer relative to repo root
+  local rel
+  rel="${env_file#"${ROOT}/"}"
+  echo "/app/${rel}"; return 0
+}
+
+port_in_use() {
+  # best-effort:
+  # - returns 0 if in use
+  # - returns 1 if free
+  # - returns 2 if unknown (no checker)
+  local port="$1"
+  [[ -z "$port" ]] && return 2
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$port" <<'PY'
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(('127.0.0.1', port))
+except OSError:
+    sys.exit(0)  # in use
+finally:
+    try: s.close()
+    except Exception: pass
+sys.exit(1)      # free
+PY
+    return $?
+  fi
+  return 2
+}
+
+load_env_kv_safe() {
+  # Loads KEY=VALUE lines from the env file into the current shell.
+  # NOTE: we intentionally DO NOT execute arbitrary shell. We parse only KEY=VALUE.
+  local f="$1"
+  [[ ! -f "$f" ]] && return 1
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      # shellcheck disable=SC2163
+      export "$line"
+    fi
+  done < "$f"
+}
 
 doctor() {
   local ok=1
@@ -25,10 +100,34 @@ doctor() {
   fi
 
   # Env
-  if [[ -f "$ENV_FILE" ]]; then
-    echo "[OK] ${ENV_FILE}"
+  local env_file
+  env_file="$(pick_env_file || true)"
+  if [[ -n "$env_file" && -f "$env_file" ]]; then
+    echo "[OK] env: ${env_file}"
+    # Port checks (warning-only)
+    load_env_kv_safe "$env_file" || true
+    local mysql_port="${TEST_MYSQL_PORT:-33070}"
+    local pg_port="${TEST_PG_PORT:-54370}"
+    port_in_use "$mysql_port"; rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
+    elif [[ $rc -eq 1 ]]; then
+      echo "[OK] puerto MySQL libre: ${mysql_port}"
+    else
+      echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
+    fi
+
+    port_in_use "$pg_port"; rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
+    elif [[ $rc -eq 1 ]]; then
+      echo "[OK] puerto Postgres libre: ${pg_port}"
+    else
+      echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
+    fi
   else
-    echo "[FAIL] falta ${ENV_FILE} (copiá .env.test.example)"; ok=0
+    echo "[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root)."; ok=0
+    echo "       Copiá: test/.env.test.example -> test/.env.test"; ok=0
   fi
 
   # Out dir
@@ -81,10 +180,15 @@ if [[ "${1:-}" == "doctor" ]]; then
   exit $?
 fi
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Falta ${ENV_FILE}. Copiá test/.env.test.example -> test/.env.test" >&2
+ENV_FILE="$(pick_env_file || true)"
+if [[ -z "${ENV_FILE}" || ! -f "${ENV_FILE}" ]]; then
+  echo "Falta env de tests. Copiá test/.env.test.example -> test/.env.test (preferido)" >&2
+  echo "o bien creá .env.test en el root del repo." >&2
   exit 1
 fi
+
+# Ensures the container sees the correct DB_ENV_PATH regardless of whether env lives in root/ or test/.
+export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
 
 FILES=( -f "$BASE" )
 if [[ "${1:-}" == "--pg" ]]; then

@@ -12,7 +12,9 @@ services:
     environment:
       APP_ENV: test
       APP_DEBUG: 1
-      DB_ENV_PATH: /app/test/.env.test
+      # DB_ENV_PATH points to the env file INSIDE the mounted repo (/app).
+      # It is set by bin/testkit based on whether the env file is in root/ or test/.
+      DB_ENV_PATH: ${TESTKIT_DB_ENV_PATH:-/app/test/.env.test}
       # Node: por default es OK si está. Si querés que falte node => FAIL:
       # TEST_JS_REQUIRE_NODE: "1"
     depends_on:

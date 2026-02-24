@@ -6,8 +6,8 @@ declare(strict_types=1);
  *
  * Estructura esperada:
  * - test/back/runTestBack.php     (PHP backend)
- * - test/front/runTestFront.php   (PHP front)
- * - test/front/runTestFront.mjs   (JS front)
+ * - test/front/runFrontTest.php   (PHP front)
+ * - test/front/runFrontTest.mjs   (JS front)
  *
  * Uso:
  *   php test/runTest.php
@@ -60,8 +60,8 @@ $childFailFast = (getenv('TEST_CHILD_FAIL_FAST') ?: '0') === '1';
 $requireNode   = (getenv('TEST_JS_REQUIRE_NODE') ?: '0') === '1';
 
 $backRunner     = $testRoot . '/back/runTestBack.php';
-$frontPhpRunner = $testRoot . '/front/runTestFront.php';
-$frontJsRunner  = $testRoot . '/front/runTestFront.mjs';
+$frontPhpRunner = $testRoot . '/front/runFrontTest.php';
+$frontJsRunner  = $testRoot . '/front/runFrontTest.mjs';
 
 $php  = PHP_BINARY;
 $node = getenv('NODE_BINARY') ?: 'node';
@@ -105,16 +105,24 @@ function find_bin(string $bin, array $env): ?string {
     if ($bin === '') return null;
 
     // path explícito
-    if (str_contains($bin, '/')) {
+    if (strpbrk($bin, "/\\") !== false) {
         return (is_file($bin) && is_executable($bin)) ? $bin : null;
     }
 
     $path = $env['PATH'] ?? getenv('PATH') ?? '';
-    foreach (explode(':', (string)$path) as $dir) {
+
+    $candidates = [$bin];
+    if (PHP_OS_FAMILY === 'Windows' && pathinfo($bin, PATHINFO_EXTENSION) === '') {
+        $candidates = [$bin . '.exe', $bin . '.cmd', $bin . '.bat', $bin];
+    }
+
+    foreach (explode(PATH_SEPARATOR, (string)$path) as $dir) {
         $dir = rtrim($dir);
         if ($dir === '') continue;
-        $p = $dir . '/' . $bin;
-        if (is_file($p) && is_executable($p)) return $p;
+        foreach ($candidates as $c) {
+            $p = $dir . DIRECTORY_SEPARATOR . $c;
+            if (is_file($p) && is_executable($p)) return $p;
+        }
     }
     return null;
 }
