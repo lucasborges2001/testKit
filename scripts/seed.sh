@@ -1,14 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# =============================================================================
+# /test/scripts/seed.sh
+# Seeds en docker (mysql_test). Postgres opcional.
+# =============================================================================
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."  # <repo>/test
+
+find_testkit() {
+  local override="${TESTKIT_BIN:-}"
+  if [[ -n "$override" && -x "$override" ]]; then echo "$override"; return 0; fi
+  if [[ -x "./bin/testkit" ]]; then echo "./bin/testkit"; return 0; fi
+  if [[ -x "../bin/testkit" ]]; then echo "../bin/testkit"; return 0; fi
+  echo "No se encontró bin/testkit. Seteá TESTKIT_BIN o instalá TestKit." >&2
+  return 1
+}
+
+TK="$(find_testkit)"
 
 pick_env_file() {
   local override="${TESTKIT_ENV_FILE:-}"
   if [[ -n "$override" && -f "$override" ]]; then echo "$override"; return 0; fi
   if [[ -f "./.env.test" ]]; then echo "./.env.test"; return 0; fi
   if [[ -f "../.env.test" ]]; then echo "../.env.test"; return 0; fi
-  echo ""; return 1
+  return 1
 }
 
 load_env_kv_safe() {
@@ -17,18 +33,12 @@ load_env_kv_safe() {
   while IFS= read -r line; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-      export "$line"
-    fi
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && export "$line"
   done < "$f"
 }
 
 ENV_FILE="$(pick_env_file || true)"
-if [[ -z "$ENV_FILE" ]]; then
-  echo "Falta env de tests: test/.env.test (preferido) o .env.test (root)." >&2
-  exit 1
-fi
-
+[[ -z "${ENV_FILE:-}" ]] && { echo "Falta env de tests." >&2; exit 1; }
 load_env_kv_safe "$ENV_FILE" || true
 
 STRATEGY="${TEST_DB_STRATEGY:-shared}"
@@ -36,60 +46,44 @@ JOBS="${TEST_JOBS:-1}"
 BASE_DB="${TEST_MYSQL_DB:-app_test}"
 SUFFIX_FMT="${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
 
-mk_db_name() {
-  local w="$1"
-  printf "%s" "${BASE_DB}$(printf "$SUFFIX_FMT" "$w")"
-}
+mk_db_name() { local w="$1"; printf "%s" "${BASE_DB}$(printf "$SUFFIX_FMT" "$w")"; }
 
-mysql_exec() {
-  # mysql_exec <db>
-  ./bin/testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- "$1"
-}
-
-mysql_admin_exec() {
-  # mysql_admin_exec (no default DB)
-  ./bin/testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
-}
+mysql_admin_exec() { "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'; }
+mysql_exec_db() { local db="$1"; "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- "$db"; }
 
 seed_one_db() {
   local db="$1"
-  if [[ ! "$db" =~ ^[A-Za-z0-9_]+$ ]]; then
-    echo "DB name inválido: $db" >&2
-    exit 1
-  fi
+  [[ ! "$db" =~ ^[A-Za-z0-9_]+$ ]] && { echo "DB inválida: $db" >&2; exit 1; }
 
   echo "==> Seeding MySQL DB: $db"
-
-  # crear DB si no existe
   printf 'CREATE DATABASE IF NOT EXISTS %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$db" | mysql_admin_exec
 
-  for f in $(ls -1 seeds/mysql/*.sql 2>/dev/null || true); do
+  shopt -s nullglob
+  for f in seeds/mysql/*.sql; do
     echo "   - $f"
-    mysql_exec "$db" < "$f"
+    mysql_exec_db "$db" < "$f"
   done
 }
 
 if [[ "$STRATEGY" == "per_worker" ]]; then
-  # crea y seedea 1..TEST_JOBS
-  if [[ "$JOBS" -lt 1 ]]; then JOBS=1; fi
-  for ((i=1;i<=JOBS;i++)); do
-    seed_one_db "$(mk_db_name "$i")"
-  done
+  [[ "$JOBS" -lt 1 ]] && JOBS=1
+  for ((i=1;i<=JOBS;i++)); do seed_one_db "$(mk_db_name "$i")"; done
 else
-  echo "==> Seeding MySQL…"
-  for f in $(ls -1 seeds/mysql/*.sql 2>/dev/null || true); do
+  echo "==> Seeding MySQL (shared)…"
+  shopt -s nullglob
+  for f in seeds/mysql/*.sql; do
     echo "   - $f"
-    ./bin/testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$f"
+    "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$f"
   done
 fi
 
-# Postgres opcional: existe si levantaste con --pg
-if ./bin/testkit ps --services | grep -q '^postgres_test$'; then
+if "$TK" ps --services | grep -q '^postgres_test$'; then
   echo "==> Seeding Postgres…"
-  for f in $(ls -1 seeds/pgsql/*.sql 2>/dev/null || true); do
+  shopt -s nullglob
+  for f in seeds/pgsql/*.sql; do
     echo "   - $f"
-    ./bin/testkit exec -T postgres_test sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f -' < "$f"
+    "$TK" exec -T postgres_test sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f -' < "$f"
   done
 else
-  echo "==> Postgres no activo (ok). Levantar con: ./bin/testkit --pg up -d"
+  echo "==> Postgres no activo (ok)."
 fi
