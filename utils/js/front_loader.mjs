@@ -3,21 +3,19 @@
  *
  * Loader ESM para tests de frontend (Node).
  *
- * Problemas que corrige:
- * - Imports que hoy te quedan mal resueltos como:
- *     /var/www/html/test/public_html/...   (no existe)
- *     /var/www/html/test/front/...         (no existe)
- *     /var/www/html/utils/...              (no existe)
- *
  * Objetivo:
- * - Soportar aliases “desde root”:
- *     - public_html/...  -> <repo>/public_html/...
- *     - back/...         -> <repo>/back/...
+ * - Soportar aliases “estables” desde root (para que el TestKit sea portable):
+ *     - public_html/...  -> <repo>/<TK_PUBLIC_DIR>/...
+ *     - back/...         -> <repo>/<TK_BACK_DIR>/...
  *     - test/...         -> <repo>/test/...
  *     - utils/...        -> <repo>/test/utils/...   (alias deliberado para helpers de tests)
  *
  * - Y además: si Node intenta resolver dentro de test/front o test/public_html,
- *   lo redirigimos a public_html.
+ *   lo redirigimos al árbol real del proyecto (TK_PUBLIC_DIR).
+ *
+ * Config:
+ *   TK_BACK_DIR (default: back)
+ *   TK_PUBLIC_DIR (default: public_html)
  *
  * Debug:
  *   TEST_IMPORT_DEBUG=1 imprime redirecciones.
@@ -29,6 +27,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEBUG = (process.env.TEST_IMPORT_DEBUG || "0") === "1";
 
+const BACK_DIR = process.env.TK_BACK_DIR || "back";
+const PUBLIC_DIR = process.env.TK_PUBLIC_DIR || "public_html";
+
 // Este loader vive en: <repo>/test/utils/js/front_loader.mjs
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,8 +40,9 @@ const testFrontRoot = path.join(repoRoot, "test", "front");
 const testPublicHtmlRoot = path.join(repoRoot, "test", "public_html");
 const rootUtils = path.join(repoRoot, "utils");
 
-// Zonas reales
-const publicRoot = path.join(repoRoot, "public_html");
+// Zonas reales (configurables)
+const publicRoot = path.join(repoRoot, PUBLIC_DIR);
+const backRoot = path.join(repoRoot, BACK_DIR);
 const testUtilsRoot = path.join(repoRoot, "test", "utils");
 
 const isWin = process.platform === "win32";
@@ -66,11 +68,7 @@ function isSpecial(specifier) {
 
 function isBare(specifier) {
   // “bare specifier” (react, lodash, etc.) => que lo resuelva Node
-  return (
-    !specifier.startsWith(".") &&
-    !specifier.startsWith("/") &&
-    !specifier.startsWith("file:")
-  );
+  return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("file:");
 }
 
 function pickExistingTarget(p) {
@@ -100,7 +98,14 @@ function mapAliasToReal(specifier) {
   // Permitimos "/public_html/..." y "public_html/..."
   const s = specifier.replace(/^\/+/, "");
 
-  if (s.startsWith("public_html/") || s.startsWith("back/") || s.startsWith("test/")) {
+  // Alias estables del kit (independiente del nombre real del directorio)
+  if (s.startsWith("public_html/")) {
+    return path.join(publicRoot, s.substring("public_html/".length));
+  }
+  if (s.startsWith("back/")) {
+    return path.join(backRoot, s.substring("back/".length));
+  }
+  if (s.startsWith("test/")) {
     return path.join(repoRoot, s);
   }
 
@@ -115,19 +120,19 @@ function mapAliasToReal(specifier) {
 function mapMisresolvedPathToReal(candidatePath) {
   const c = normCmp(candidatePath);
 
-  // 1) Si cayó bajo test/front => map a public_html manteniendo rel
+  // 1) Si cayó bajo test/front => map a <TK_PUBLIC_DIR> manteniendo rel
   if (c.startsWith(testFrontRootCmp)) {
     const rel = path.relative(testFrontRoot, candidatePath);
     return path.join(publicRoot, rel);
   }
 
-  // 2) Si cayó bajo test/public_html => map a public_html manteniendo rel
+  // 2) Si cayó bajo test/public_html => map a <TK_PUBLIC_DIR> manteniendo rel
   if (c.startsWith(testPublicHtmlRootCmp)) {
     const rel = path.relative(testPublicHtmlRoot, candidatePath);
     return path.join(publicRoot, rel);
   }
 
-  // 3) Si cayó bajo <repo>/utils (que NO existe en tu estructura actual),
+  // 3) Si cayó bajo <repo>/utils (que NO existe en la estructura actual),
   //    lo interpretamos como alias a <repo>/test/utils
   if (c.startsWith(rootUtilsCmp)) {
     const rel = path.relative(rootUtils, candidatePath);
@@ -144,19 +149,17 @@ export async function resolve(specifier, context, nextResolve) {
   // bare specifiers => Node
   if (isBare(specifier)) return nextResolve(specifier, context, nextResolve);
 
-  // 0) Si matchea alias directo (public_html/, utils/, etc.), resolvemos nosotros primero
+  // 0) Si matchea alias directo (public_html/, back/, utils/, etc.), resolvemos nosotros primero
   const aliasMapped = mapAliasToReal(specifier);
   if (aliasMapped) {
     const target = pickExistingTarget(aliasMapped);
     if (target) {
       if (DEBUG) {
-        console.log(
-          `[loader] alias\n  spec: ${specifier}\n  to:   ${target.replaceAll("\\", "/")}`
-        );
+        console.log(`[loader] alias\n  spec: ${specifier}\n  to:   ${target.replaceAll("\\\\", "/")}`);
       }
       return { url: pathToFileURL(target).href, shortCircuit: true };
     }
-    // si no existe, dejamos que Node tire el error estándar (más claro para debugging)
+    // si no existe, dejamos que Node tire el error estándar
   }
 
   // 1) Intento normal
@@ -186,9 +189,7 @@ export async function resolve(specifier, context, nextResolve) {
     if (!target) throw err;
 
     if (DEBUG) {
-      console.log(
-        `[loader] redirect\n  from: ${candidatePath.replaceAll("\\", "/")}\n  to:   ${target.replaceAll("\\", "/")}`
-      );
+      console.log(`[loader] redirect\n  from: ${candidatePath.replaceAll("\\\\", "/")}\n  to:   ${target.replaceAll("\\\\", "/")}`);
     }
 
     return { url: pathToFileURL(target).href, shortCircuit: true };
