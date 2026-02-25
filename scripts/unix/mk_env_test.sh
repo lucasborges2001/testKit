@@ -2,16 +2,20 @@
 set -euo pipefail
 
 # =============================================================================
-# /test/scripts/mk_env_test.sh
+# test/scripts/unix/mk_env_test.sh
 #
-# Genera <repo>/test/.env.test a partir de un env existente del repo
-# (prioridad: ../env.debug, ../.env, ../env.test).
+# Genera test/.env.test a partir de un env existente en el repo.
+# Prioridad de búsqueda (desde <repo>):
+#   1) env.debug
+#   2) .env
+#   3) env.test
 #
 # Seguridad:
 # - No sobreescribe test/.env.test si ya existe.
 # =============================================================================
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# .../test/scripts/unix -> .../test
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 OUT="./.env.test"
 if [[ -f "$OUT" ]]; then
