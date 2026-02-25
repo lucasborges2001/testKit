@@ -14,9 +14,34 @@ y te deja un entorno de tests reproducible con:
 - **Seeds** listos (MySQL default, Postgres opcional)
 - Interfaz de terminal (`make`, scripts y wrappers)
 
-> Regla clave del kit: **el `.env` de tests vive en `test/.env.test`**.
+> Regla clave del kit (sin ambigüedades): **el env de tests es `.env.test`** y se busca en:
+>
+> 1) `root/test/.env.test` (preferido)
+> 2) `root/.env.test` (soportado)
 
 ---
+
+
+## Runners (nombres explícitos)
+
+- `test/back/runTestBack.php` — runner PHP backend
+- `test/front/runFrontTest.php` — runner PHP front
+- `test/front/runFrontTest.mjs` — runner JS front
+- `test/runTest.php` — meta-runner (orquesta los 3 anteriores)
+
+Ejemplos:
+
+```bash
+# Backend (PHP)
+php test/back/runTestBack.php
+
+# Front (PHP)
+php test/front/runFrontTest.php
+
+# Front (JS)
+node test/front/runFrontTest.mjs
+```
+
 
 ## 1) Instalación (drop‑in)
 
@@ -27,6 +52,8 @@ y te deja un entorno de tests reproducible con:
 ```bash
 cp test/.env.test.example test/.env.test
 ```
+
+> Alternativa soportada: crear `root/.env.test` (mismo formato).
 
 3) Ajustá credenciales/variables para tu proyecto dentro de `test/.env.test`.
 
@@ -60,6 +87,13 @@ cd test
 .\bin\testkit.ps1 up -d
 .\bin\testkit.ps1 run --rm testkit php runTest.php
 ```
+
+Docs detallados (sin ambigüedades):
+
+- `docs/quickstart_docker_linux.md`
+- `docs/quickstart_docker_windows.md`
+- `docs/quickstart_local_linux.md`
+- `docs/quickstart_local_windows.md`
 
 ---
 
@@ -141,6 +175,10 @@ cd test
 ./scripts/seed.sh
 ```
 
+> Nota: las seeds que vienen son **templates/patrón**. En cada repo, ajustalas a tu schema real.
+
+Docs: `docs/02_seeds.md`
+
 Convención:
 - `test/seeds/mysql/*.sql` se ejecuta en orden alfabético.
 - `test/seeds/pgsql/*.sql` idem.
@@ -159,8 +197,10 @@ cd test
 Chequea:
 - existe `back/`
 - existe `public_html/`
-- existe `test/.env.test`
+- existe `test/.env.test` o `.env.test`
 - Docker + daemon + compose
+
+También avisa si los puertos configurados están ocupados (warning).
 
 ---
 
@@ -180,6 +220,26 @@ Tu objetivo (“cuántas veces se pide tal dato / tal tabla”) tiene 2 capas:
 ### A) Profiling a nivel app (portable, recomendado)
 
 Este kit incluye `test/utils/php/db_profiler.php`.
+
+Docs: `docs/07_db_profiling.md`
+
+---
+
+## 7) Estructura y actualización del kit
+
+Para que puedas **actualizar el kit** sin pisar tests del proyecto, el contrato recomendado es:
+
+- Tests del proyecto:
+  - `test/back/tests/**/*.test.php`
+  - `test/front/tests/**/*.test.php`
+  - `test/front/tests/**/*.test.mjs`
+
+Cuando actualices el testkit en un repo, copiá todo `test/` **excepto**:
+
+- `test/back/tests/`
+- `test/front/tests/`
+
+Doc: `docs/update_kit.md`
 
 1) Activá profiling en `test/.env.test`:
 
@@ -233,7 +293,7 @@ DB_ENV_PATH=test/.env.test php test/runTest.php
 Para JS, necesitás `node` disponible:
 
 ```bash
-node test/front/runTestFront.mjs
+node test/front/runFrontTest.mjs
 ```
 
 ---

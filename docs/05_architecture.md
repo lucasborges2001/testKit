@@ -11,9 +11,14 @@
 ### 1) `bin/testkit`
 Wrapper para ejecutar Docker Compose de forma segura:
 
-- fuerza `--env-file test/.env.test`
+- elige env automáticamente:
+  - preferido `test/.env.test`
+  - soportado `.env.test` en root
+- fuerza `--env-file <env elegido>`
 - evita que Compose tome `.env` de otro lado
 - permite activar Postgres con `--pg`
+
+También setea `TESTKIT_DB_ENV_PATH` para que el contenedor apunte al env correcto vía `DB_ENV_PATH`.
 
 ### 2) `compose.yaml` + `compose.pg.yaml`
 
@@ -45,6 +50,8 @@ Contrato de seeds:
 - `seeds/mysql/*.sql` en orden alfabético
 - `seeds/pgsql/*.sql` en orden alfabético
 - Postgres solo corre si está activo
+
+Windows: `scripts/seed.ps1`
 
 ## Salidas
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # =============================================================================
-# /test/scripts/seed.sh
-# Seeds en docker (mysql_test). Postgres opcional.
+# /test/scripts/db_clean.sh
+# TRUNCATE de todas las tablas en mysql_test (docker).
 # =============================================================================
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."  # <repo>/test
@@ -46,44 +46,37 @@ JOBS="${TEST_JOBS:-1}"
 BASE_DB="${TEST_MYSQL_DB:-app_test}"
 SUFFIX_FMT="${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
 
+MODE="base"   # base|worker|all
+WORKER="1"
+if [[ "${1:-}" == "--worker" && -n "${2:-}" ]]; then MODE="worker"; WORKER="$2"; shift 2
+elif [[ "${1:-}" == "--all" ]]; then MODE="all"; shift; fi
+
 mk_db_name() { local w="$1"; printf "%s" "${BASE_DB}$(printf "$SUFFIX_FMT" "$w")"; }
 
-mysql_admin_exec() { "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'; }
-mysql_exec_db() { local db="$1"; "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- "$db"; }
-
-seed_one_db() {
+clean_db() {
   local db="$1"
-  [[ ! "$db" =~ ^[A-Za-z0-9_]+$ ]] && { echo "DB inválida: $db" >&2; exit 1; }
+  echo "==> Cleaning MySQL DB: ${db}"
 
-  echo "==> Seeding MySQL DB: $db"
-  printf 'CREATE DATABASE IF NOT EXISTS %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$db" | mysql_admin_exec
+  local tables
+  tables="$("$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1" -Nse "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\"BASE TABLE\";"' -- "$db" || true)"
 
-  shopt -s nullglob
-  for f in seeds/mysql/*.sql; do
-    echo "   - $f"
-    mysql_exec_db "$db" < "$f"
-  done
+  [[ -z "${tables//[[:space:]]/}" ]] && { echo "   (no tables found or DB missing)" >&2; return 0; }
+
+  {
+    printf "SET FOREIGN_KEY_CHECKS=0;\n"
+    while IFS= read -r t; do
+      t="${t//$'\r'/}"
+      [[ -z "$t" ]] && continue
+      [[ "$t" =~ ^[A-Za-z0-9_]+$ ]] && printf "TRUNCATE TABLE \`%s\`;\n" "$t"
+    done <<< "$tables"
+    printf "SET FOREIGN_KEY_CHECKS=1;\n"
+  } | "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- "$db"
 }
 
 if [[ "$STRATEGY" == "per_worker" ]]; then
-  [[ "$JOBS" -lt 1 ]] && JOBS=1
-  for ((i=1;i<=JOBS;i++)); do seed_one_db "$(mk_db_name "$i")"; done
+  if [[ "$MODE" == "all" ]]; then for ((i=1;i<=JOBS;i++)); do clean_db "$(mk_db_name "$i")"; done
+  elif [[ "$MODE" == "worker" ]]; then clean_db "$(mk_db_name "$WORKER")"
+  else clean_db "$(mk_db_name 1)"; fi
 else
-  echo "==> Seeding MySQL (shared)…"
-  shopt -s nullglob
-  for f in seeds/mysql/*.sql; do
-    echo "   - $f"
-    "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$f"
-  done
-fi
-
-if "$TK" ps --services | grep -q '^postgres_test$'; then
-  echo "==> Seeding Postgres…"
-  shopt -s nullglob
-  for f in seeds/pgsql/*.sql; do
-    echo "   - $f"
-    "$TK" exec -T postgres_test sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f -' < "$f"
-  done
-else
-  echo "==> Postgres no activo (ok)."
+  clean_db "$BASE_DB"
 fi

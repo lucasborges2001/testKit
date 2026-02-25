@@ -1,33 +1,32 @@
-# 01 — Quickstart
+# 01 — Quickstart (índice)
 
-## Linux/macOS (bash)
+Elegí **un único camino** y seguí el doc correspondiente (sin ambigüedades):
 
-```bash
-cp test/.env.test.example test/.env.test
-cd test
-./bin/testkit doctor
-./bin/testkit up -d
-./scripts/seed.sh
-./bin/testkit run --rm testkit php runTest.php
-```
+## Docker
 
-## Windows (PowerShell)
+- Linux/macOS (bash): `quickstart_docker_linux.md`
+- Windows (PowerShell): `quickstart_docker_windows.md`
 
-```powershell
-Copy-Item test\.env.test.example test\.env.test
-cd test
-.\bin\testkit.ps1 doctor
-.\bin\testkit.ps1 up -d
-.\scripts\seed.sh
-.\bin\testkit.ps1 run --rm testkit php runTest.php
-```
+## Local (sin Docker)
 
-## Postgres (opcional)
+- Linux/macOS: `quickstart_local_linux.md`
+- Windows: `quickstart_local_windows.md`
 
-```bash
-cd test
-./bin/testkit --pg up -d
-./scripts/seed.sh
-```
+---
 
-> Nota: Postgres solo corre si lo activás con `--pg`.
+Notas:
+
+- El env de tests es `.env.test` y se busca en:
+  1) `root/test/.env.test` (preferido)
+  2) `root/.env.test` (soportado)
+- Si corrés con Docker, **siempre** usá `bin/testkit` / `bin/testkit.ps1` (no ejecutes `docker compose` directo).
+
+
+---
+
+## Runners incluidos (para que no haya dudas con nombres)
+
+- Backend (PHP): `test/back/runTestBack.php`
+- Front (PHP): `test/front/runFrontTest.php`
+- Front (JS): `test/front/runFrontTest.mjs`
+- Orquestador: `test/runTest.php` (recomendado)

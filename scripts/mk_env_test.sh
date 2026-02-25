@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# =============================================================================
+# /test/scripts/mk_env_test.sh
+#
+# Genera <repo>/test/.env.test a partir de un env existente del repo
+# (prioridad: ../env.debug, ../.env, ../env.test).
+#
+# Seguridad:
+# - No sobreescribe test/.env.test si ya existe.
+# =============================================================================
 
-# Genera test/.env.test a partir de una fuente del repo (prioridad: env.debug, .env, env.test)
-# Mantiene el contrato: el env REAL vive en test/.env.test
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 OUT="./.env.test"
 if [[ -f "$OUT" ]]; then
@@ -14,7 +21,7 @@ fi
 
 SRC=""
 for c in "../env.debug" "../.env" "../env.test"; do
-  if [[ -f "$c" ]]; then SRC="$c"; break; fi
+  [[ -f "$c" ]] && { SRC="$c"; break; }
 done
 
 if [[ -z "$SRC" ]]; then
@@ -23,7 +30,6 @@ if [[ -z "$SRC" ]]; then
 fi
 
 cp "$SRC" "$OUT"
-# Hard‑defaults seguros
 {
   echo ""
   echo "APP_ENV=test"

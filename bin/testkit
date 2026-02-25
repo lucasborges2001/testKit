@@ -2,33 +2,183 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${HERE}/.env.test"
 BASE="${HERE}/compose.yaml"
 PG="${HERE}/compose.pg.yaml"
 
 ROOT="$(cd "${HERE}/.." && pwd)"
 
+# Env contract:
+# - Preferred: <repo>/test/.env.test
+# - Supported:  <repo>/.env.test
+# - Override:   TESTKIT_ENV_FILE=/abs/path/to/.env.test
+pick_env_file() {
+  local override="${TESTKIT_ENV_FILE:-}"
+  if [[ -n "$override" ]]; then
+    if [[ -f "$override" ]]; then
+      echo "$override"; return 0
+    fi
+    echo ""; return 1
+  fi
+
+  local a="${HERE}/.env.test"
+  local b="${ROOT}/.env.test"
+  if [[ -f "$a" ]]; then echo "$a"; return 0; fi
+  if [[ -f "$b" ]]; then echo "$b"; return 0; fi
+  echo ""; return 1
+}
+
+env_file_to_container_db_env_path() {
+  # maps host env file location -> path inside container (volume mounts ..:/app)
+  local env_file="$1"
+  if [[ "$env_file" == "${HERE}/.env.test" ]]; then
+    echo "/app/test/.env.test"; return 0
+  fi
+  if [[ "$env_file" == "${ROOT}/.env.test" ]]; then
+    echo "/app/.env.test"; return 0
+  fi
+  # fallback: try to infer relative to repo root
+  local rel
+  rel="${env_file#"${ROOT}/"}"
+  echo "/app/${rel}"; return 0
+}
+
+port_in_use() {
+  # best-effort:
+  # - returns 0 if in use
+  # - returns 1 if free
+  # - returns 2 if unknown (no checker)
+  local port="$1"
+  [[ -z "$port" ]] && return 2
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$port" <<'PY'
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(('127.0.0.1', port))
+except OSError:
+    sys.exit(0)  # in use
+finally:
+    try: s.close()
+    except Exception: pass
+sys.exit(1)      # free
+PY
+    return $?
+  fi
+  return 2
+}
+
+load_env_kv_safe() {
+  # Loads KEY=VALUE lines from the env file into the current shell.
+  # NOTE: we intentionally DO NOT execute arbitrary shell. We parse only KEY=VALUE.
+  local f="$1"
+  [[ ! -f "$f" ]] && return 1
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      # shellcheck disable=SC2163
+      export "$line"
+    fi
+  done < "$f"
+}
+
+_dump_config() {
+  echo ""
+  echo "-- Effective TestKit config --"
+  echo "repoRoot: ${ROOT}"
+  echo "testRoot: ${HERE}"
+  echo "envFile:  ${ENV_FILE}"
+  echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
+  echo ""
+  echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
+  echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
+  echo ""
+  echo "TEST_JOBS: ${TEST_JOBS:-1}"
+  echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
+  echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
+  echo ""
+  echo "TEST_COVERAGE: ${TEST_COVERAGE:-0}"
+  echo "TEST_USE_PUBLIC_LOADER: ${TEST_USE_PUBLIC_LOADER:-1}"
+  echo ""
+}
+
 doctor() {
   local ok=1
   echo "== TestKit doctor =="
 
-  # Repo contract
-  if [[ -d "${ROOT}/back" ]]; then
-    echo "[OK] back/"
+  # Env
+  ENV_FILE="$(pick_env_file || true)"
+  if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+    echo "[OK] env: ${ENV_FILE}"
+    load_env_kv_safe "$ENV_FILE" || true
   else
-    echo "[FAIL] falta ${ROOT}/back"; ok=0
-  fi
-  if [[ -d "${ROOT}/public_html" ]]; then
-    echo "[OK] public_html/"
-  else
-    echo "[FAIL] falta ${ROOT}/public_html"; ok=0
+    echo "[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root)."; ok=0
+    echo "       Copiá: test/.env.test.example -> test/.env.test"; ok=0
   fi
 
-  # Env
-  if [[ -f "$ENV_FILE" ]]; then
-    echo "[OK] ${ENV_FILE}"
+  local back_dir="${TK_BACK_DIR:-back}"
+  local public_dir="${TK_PUBLIC_DIR:-public_html}"
+
+  # Repo contract (configurable por env)
+  if [[ -d "${ROOT}/${back_dir}" ]]; then
+    echo "[OK] ${back_dir}/ (TK_BACK_DIR)"
   else
-    echo "[FAIL] falta ${ENV_FILE} (copiá .env.test.example)"; ok=0
+    echo "[FAIL] falta ${ROOT}/${back_dir} (set TK_BACK_DIR en env)"; ok=0
+  fi
+  if [[ -d "${ROOT}/${public_dir}" ]]; then
+    echo "[OK] ${public_dir}/ (TK_PUBLIC_DIR)"
+  else
+    echo "[FAIL] falta ${ROOT}/${public_dir} (set TK_PUBLIC_DIR en env)"; ok=0
+  fi
+
+  # Bootstrap hints (no hard-fail por defecto)
+  local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"
+  local pub_autoload="${TK_PUBLIC_AUTOLOAD:-${public_dir}/vendor/autoload.php}"
+
+  if [[ -f "${ROOT}/${back_autoload}" ]]; then
+    echo "[OK] back autoload: ${back_autoload}"
+  else
+    if [[ -n "${TK_BACK_BOOTSTRAP:-}" && -f "${ROOT}/${TK_BACK_BOOTSTRAP}" ]]; then
+      echo "[OK] back bootstrap: ${TK_BACK_BOOTSTRAP}"
+    else
+      echo "[WARN] no detecté bootstrap de BACK. Si tus tests necesitan cargar código del proyecto, seteá TK_BACK_AUTOLOAD o TK_BACK_BOOTSTRAP."
+    fi
+  fi
+
+  if [[ -f "${ROOT}/${pub_autoload}" ]]; then
+    echo "[OK] public autoload: ${pub_autoload}"
+  else
+    if [[ -n "${TK_PUBLIC_BOOTSTRAP:-}" && -f "${ROOT}/${TK_PUBLIC_BOOTSTRAP}" ]]; then
+      echo "[OK] public bootstrap: ${TK_PUBLIC_BOOTSTRAP}"
+    else
+      echo "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
+    fi
+  fi
+
+  # DB strategy
+  echo "[INFO] TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-shared} TEST_JOBS=${TEST_JOBS:-1}"
+
+  # Port checks (warning-only)
+  local mysql_port="${TEST_MYSQL_PORT:-33070}"
+  local pg_port="${TEST_PG_PORT:-54370}"
+
+  port_in_use "$mysql_port"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
+  elif [[ $rc -eq 1 ]]; then
+    echo "[OK] puerto MySQL libre: ${mysql_port}"
+  else
+    echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
+  fi
+
+  port_in_use "$pg_port"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
+  elif [[ $rc -eq 1 ]]; then
+    echo "[OK] puerto Postgres libre: ${pg_port}"
+  else
+    echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
   fi
 
   # Out dir
@@ -66,6 +216,14 @@ doctor() {
     echo "[INFO] node local: $(node -v 2>/dev/null || true)"
   fi
 
+  if [[ "${2:-}" == "--dump" ]]; then
+    # ensure TESTKIT_DB_ENV_PATH is computed
+    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+      export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
+    fi
+    _dump_config
+  fi
+
   if [[ "$ok" -eq 1 ]]; then
     echo ""
     echo "Doctor: OK"
@@ -77,14 +235,19 @@ doctor() {
 }
 
 if [[ "${1:-}" == "doctor" ]]; then
-  doctor
+  doctor "$@"
   exit $?
 fi
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Falta ${ENV_FILE}. Copiá test/.env.test.example -> test/.env.test" >&2
+ENV_FILE="$(pick_env_file || true)"
+if [[ -z "${ENV_FILE}" || ! -f "${ENV_FILE}" ]]; then
+  echo "Falta env de tests. Copiá test/.env.test.example -> test/.env.test (preferido)" >&2
+  echo "o bien creá .env.test en el root del repo." >&2
   exit 1
 fi
+
+# Ensures the container sees the correct DB_ENV_PATH regardless of whether env lives in root/ or test/.
+export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
 
 FILES=( -f "$BASE" )
 if [[ "${1:-}" == "--pg" ]]; then

@@ -25,6 +25,11 @@ declare(strict_types=1);
 $testsRoot = __DIR__;                 // .../test/front
 $repoRoot  = dirname($testsRoot, 2);  // .../repo
 
+// Preferred location for project tests:
+//   test/front/tests/**/*.test.php
+// Back-compat: if test/front/tests/ doesn't exist, we scan test/front/ directly.
+$testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+
 // utils (contrato + UI)
 $constPath = $repoRoot . '/test/utils/constants.php';
 $uiPath    = $repoRoot . '/test/utils/php/ui.php';
@@ -32,7 +37,7 @@ if (is_file($constPath)) require_once $constPath;
 if (is_file($uiPath)) require_once $uiPath;
 
 $scope    = strtolower(getenv('TEST_SCOPE') ?: (defined('TEST_SCOPE_DEFAULT') ? TEST_SCOPE_DEFAULT : 'all'));
-$failFast = (getenv('TEST_FAIL_FAST') ?: '0') === '1';
+$failFast = (getenv('TEST_FAIL_FAST') ?: '1') === '1';
 $match    = getenv('TEST_MATCH') ?: '';
 $listOnly = (getenv('TEST_LIST') ?: '0') === '1';
 
@@ -47,12 +52,23 @@ $coverageFormat = getenv('TEST_COVERAGE_FORMAT') ?: 'lcov';
 $coverageDir    = getenv('TEST_COVERAGE_DIR') ?: ($repoRoot . '/test/_out/coverage/php_public');
 $prepend        = $repoRoot . '/test/utils/php/coverage_prepend.php';
 
-// env defaults (similar al runner principal)
-$envCandidates = [$repoRoot . '/env.test', $repoRoot . '/env.debug', $repoRoot . '/.env'];
+// env defaults
+// Contract: prefer root/test/.env.test, support root/.env.test.
+// If neither exists and DB_ENV_PATH isn't set, we fall back to legacy candidates (warn).
+$envCandidatesPrimary = [$repoRoot . '/test/.env.test', $repoRoot . '/.env.test'];
+$envCandidatesLegacy  = [$repoRoot . '/env.test', $repoRoot . '/.env.debug', $repoRoot . '/env.debug', $repoRoot . '/back/.env.test', $repoRoot . '/back/.env.debug', $repoRoot . '/back/.env', $repoRoot . '/.env'];
 $dbEnvPath = getenv('DB_ENV_PATH');
 if (!$dbEnvPath) {
-  foreach ($envCandidates as $p) {
+  foreach ($envCandidatesPrimary as $p) {
     if (is_file($p)) { $dbEnvPath = $p; break; }
+  }
+  if (!$dbEnvPath) {
+    foreach ($envCandidatesLegacy as $p) {
+      if (is_file($p)) { $dbEnvPath = $p; break; }
+    }
+    if ($dbEnvPath) {
+      fwrite(STDERR, "WARN: usando env legacy (no contractual): {$dbEnvPath}. Recomendado: test/.env.test o .env.test en root.\n");
+    }
   }
 }
 
@@ -80,7 +96,7 @@ function scope_match(string $file, string $scope): bool {
   return str_contains($p, '/' . $scope . '/');
 }
 
-$all = discover_tests($testsRoot);
+$all = discover_tests($testsDir);
 $tests = [];
 foreach ($all as $f) {
   if (!scope_match($f, $scope)) continue;
@@ -121,6 +137,7 @@ foreach ($tests as $file) {
   }
 
   $cmd = [$php];
+  $env = null;
 
   if ($coverage) {
     if (!is_file($prepend)) {
@@ -128,16 +145,31 @@ foreach ($tests as $file) {
       exit(defined('PVT_EXIT_ERROR') ? PVT_EXIT_ERROR : 3);
     }
 
-    // Xdebug 3: preferimos que el usuario setee XDEBUG_MODE=coverage, pero igual forzamos.
+    // Xdebug 3: forzamos cobertura y prepend para capturar por-test
     $cmd[] = '-d';
     $cmd[] = 'xdebug.mode=coverage';
-
+    $cmd[] = '-d';
+    $cmd[] = 'xdebug.start_with_request=no';
     $cmd[] = '-d';
     $cmd[] = 'auto_prepend_file=' . $prepend;
 
-    // env para el prepend
-    putenv('TEST_COVERAGE_FORMAT=' . $coverageFormat);
-    putenv('TEST_COVERAGE_DIR=' . $coverageDir);
+    $safe = preg_replace('/[^a-zA-Z0-9._-]+/', '_', $rel) ?: 'test';
+    $covFile = $coverageDir . '/' . $safe . '.json';
+
+    // Env para el prepend: preservamos env del proceso padre.
+    $env = [];
+    foreach (array_merge($_SERVER, $_ENV) as $k => $v) {
+      if (!is_string($k) || $k === '') continue;
+      if (!is_scalar($v)) continue;
+      $env[$k] = (string)$v;
+    }
+    $env['TEST_COVERAGE'] = '1';
+    $env['TEST_COVERAGE_FILE'] = $covFile;
+    $env['TEST_COVERAGE_FORMAT'] = $coverageFormat;
+    $env['TEST_COVERAGE_DIR'] = $coverageDir;
+    if ($dbEnvPath) $env['DB_ENV_PATH'] = $dbEnvPath;
+    $env['APP_ENV'] = 'test';
+    $env['APP_DEBUG'] = '1';
   }
 
   $cmd[] = $file;
@@ -149,7 +181,7 @@ foreach ($tests as $file) {
     2 => STDERR,
   ];
 
-  $proc = proc_open($cmd, $descriptors, $pipes, $repoRoot, null);
+  $proc = proc_open($cmd, $descriptors, $pipes, $repoRoot, $env);
   if (!is_resource($proc)) {
     fwrite(STDERR, "No se pudo ejecutar el proceso para {$rel}\n");
     $failed++;
@@ -176,6 +208,64 @@ foreach ($tests as $file) {
 
 $counts = function_exists('pvt_ui_counts') ? pvt_ui_counts($passed, $failed, $skipped) : "PASS={$passed} FAIL={$failed} SKIP={$skipped}";
 echo "\nSummary: {$counts}\n";
+
+// Merge coverage por-test (json) -> lcov/json finales (opcional)
+if ($coverage) {
+  $covFiles = glob($coverageDir . '/*.json') ?: [];
+  if (!$covFiles) {
+    fwrite(STDERR, "Coverage: no se generaron datos. ¿Xdebug está instalado/activo en CLI?\n");
+    exit(defined('PVT_EXIT_ERROR') ? PVT_EXIT_ERROR : 3);
+  }
+
+  $merged = [];
+  foreach ($covFiles as $f) {
+    $json = json_decode((string)file_get_contents($f), true);
+    if (!is_array($json)) continue;
+    foreach ($json as $path => $lines) {
+      if (!is_array($lines)) continue;
+      if (!isset($merged[$path])) $merged[$path] = [];
+      foreach ($lines as $ln => $hits) {
+        $ln = (int)$ln;
+        $hits = (int)$hits;
+        if ($ln <= 0) continue;
+        if ($hits < 0) $hits = 0;
+        if (!isset($merged[$path][$ln])) $merged[$path][$ln] = 0;
+        $merged[$path][$ln] += $hits;
+      }
+    }
+  }
+
+  // JSON merged
+  if ($coverageFormat === 'json' || $coverageFormat === 'both') {
+    @mkdir($coverageDir, 0777, true);
+    $out = $coverageDir . '/coverage.json';
+    file_put_contents($out, json_encode($merged));
+    echo "Coverage: wrote {$out}\n";
+  }
+
+  // LCOV
+  if ($coverageFormat === 'lcov' || $coverageFormat === 'both') {
+    @mkdir($coverageDir, 0777, true);
+    $lcovPath = $coverageDir . '/lcov.info';
+    $fh = fopen($lcovPath, 'wb');
+    foreach ($merged as $file => $lines) {
+      fwrite($fh, "TN:\n");
+      fwrite($fh, "SF:" . $file . "\n");
+      ksort($lines);
+      $lf = 0; $lh = 0;
+      foreach ($lines as $ln => $hits) {
+        $lf++;
+        if ($hits > 0) $lh++;
+        fwrite($fh, "DA:{$ln},{$hits}\n");
+      }
+      fwrite($fh, "LF:{$lf}\n");
+      fwrite($fh, "LH:{$lh}\n");
+      fwrite($fh, "end_of_record\n");
+    }
+    fclose($fh);
+    echo "Coverage: wrote {$lcovPath}\n";
+  }
+}
 
 if ($failed > 0) exit(defined('PVT_EXIT_FAIL') ? PVT_EXIT_FAIL : 1);
 if ($passed === 0 && $skipped > 0) exit(defined('PVT_EXIT_SKIP') ? PVT_EXIT_SKIP : 2);

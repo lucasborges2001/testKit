@@ -32,6 +32,24 @@ Postgres es opt‑in.
 - Si tu test hace `exit` temprano, no hay coverage.
 - Podés forzar: `XDEBUG_MODE=coverage`.
 
+## 7) “No encuentra .env.test”
+
+El contrato del kit es:
+
+- `test/.env.test` (preferido)
+- `.env.test` en root (soportado)
+
+`bin/testkit doctor` te lo marca como FAIL si no existe.
+
+## 8) Puertos ocupados
+
+`doctor` avisa (WARN) si:
+
+- `TEST_MYSQL_PORT` está ocupado
+- `TEST_PG_PORT` está ocupado
+
+Solución: cambiar los puertos en `.env.test`.
+
 ## 6) Node demasiado viejo
 
 El contenedor trae Node moderno. Si corrés sin Docker, necesitás Node 18+ (ideal 20).

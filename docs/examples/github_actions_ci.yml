@@ -1,0 +1,45 @@
+﻿name: CI
+
+# Ejemplo para un repo donde la carpeta del kit es el root del checkout.
+# Si el kit vive en <repo>/test/, ajustá los paths en consecuencia.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  testkit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preparar env de test
+        run: |
+          cp .env.test.example .env.test
+
+      - name: Doctor
+        run: |
+          chmod +x bin/testkit scripts/*.sh || true
+          ./bin/testkit doctor
+
+      - name: Levantar stack (MySQL)
+        run: |
+          ./bin/testkit up -d
+          ./bin/testkit ps
+
+      - name: Seeds
+        run: |
+          ./scripts/seed.sh
+
+      - name: Tests
+        run: |
+          ./bin/testkit run --rm testkit php runTest.php
+
+      - name: Apagar
+        if: always()
+        run: |
+          ./bin/testkit down -vc
