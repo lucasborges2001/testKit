@@ -5,21 +5,33 @@ $ErrorActionPreference = 'Stop'
 # test/scripts/win/_lib.ps1
 # Librería compartida para scripts de testing en Windows (PowerShell 5.1+).
 #
-# Objetivos:
-# - Resolver paths (RepoRoot/TestRoot/ScriptsDir)
-# - Cargar env de tests (KEY=VALUE) de forma segura
-# - Resolver TestKit (docker) cuando existe
-# - Normalizar opciones: Mode (local|docker|auto) y ResetMode (heavy|dropdb|fast)
-# - Helpers para estrategia de DB (shared|per_worker)
+# Fix 2026-02:
+# - Get-Paths NO debe depender de $MyInvocation.MyCommand.Path dentro de una función,
+#   porque en ese contexto MyCommand es el FunctionInfo y no tiene propiedad Path.
+# - Capturamos el directorio del archivo _lib.ps1 en script-scope y lo usamos siempre.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Script root (robusto para dot-sourcing)
+# ----------------------------------------------------------------------------
+$__WIN_LIB_DIR = $PSScriptRoot
+if (-not $__WIN_LIB_DIR) {
+  try { $__WIN_LIB_DIR = Split-Path -Parent $PSCommandPath } catch { }
+}
+if (-not $__WIN_LIB_DIR) {
+  try { $__WIN_LIB_DIR = (Get-Location).Path } catch { $__WIN_LIB_DIR = '.' }
+}
+
+# ----------------------------------------------------------------------------
 # 1) Paths base
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Get-Paths {
-  $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path  # .../test/scripts/win
-  $TestRoot   = Resolve-Path (Join-Path $ScriptsDir "..\..")      # .../test
-  $RepoRoot   = Resolve-Path (Join-Path $TestRoot "..")          # .../<repo>
+  # .../test/scripts/win
+  $ScriptsDir = $__WIN_LIB_DIR
+  # .../test
+  $TestRoot   = Resolve-Path (Join-Path $ScriptsDir "..\..")
+  # .../<repo>
+  $RepoRoot   = Resolve-Path (Join-Path $TestRoot "..")
 
   return [pscustomobject]@{
     ScriptsDir = $ScriptsDir
@@ -28,16 +40,16 @@ function Get-Paths {
   }
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 2) Logging y fallos
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Log([string]$msg)  { Write-Host $msg }
 function Warn([string]$msg) { Write-Host ("[WARN] {0}" -f $msg) }
 function Fail([string]$msg) { Write-Error $msg; exit 1 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 3) Env loader (KEY=VALUE)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Pick-EnvFile([string]$TestRoot, [string]$RepoRoot) {
   if ($env:TESTKIT_ENV_FILE -and (Test-Path $env:TESTKIT_ENV_FILE)) {
     return (Resolve-Path $env:TESTKIT_ENV_FILE).Path
@@ -71,9 +83,9 @@ function Load-EnvKVSafe([string]$Path) {
   }
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 4) Resolución de Mode (auto|local|docker)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Resolve-Mode([string]$requested, [string]$RepoRoot, [string]$TestRoot) {
   $m = $requested
   if ($null -eq $m -or $m -eq '') { $m = 'auto' }
@@ -97,9 +109,9 @@ function Resolve-Mode([string]$requested, [string]$RepoRoot, [string]$TestRoot) 
   return $m
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 5) Resolución de ResetMode (heavy|dropdb|fast)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Resolve-ResetMode([string]$requested) {
   $r = $requested
   if ($null -eq $r) { $r = '' }
@@ -115,18 +127,25 @@ function Resolve-ResetMode([string]$requested) {
   return $r
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 6) TestKit (docker) resolver
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Resolve-Testkit([string]$TestRoot, [string]$RepoRoot) {
   $override = $env:TESTKIT_BIN
   if ($override -and (Test-Path $override)) { return (Resolve-Path $override).Path }
 
+  # IMPORTANTE (PowerShell):
+  # No usar comas al final de líneas con llamadas tipo `Join-Path ... 'x',`
+  # dentro de @(...), porque el parser puede interpretar la coma como parte del
+  # argumento ChildPath (crea un array) y termina en:
+  #   Join-Path : Cannot convert 'System.Object[]' to 'System.String' (ChildPath)
+  #
+  # Separá items por NUEVA LÍNEA (o ';') y/o encapsulá cada expresión.
   $candidates = @(
-    Join-Path $TestRoot 'bin/testkit.ps1',
-    Join-Path $RepoRoot 'bin/testkit.ps1',
-    Join-Path $TestRoot 'bin/testkit',
-    Join-Path $RepoRoot 'bin/testkit'
+    (Join-Path $TestRoot 'bin/testkit.ps1')
+    (Join-Path $RepoRoot 'bin/testkit.ps1')
+    (Join-Path $TestRoot 'bin/testkit')
+    (Join-Path $RepoRoot 'bin/testkit')
   )
 
   foreach ($c in $candidates) {
@@ -143,9 +162,9 @@ function Assert-Testkit-Windows([string]$TestkitPath) {
   }
 }
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # 7) DB Strategy helpers
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 function Get-DbStrategy {
   $strategy = $env:TEST_DB_STRATEGY
   if (-not $strategy) { $strategy = 'shared' }
@@ -160,6 +179,7 @@ function Get-Jobs {
 }
 
 function Get-BaseDb {
+  # Base DB para seeding (no confundir con DB_NAME). En este kit, se usa TEST_MYSQL_DB.
   $baseDb = $env:TEST_MYSQL_DB
   if (-not $baseDb) { $baseDb = 'app_test' }
   return $baseDb

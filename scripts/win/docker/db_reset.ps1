@@ -26,11 +26,23 @@ $RepoRoot = $P.RepoRoot
 $EnvFile = Pick-EnvFile -TestRoot $TestRoot -RepoRoot $RepoRoot
 if ($EnvFile) { Load-EnvKVSafe $EnvFile }
 
+if (-not $EnvFile) { Fail 'Falta env de tests (.env.test). Corré: .\bin\testkit.ps1 doctor para validar.' }
+
 $ResetMode = Resolve-ResetMode -requested $ResetMode
 
 $Testkit = Resolve-Testkit -TestRoot $TestRoot -RepoRoot $RepoRoot
 Assert-Testkit-Windows $Testkit
 Set-Location $TestRoot
+
+# Docker compose (stdin-friendly)
+$BaseCompose = Join-Path $TestRoot 'compose.yaml'
+$PgCompose   = Join-Path $TestRoot 'compose.pg.yaml'
+if (-not (Test-Path $BaseCompose)) { Fail "Falta compose: $BaseCompose" }
+
+$DcFiles = @('-f', $BaseCompose)
+if (Test-Path $PgCompose) { $DcFiles += @('-f', $PgCompose) }
+$DcBase = @('compose','--env-file',$EnvFile) + $DcFiles
+
 
 $strategy = Get-DbStrategy
 $jobs     = Get-Jobs
@@ -51,7 +63,7 @@ function Ensure-Up {
 function DropCreate([string]$db) {
   Assert-DbName $db
   $sql = "DROP DATABASE IF EXISTS $db; CREATE DATABASE $db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  $sql | & $Testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
+  $sql | & docker @($DcBase + @('exec','-T','mysql_test','sh','-lc','mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\"'))
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

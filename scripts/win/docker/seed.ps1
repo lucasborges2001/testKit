@@ -21,6 +21,8 @@ $RepoRoot = $P.RepoRoot
 $EnvFile = Pick-EnvFile -TestRoot $TestRoot -RepoRoot $RepoRoot
 if ($EnvFile) { Load-EnvKVSafe $EnvFile }
 
+if (-not $EnvFile) { Fail 'Falta env de tests (.env.test). Corré: .\bin\testkit.ps1 doctor para validar.' }
+
 $strategy = Get-DbStrategy
 $jobs     = Get-Jobs
 $baseDb   = Get-BaseDb
@@ -30,10 +32,18 @@ $SchemaDir = Join-Path $TestRoot 'schema/mysql'
 $SeedsDir  = Join-Path $TestRoot 'seeds/mysql'
 
 # -----------------------------------------------------------------------------
-# 2) TestKit
+# 2) Docker compose (stdin-friendly)
 # -----------------------------------------------------------------------------
-$Testkit = Resolve-Testkit -TestRoot $TestRoot -RepoRoot $RepoRoot
-Assert-Testkit-Windows $Testkit
+$BaseCompose = Join-Path $TestRoot 'compose.yaml'
+$PgCompose   = Join-Path $TestRoot 'compose.pg.yaml'
+if (-not (Test-Path $BaseCompose)) { Fail "Falta compose: $BaseCompose" }
+
+$DcFiles = @('-f', $BaseCompose)
+if (Test-Path $PgCompose) { $DcFiles += @('-f', $PgCompose) }
+
+# Args base para: docker compose --env-file <env> -f compose.yaml [-f compose.pg.yaml]
+$DcBase = @('compose','--env-file',$EnvFile) + $DcFiles
+
 Set-Location $TestRoot
 
 function Apply-SqlFiles([string]$db, [string]$dir, [string]$label) {
@@ -41,15 +51,14 @@ function Apply-SqlFiles([string]$db, [string]$dir, [string]$label) {
 
   Get-ChildItem -Path $dir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
     Log ("==> {0}: {1}" -f $label, $_.Name)
-    (Get-Content -Raw $_.FullName) |
-      & $Testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- $db
+    (Get-Content -Raw $_.FullName) | & docker @($DcBase + @('exec','-T','mysql_test','sh','-lc','mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\" \"$1\"','--',$db))
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   }
 }
 
 function Ensure-Db([string]$db) {
   $sql = "CREATE DATABASE IF NOT EXISTS $db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  $sql | & $Testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
+  $sql | & docker @($DcBase + @('exec','-T','mysql_test','sh','-lc','mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\"'))
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -76,15 +85,14 @@ if ($strategy -eq 'per_worker') {
 # -----------------------------------------------------------------------------
 # 4) Postgres (opcional)
 # -----------------------------------------------------------------------------
-$services = & $Testkit ps --services
+$services = & docker @($DcBase + @('ps','--services'))
 if ($services -match '(^|\r?\n)postgres_test(\r?\n|$)') {
   $pgDir = Join-Path $TestRoot 'seeds/pgsql'
   if (Test-Path $pgDir) {
     Log '==> Seeding Postgres…'
     Get-ChildItem -Path $pgDir -Filter '*.sql' | Sort-Object Name | ForEach-Object {
       Log ("==> pg seed: {0}" -f $_.Name)
-      (Get-Content -Raw $_.FullName) |
-        & $Testkit exec -T postgres_test sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f -'
+      (Get-Content -Raw $_.FullName) | & docker @($DcBase + @('exec','-T','postgres_test','sh','-lc','PGPASSWORD=\"$POSTGRES_PASSWORD\" psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -f -'))
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
   } else {
