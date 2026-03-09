@@ -34,7 +34,7 @@ Recomendación: usar prefijos numéricos:
 
 ## 2) Dónde van
 
-- MySQL: `test/seeds/mysql/*.sql`
+- MySQL: `<project>/test/<project>/test/seeds/mysql/*.sql`
 - Postgres: `test/seeds/pgsql/*.sql`
 
 ---

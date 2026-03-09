@@ -4,96 +4,265 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${HERE}/compose.yaml"
 PG="${HERE}/compose.pg.yaml"
-ROOT="$(cd "${HERE}/.." && pwd)"
 
+PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-}"
+if [[ -z "${PROJECT_ROOT}" ]]; then
+  PROJECT_ROOT="$(cd "${HERE}/.." && pwd)"
+fi
+PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
+
+# Env contract:
+# - Preferred: <repo>/test/.env.test
+# - Supported:  <repo>/.env.test
+# - Override:   TESTKIT_ENV_FILE=/abs/path/to/.env.test
 pick_env_file() {
   local override="${TESTKIT_ENV_FILE:-}"
   if [[ -n "$override" ]]; then
-    [[ -f "$override" ]] && { echo "$override"; return 0; }
+    if [[ -f "$override" ]]; then
+      echo "$override"; return 0
+    fi
     echo ""; return 1
   fi
-  local a="${HERE}/.env.test"
-  local b="${ROOT}/.env.test"
-  [[ -f "$a" ]] && { echo "$a"; return 0; }
-  [[ -f "$b" ]] && { echo "$b"; return 0; }
+
+  local a="${PROJECT_ROOT}/test/.env.test"
+  local b="${PROJECT_ROOT}/.env.test"
+  if [[ -f "$a" ]]; then echo "$a"; return 0; fi
+  if [[ -f "$b" ]]; then echo "$b"; return 0; fi
   echo ""; return 1
 }
 
 env_file_to_container_db_env_path() {
+  # maps host env file location -> path inside container (volume mounts ..:/app)
   local env_file="$1"
-  if [[ "$env_file" == "${HERE}/.env.test" ]]; then echo "/app/test/.env.test"; return 0; fi
-  if [[ "$env_file" == "${ROOT}/.env.test" ]]; then echo "/app/.env.test"; return 0; fi
+  if [[ "$env_file" == "${HERE}/.env.test" ]]; then
+    echo "/app/test/.env.test"; return 0
+  fi
+  if [[ "$env_file" == "${ROOT}/.env.test" ]]; then
+    echo "/app/.env.test"; return 0
+  fi
+  # fallback: try to infer relative to repo root
   local rel
-  rel="${env_file#"${ROOT}/"}"
-  echo "/app/${rel}"
+  rel="${env_file#"${PROJECT_ROOT}/"}"
+  echo "/workspace/project/${rel}"; return 0
 }
 
-truthy() {
-  local v="${1:-}"
-  [[ -z "$v" ]] && return 1
-  v="${v,,}"
-  [[ "$v" == "1" || "$v" == "true" || "$v" == "yes" || "$v" == "y" || "$v" == "on" ]]
+port_in_use() {
+  # best-effort:
+  # - returns 0 if in use
+  # - returns 1 if free
+  # - returns 2 if unknown (no checker)
+  local port="$1"
+  [[ -z "$port" ]] && return 2
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$port" <<'PY'
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(('127.0.0.1', port))
+except OSError:
+    sys.exit(0)  # in use
+finally:
+    try: s.close()
+    except Exception: pass
+sys.exit(1)      # free
+PY
+    return $?
+  fi
+  return 2
 }
 
-project_name() {
-  if [[ -n "${TESTKIT_PROJECT:-}" ]]; then echo "$TESTKIT_PROJECT"; return 0; fi
-  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then echo "$COMPOSE_PROJECT_NAME"; return 0; fi
-  echo "$(basename "$HERE")"
+load_env_kv_safe() {
+  # Loads KEY=VALUE lines from the env file into the current shell.
+  # NOTE: we intentionally DO NOT execute arbitrary shell. We parse only KEY=VALUE.
+  local f="$1"
+  [[ ! -f "$f" ]] && return 1
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      # shellcheck disable=SC2163
+      export "$line"
+    fi
+  done < "$f"
 }
 
-pg_running() {
-  local proj="$1"
-  docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq "^${proj}-postgres_test-" || return 1
-  return 0
+_dump_config() {
+  echo ""
+  echo "-- Effective TestKit config --"
+  echo "projectRoot: ${PROJECT_ROOT}"
+  echo "testkitRoot: ${HERE}"
+  echo "envFile:  ${ENV_FILE}"
+  echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
+  echo ""
+  echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
+  echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
+  echo ""
+  echo "TEST_JOBS: ${TEST_JOBS:-1}"
+  echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
+  echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
+  echo ""
+  echo "TEST_COVERAGE: ${TEST_COVERAGE:-0}"
+  echo "TEST_USE_PUBLIC_LOADER: ${TEST_USE_PUBLIC_LOADER:-1}"
+  echo ""
 }
 
-if [[ ${#} -eq 0 || "${1:-}" =~ ^(-h|--help|help)$ ]]; then
-  cat <<'EOF'
-TestKit (Unix)
+doctor() {
+  local ok=1
+  echo "== TestKit doctor =="
 
-Uso:
-  ./bin/testkit doctor
-  ./bin/testkit [pg|nopg] <docker compose args...>
+  # Env
+  ENV_FILE="$(pick_env_file || true)"
+  if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+    echo "[OK] env: ${ENV_FILE}"
+    load_env_kv_safe "$ENV_FILE" || true
+  else
+    echo "[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root)."; ok=0
+    echo "       Copiá: test/.env.test.example -> test/.env.test"; ok=0
+  fi
 
-Atajos:
-  pg    = incluye compose.pg.yaml (Postgres)
-  nopg  = fuerza modo sin Postgres
+  local back_dir="${TK_BACK_DIR:-back}"
+  local public_dir="${TK_PUBLIC_DIR:-public_html}"
 
-Modo auto (default):
-  - Si postgres_test está corriendo, incluye compose.pg.yaml automáticamente.
-  - Podés forzar default con TESTKIT_DEFAULT_PG=1
-EOF
-  exit 0
-fi
+  # Repo contract (configurable por env)
+  if [[ -d "${PROJECT_ROOT}/${back_dir}" ]]; then
+    echo "[OK] ${back_dir}/ (TK_BACK_DIR)"
+  else
+    echo "[FAIL] falta ${PROJECT_ROOT}/${back_dir} (set TK_BACK_DIR en env)"; ok=0
+  fi
+  if [[ -d "${PROJECT_ROOT}/${public_dir}" ]]; then
+    echo "[OK] ${public_dir}/ (TK_PUBLIC_DIR)"
+  else
+    echo "[FAIL] falta ${PROJECT_ROOT}/${public_dir} (set TK_PUBLIC_DIR en env)"; ok=0
+  fi
+  if [[ -d "${PROJECT_ROOT}/test" ]]; then
+    echo "[OK] test/ del proyecto"
+  else
+    echo "[FAIL] falta ${PROJECT_ROOT}/test"; ok=0
+  fi
+
+  # Bootstrap hints (no hard-fail por defecto)
+  local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"
+  local pub_autoload="${TK_PUBLIC_AUTOLOAD:-${public_dir}/vendor/autoload.php}"
+
+  if [[ -f "${PROJECT_ROOT}/${back_autoload}" ]]; then
+    echo "[OK] back autoload: ${back_autoload}"
+  else
+    if [[ -n "${TK_BACK_BOOTSTRAP:-}" && -f "${PROJECT_ROOT}/${TK_BACK_BOOTSTRAP}" ]]; then
+      echo "[OK] back bootstrap: ${TK_BACK_BOOTSTRAP}"
+    else
+      echo "[WARN] no detecté bootstrap de BACK. Si tus tests necesitan cargar código del proyecto, seteá TK_BACK_AUTOLOAD o TK_BACK_BOOTSTRAP."
+    fi
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/${pub_autoload}" ]]; then
+    echo "[OK] public autoload: ${pub_autoload}"
+  else
+    if [[ -n "${TK_PUBLIC_BOOTSTRAP:-}" && -f "${PROJECT_ROOT}/${TK_PUBLIC_BOOTSTRAP}" ]]; then
+      echo "[OK] public bootstrap: ${TK_PUBLIC_BOOTSTRAP}"
+    else
+      echo "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
+    fi
+  fi
+
+  # DB strategy
+  echo "[INFO] TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-shared} TEST_JOBS=${TEST_JOBS:-1}"
+
+  # Port checks (warning-only)
+  local mysql_port="${TEST_MYSQL_PORT:-33070}"
+  local pg_port="${TEST_PG_PORT:-54370}"
+
+  port_in_use "$mysql_port"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
+  elif [[ $rc -eq 1 ]]; then
+    echo "[OK] puerto MySQL libre: ${mysql_port}"
+  else
+    echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
+  fi
+
+  port_in_use "$pg_port"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
+  elif [[ $rc -eq 1 ]]; then
+    echo "[OK] puerto Postgres libre: ${pg_port}"
+  else
+    echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
+  fi
+
+  # Out dir
+  mkdir -p "${HERE}/_out" >/dev/null 2>&1 || true
+  if [[ -w "${HERE}/_out" ]]; then
+    echo "[OK] testkit/_out writable"
+  else
+    echo "[FAIL] testkit/_out no es escribible"; ok=0
+  fi
+
+  # Docker
+  if command -v docker >/dev/null 2>&1; then
+    echo "[OK] docker CLI"
+  else
+    echo "[FAIL] docker no está instalado/en PATH"; ok=0
+  fi
+
+  if docker info >/dev/null 2>&1; then
+    echo "[OK] docker daemon"
+  else
+    echo "[FAIL] docker daemon no responde (¿Docker Desktop/servicio?)"; ok=0
+  fi
+
+  if docker compose version >/dev/null 2>&1; then
+    echo "[OK] docker compose v2"
+  else
+    echo "[FAIL] docker compose v2 no disponible"; ok=0
+  fi
+
+  # Node/PHP local (solo info; en Docker viene incluido)
+  if command -v php >/dev/null 2>&1; then
+    echo "[INFO] php local: $(php -r 'echo PHP_VERSION;' 2>/dev/null || true)"
+  fi
+  if command -v node >/dev/null 2>&1; then
+    echo "[INFO] node local: $(node -v 2>/dev/null || true)"
+  fi
+
+  if [[ "${2:-}" == "--dump" ]]; then
+    # ensure TESTKIT_DB_ENV_PATH is computed
+    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+      export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
+export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+    fi
+    _dump_config
+  fi
+
+  if [[ "$ok" -eq 1 ]]; then
+    echo ""
+    echo "Doctor: OK"
+    return 0
+  fi
+  echo ""
+  echo "Doctor: FAIL (ver arriba)" >&2
+  return 1
+}
 
 if [[ "${1:-}" == "doctor" ]]; then
-  echo "== TestKit doctor =="
-  ENV_FILE="$(pick_env_file || true)"
-  [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] && echo "[OK] env: $ENV_FILE" || { echo "[FAIL] falta env"; exit 1; }
-  docker --version >/dev/null 2>&1 && echo "[OK] docker CLI" || { echo "[FAIL] docker"; exit 1; }
-  docker info >/dev/null 2>&1 && echo "[OK] docker daemon" || { echo "[FAIL] docker daemon"; exit 1; }
-  docker compose version >/dev/null 2>&1 && echo "[OK] docker compose v2" || { echo "[FAIL] docker compose"; exit 1; }
-  echo ""; echo "Doctor: OK"; exit 0
+  doctor "$@"
+  exit $?
 fi
 
 ENV_FILE="$(pick_env_file || true)"
-[[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || { echo "Falta env de tests" >&2; exit 1; }
-export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
-
-MODE_PG=0
-truthy "${TESTKIT_DEFAULT_PG:-}" && MODE_PG=1
-
-case "${1:-}" in
-  --pg|pg) MODE_PG=1; shift ;;
-  --nopg|nopg) MODE_PG=0; shift ;;
-esac
-
-if [[ "$MODE_PG" -eq 0 ]] && ! truthy "${TESTKIT_DISABLE_AUTO_PG:-}"; then
-  PROJ="$(project_name)"
-  if pg_running "$PROJ"; then MODE_PG=1; fi
+if [[ -z "${ENV_FILE}" || ! -f "${ENV_FILE}" ]]; then
+  echo "Falta env de tests en el proyecto. Creá <project>/test/.env.test o <project>/.env.test." >&2
+  exit 1
 fi
 
+# Ensures the container sees the correct DB_ENV_PATH regardless of whether env lives in root/ or test/.
+export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
+export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+
 FILES=( -f "$BASE" )
-[[ "$MODE_PG" -eq 1 ]] && FILES+=( -f "$PG" )
+if [[ "${1:-}" == "--pg" ]]; then
+  FILES+=( -f "$PG" )
+  shift
+fi
 
 exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "$@"

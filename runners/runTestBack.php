@@ -24,16 +24,16 @@ declare(strict_types=1);
  *   TEST_COVERAGE_DIR=<path>
  */
 
-$testsRoot = __DIR__;                 // .../test/back
-$repoRoot  = dirname($testsRoot, 2);  // .../repo
-
-// Preferred location for project tests:
-//   test/back/tests/**/*.test.php
-$testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+$testkitRoot = rtrim((string)(getenv('TESTKIT_ROOT') ?: dirname(__DIR__)), '/\\');
+$repoRoot    = rtrim((string)(getenv('TK_REPO_ROOT') ?: (getenv('TESTKIT_PROJECT_ROOT') ?: dirname($testkitRoot))), '/\\');
+$testsRoot   = $repoRoot . '/test/back';
+$testsDir    = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+putenv('TESTKIT_ROOT=' . $testkitRoot);
+putenv('TK_REPO_ROOT=' . $repoRoot);
 
 // utils (contrato + UI)
-$constPath = $repoRoot . '/test/utils/constants.php';
-$uiPath    = $repoRoot . '/test/utils/php/ui.php';
+$constPath = $testkitRoot . '/utils/constants.php';
+$uiPath    = $testkitRoot . '/utils/php/ui.php';
 if (is_file($constPath)) require_once $constPath;
 if (is_file($uiPath)) require_once $uiPath;
 
@@ -52,8 +52,8 @@ if (!isset($validScopes[$scope])) {
 
 $coverage       = (getenv('TEST_COVERAGE') ?: '0') === '1';
 $coverageFormat = getenv('TEST_COVERAGE_FORMAT') ?: 'lcov';
-$coverageDir    = getenv('TEST_COVERAGE_DIR') ?: ($repoRoot . '/test/_out/coverage/php_back');
-$prepend        = $repoRoot . '/test/utils/php/auto_prepend.php';
+$coverageDir    = getenv('TEST_COVERAGE_DIR') ?: ($testkitRoot . '/_out/coverage/php_back');
+$prepend        = $testkitRoot . '/utils/php/auto_prepend.php';
 
 // env defaults
 // Contract: prefer root/test/.env.test, support root/.env.test.
@@ -69,7 +69,7 @@ if (!$dbEnvPath) {
       if (is_file($p)) { $dbEnvPath = $p; break; }
     }
     if ($dbEnvPath) {
-      fwrite(STDERR, "WARN: usando env legacy (no contractual): {$dbEnvPath}. Recomendado: test/.env.test o .env.test en root.\n");
+      fwrite(STDERR, "WARN: usando env legacy (no contractual): {$dbEnvPath}. Recomendado: <project>/test/.env.test o <project>/.env.test.\n");
     }
   }
 }
@@ -143,11 +143,24 @@ if ($coverage) {
 /** @return array<string,string> */
 function build_base_env(): array {
   $env = [];
+
+  $g = getenv();
+  if (is_array($g)) {
+    foreach ($g as $k => $v) {
+      if (!is_string($k) || $k === '') continue;
+      if (!is_scalar($v)) continue;
+      $env[$k] = (string)$v;
+    }
+  }
+
   foreach (array_merge($_SERVER, $_ENV) as $k => $v) {
     if (!is_string($k) || $k === '') continue;
     if (!is_scalar($v)) continue;
-    $env[$k] = (string)$v;
+    if (!array_key_exists($k, $env)) {
+      $env[$k] = (string)$v;
+    }
   }
+
   return $env;
 }
 
@@ -176,6 +189,8 @@ function start_proc(string $file, string $rel, int $workerId, bool $coverage, st
   $env['TEST_WORKER_ID'] = (string)$workerId;
   $env['APP_ENV'] = 'test';
   $env['APP_DEBUG'] = '1';
+  $env['TESTKIT_ROOT'] = $testkitRoot;
+  $env['TK_REPO_ROOT'] = $repoRoot;
 
   if ($coverage) {
     $env['TEST_COVERAGE'] = '1';

@@ -1,6 +1,3 @@
-# TestKit outputs
-/.env.test
-/_out/
-
-# Optional: keep SQL seeds tracked, ignore local-only secrets
-seeds/**/local_*.sql
+_out/
+coverage/
+.env.test

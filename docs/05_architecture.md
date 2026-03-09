@@ -47,7 +47,7 @@ Meta‑runner. Responsabilidades:
 
 Contrato de seeds:
 
-- `seeds/mysql/*.sql` en orden alfabético
+- `<project>/test/seeds/mysql/*.sql` en orden alfabético
 - `seeds/pgsql/*.sql` en orden alfabético
 - Postgres solo corre si está activo
 

@@ -1,3 +1,0 @@
--- test/seeds/pgsql/001_schema.sql
--- Postgres schema seed (ejemplo)
--- CREATE TABLE example (...);

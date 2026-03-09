@@ -9,8 +9,14 @@ declare(strict_types=1);
  * - Dejar un log reproducible que te ayude a decidir índices (por frecuencia / hot columns).
  *
  * Limitación intencional:
- * - El parser SQL es *best-effort* (regex), no un SQL parser completo.
+ * - El parser SQL es best-effort (regex), no un SQL parser completo.
  * - Sirve para 80/20: FROM/JOIN + columnas en WHERE/ON/ORDER BY.
+ *
+ * Nota importante:
+ * - Esta versión es estable y segura.
+ * - Perfila query() y exec().
+ * - NO intercepta execute() de prepared statements, porque envolver PDOStatement
+ *   heredando de \PDOStatement de la forma anterior era un diseño incorrecto.
  */
 
 final class TK_QueryLog {
@@ -19,8 +25,9 @@ final class TK_QueryLog {
 
   /** @var array<string,int> */
   private array $tableHits = [];
+
   /** @var array<string,int> */
-  private array $columnHits = []; // "table.col" => count
+  private array $columnHits = [];
 
   private int $n = 0;
   private int $slowN = 0;
@@ -34,18 +41,28 @@ final class TK_QueryLog {
 
   public function record(string $sql, float $ms, ?int $rowCount = null, ?string $err = null): void {
     $this->n++;
-    if ($ms > $this->slowMs) { $this->slowMs = $ms; $this->slowN = $this->n; }
+
+    if ($ms > $this->slowMs) {
+      $this->slowMs = $ms;
+      $this->slowN = $this->n;
+    }
 
     $d = TK_SqlHeuristics::extractDetailed($sql);
     $tables = $d['tables'];
     $cols = $d['cols'];
-    foreach ($tables as $t) $this->tableHits[$t] = ($this->tableHits[$t] ?? 0) + 1;
-    foreach ($cols as $c)   $this->columnHits[$c] = ($this->columnHits[$c] ?? 0) + 1;
+
+    foreach ($tables as $t) {
+      $this->tableHits[$t] = ($this->tableHits[$t] ?? 0) + 1;
+    }
+
+    foreach ($cols as $c) {
+      $this->columnHits[$c] = ($this->columnHits[$c] ?? 0) + 1;
+    }
 
     $row = [
       'ts' => date('c'),
       'driver' => $this->driver,
-      'ms' => (int)round($ms),
+      'ms' => (int) round($ms),
       'rowCount' => $rowCount,
       'tables' => $tables,
       'cols' => $cols,
@@ -55,8 +72,16 @@ final class TK_QueryLog {
       'groupCols' => $d['groupCols'],
       'sql' => $sql,
     ];
-    if ($err !== null) $row['error'] = $err;
-    file_put_contents($this->path, json_encode($row, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+
+    if ($err !== null) {
+      $row['error'] = $err;
+    }
+
+    file_put_contents(
+      $this->path,
+      json_encode($row, JSON_UNESCAPED_UNICODE) . "\n",
+      FILE_APPEND
+    );
   }
 
   /** @return array{tables:array<string,int>, columns:array<string,int>, queries:int} */
@@ -71,7 +96,7 @@ final class TK_QueryLog {
 
 final class TK_SqlHeuristics {
   /**
-   * Parser SQL *heurístico* pensado para tests (80/20).
+   * Parser SQL heurístico pensado para tests (80/20).
    *
    * Qué extrae:
    * - tablas: FROM/JOIN
@@ -80,13 +105,22 @@ final class TK_SqlHeuristics {
    * - joinCols: tokens table.col dentro de ON (JOIN)
    * - orderCols/groupCols: tokens table.col dentro de ORDER BY / GROUP BY
    *
-   * Nota: NO es un parser SQL real. Si el SQL es complejo (subqueries profundas, CTE, etc.),
-   * tomalo como una señal, no como verdad absoluta.
+   * Nota:
+   * - NO es un parser SQL real.
+   * - Si el SQL es complejo (subqueries profundas, CTE, etc.), tomalo como señal,
+   *   no como verdad absoluta.
    *
-   * @return array{tables:list<string>, cols:list<string>, whereCols:list<string>, joinCols:list<string>, orderCols:list<string>, groupCols:list<string>}
+   * @return array{
+   *   tables:list<string>,
+   *   cols:list<string>,
+   *   whereCols:list<string>,
+   *   joinCols:list<string>,
+   *   orderCols:list<string>,
+   *   groupCols:list<string>
+   * }
    */
   public static function extractDetailed(string $sql): array {
-    $s = self::strip_literals($sql);
+    $s = self::stripLiterals($sql);
     $s = preg_replace('/\s+/', ' ', $s ?? $sql);
     $lower = strtolower($s ?? $sql);
 
@@ -96,30 +130,36 @@ final class TK_SqlHeuristics {
       foreach ($m[2] as $t) {
         $t = trim($t, "`\"[]");
         $t = preg_replace('/\s.*/', '', $t) ?? $t; // quita alias pegado
-        if ($t !== '') $tables[] = $t;
+        if ($t !== '') {
+          $tables[] = $t;
+        }
       }
     }
 
     // --- Segmentos ---
     $whereSeg = self::segment($lower, ' where ', [' group by ', ' order by ', ' limit ', ' having ']);
-    $orderSeg = self::segment($lower, ' order by ', [' limit ', ' where ', ' group by ', ' having ']); // order suele ir al final
+    $orderSeg = self::segment($lower, ' order by ', [' limit ', ' where ', ' group by ', ' having ']);
     $groupSeg = self::segment($lower, ' group by ', [' order by ', ' limit ', ' where ', ' having ']);
 
     // ON segments: por cada JOIN, tomamos el " on ... " inmediato (best-effort)
     $joinSegs = [];
     if (preg_match_all('/\bjoin\b.*?\bon\b\s+(.*?)(?=\bjoin\b|\bwhere\b|\bgroup\s+by\b|\border\s+by\b|\blimit\b|$)/i', $lower, $jm)) {
-      foreach ($jm[1] as $seg) $joinSegs[] = $seg;
+      foreach ($jm[1] as $seg) {
+        $joinSegs[] = $seg;
+      }
     }
 
     // --- Columnas ---
-    $cols = self::extract_cols($lower);
-    $whereCols = self::extract_cols($whereSeg);
-    $orderCols = self::extract_cols($orderSeg);
-    $groupCols = self::extract_cols($groupSeg);
+    $cols = self::extractCols($lower);
+    $whereCols = self::extractCols($whereSeg);
+    $orderCols = self::extractCols($orderSeg);
+    $groupCols = self::extractCols($groupSeg);
 
     $joinCols = [];
     foreach ($joinSegs as $seg) {
-      foreach (self::extract_cols($seg) as $c) $joinCols[] = $c;
+      foreach (self::extractCols($seg) as $c) {
+        $joinCols[] = $c;
+      }
     }
 
     // normaliza + únicos
@@ -133,10 +173,6 @@ final class TK_SqlHeuristics {
     return [
       'tables' => $tables,
       'cols' => $cols,
-      'whereCols' => $d['whereCols'],
-      'joinCols' => $d['joinCols'],
-      'orderCols' => $d['orderCols'],
-      'groupCols' => $d['groupCols'],
       'whereCols' => $whereCols,
       'joinCols' => $joinCols,
       'orderCols' => $orderCols,
@@ -151,13 +187,20 @@ final class TK_SqlHeuristics {
   }
 
   /** @return list<string> */
-  private static function extract_cols(string $sql): array {
+  private static function extractCols(string $sql): array {
     $cols = [];
-    if ($sql === '') return $cols;
+
+    if ($sql === '') {
+      return $cols;
+    }
+
     if (preg_match_all('/\b([a-z0-9_]+)\.([a-z0-9_]+)\b/i', $sql, $m2)) {
       $n = count($m2[0]);
-      for ($i = 0; $i < $n; $i++) $cols[] = $m2[1][$i] . '.' . $m2[2][$i];
+      for ($i = 0; $i < $n; $i++) {
+        $cols[] = $m2[1][$i] . '.' . $m2[2][$i];
+      }
     }
+
     return $cols;
   }
 
@@ -167,18 +210,25 @@ final class TK_SqlHeuristics {
    */
   private static function segment(string $sql, string $needle, array $terminators): string {
     $pos = strpos($sql, $needle);
-    if ($pos === false) return '';
+    if ($pos === false) {
+      return '';
+    }
+
     $start = $pos + strlen($needle);
     $rest = substr($sql, $start);
     $cut = strlen($rest);
+
     foreach ($terminators as $t) {
       $p = strpos($rest, $t);
-      if ($p !== false && $p < $cut) $cut = $p;
+      if ($p !== false && $p < $cut) {
+        $cut = $p;
+      }
     }
+
     return trim(substr($rest, 0, $cut));
   }
 
-  private static function strip_literals(string $sql): string {
+  private static function stripLiterals(string $sql): string {
     $s = preg_replace("/'(?:''|[^'])*'/", "'?'", $sql);
     $s = preg_replace('/\b\d+\b/', '0', $s ?? $sql);
     return $s ?? $sql;
@@ -186,7 +236,6 @@ final class TK_SqlHeuristics {
 }
 
 final class TK_ProfiledPDO {
- {
   private \PDO $pdo;
   private TK_QueryLog $log;
 
@@ -197,6 +246,7 @@ final class TK_ProfiledPDO {
 
   public function query(string $sql): \PDOStatement|false {
     $t0 = microtime(true);
+
     try {
       $st = $this->pdo->query($sql);
       $ms = (microtime(true) - $t0) * 1000;
@@ -210,13 +260,12 @@ final class TK_ProfiledPDO {
   }
 
   public function prepare(string $sql, array $options = []): \PDOStatement|false {
-    $st = $this->pdo->prepare($sql, $options);
-    if (!$st) return false;
-    return new TK_ProfiledPDOStatement($st, $sql, $this->log);
+    return $this->pdo->prepare($sql, $options);
   }
 
   public function exec(string $sql): int|false {
     $t0 = microtime(true);
+
     try {
       $n = $this->pdo->exec($sql);
       $ms = (microtime(true) - $t0) * 1000;
@@ -230,52 +279,27 @@ final class TK_ProfiledPDO {
   }
 
   /** passthrough */
-  public function __call(string $name, array $args): mixed { return $this->pdo->$name(...$args); }
-}
-
-final class TK_ProfiledPDOStatement extends \PDOStatement {
-  private \PDOStatement $inner;
-  private string $sql;
-  private TK_QueryLog $log;
-
-  public function __construct(\PDOStatement $inner, string $sql, TK_QueryLog $log) {
-    $this->inner = $inner;
-    $this->sql = $sql;
-    $this->log = $log;
+  public function __call(string $name, array $args): mixed {
+    return $this->pdo->$name(...$args);
   }
-
-  public function execute(?array $params = null): bool {
-    $t0 = microtime(true);
-    try {
-      $ok = $params === null ? $this->inner->execute() : $this->inner->execute($params);
-      $ms = (microtime(true) - $t0) * 1000;
-      $this->log->record($this->sql, $ms, $this->inner->rowCount());
-      return $ok;
-    } catch (\Throwable $e) {
-      $ms = (microtime(true) - $t0) * 1000;
-      $this->log->record($this->sql, $ms, null, get_class($e) . ': ' . $e->getMessage());
-      throw $e;
-    }
-  }
-
-  public function __call(string $name, array $args): mixed { return $this->inner->$name(...$args); }
 }
 
 /**
  * Factory: PDO “profilado” si TEST_DB_PROFILE=1.
  *
- * Env esperado (dentro de test/.env.test):
+ * Env esperado:
  * - TEST_DB_DSN, TEST_DB_USER, TEST_DB_PASS
  * - TEST_DB_PROFILE=0|1
- * - TEST_DB_PROFILE_LOG=/app/test/_out/querylog.jsonl (default)
+ * - TEST_DB_PROFILE_LOG=/workspace/testkit/_out/querylog.jsonl (default)
  */
 function tk_pdo(): TK_ProfiledPDO|\PDO {
-  $dsn  = (string)(getenv('TEST_DB_DSN') ?: '');
+  $dsn = (string) (getenv('TEST_DB_DSN') ?: '');
   if ($dsn === '') {
-    throw new RuntimeException('TEST_DB_DSN vacío. Definilo en test/.env.test');
+    throw new RuntimeException('TEST_DB_DSN vacío. Definilo en <project>/test/.env.test');
   }
-  $user = (string)(getenv('TEST_DB_USER') ?: '');
-  $pass = (string)(getenv('TEST_DB_PASS') ?: '');
+
+  $user = (string) (getenv('TEST_DB_USER') ?: '');
+  $pass = (string) (getenv('TEST_DB_PASS') ?: '');
 
   $pdo = new \PDO($dsn, $user, $pass, [
     \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
@@ -283,10 +307,16 @@ function tk_pdo(): TK_ProfiledPDO|\PDO {
   ]);
 
   $on = (getenv('TEST_DB_PROFILE') ?: '0') === '1';
-  if (!$on) return $pdo;
+  if (!$on) {
+    return $pdo;
+  }
 
-  $logPath = (string)(getenv('TEST_DB_PROFILE_LOG') ?: (dirname(__DIR__, 2) . '/_out/querylog.jsonl'));
-  $driver = strtolower(strtok($dsn, ':')) ?: 'unknown';
+  $logPath = (string) (getenv('TEST_DB_PROFILE_LOG') ?: (dirname(__DIR__, 2) . '/_out/querylog.jsonl'));
+  $driver = strtolower((string) strtok($dsn, ':'));
+  if ($driver === '') {
+    $driver = 'unknown';
+  }
+
   $log = new TK_QueryLog($logPath, $driver);
   return new TK_ProfiledPDO($pdo, $log);
 }

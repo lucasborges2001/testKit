@@ -56,7 +56,8 @@ const PUBLIC_DIR = process.env.TK_PUBLIC_DIR || "public_html";
 // Este loader vive en: <repo>/test/utils/js/front_loader.mjs
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..", "..", "..");
+const testkitRoot = process.env.TESTKIT_ROOT || path.resolve(__dirname, "..", "..");
+const repoRoot = process.env.TK_REPO_ROOT || process.env.TESTKIT_PROJECT_ROOT || path.resolve(testkitRoot, "..");
 
 // Zonas “fake” donde suelen caer imports mal resueltos (tests)
 const testFrontRoot = path.join(repoRoot, "test", "front");
@@ -66,7 +67,7 @@ const rootUtils = path.join(repoRoot, "utils"); // alias histórico: utils/* -> 
 // Zonas reales (configurables)
 const publicRoot = path.join(repoRoot, PUBLIC_DIR);
 const backRoot = path.join(repoRoot, BACK_DIR);
-const testUtilsRoot = path.join(repoRoot, "test", "utils");
+const testUtilsRoot = path.join(testkitRoot, "utils");
 
 /* =============================================================================
  * 2) Helpers de normalización y clasificación de specifiers

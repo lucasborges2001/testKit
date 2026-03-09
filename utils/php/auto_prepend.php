@@ -5,7 +5,7 @@ declare(strict_types=1);
  * TestKit — auto-prepend universal
  *
  * Se ejecuta ANTES de cada test PHP (back y front) via:
- *   php -d auto_prepend_file=test/utils/php/auto_prepend.php <testfile>
+ *   php -d auto_prepend_file=testkit/utils/php/auto_prepend.php <testfile>
  *
  * Responsabilidades:
  * - Cargar el env declarado por DB_ENV_PATH (KEY=VALUE, parse seguro) para que los tests sean autosuficientes.
@@ -89,8 +89,8 @@ function tk__dsn_set_dbname(string $dsn, string $dbName): string {
 
 $repoRoot = tk__env('TK_REPO_ROOT', '');
 if ($repoRoot === '') {
-  // auto_prepend.php vive en: <repo>/test/utils/php/
-  $repoRoot = dirname(__DIR__, 3);
+  // auto_prepend.php vive en: <testkit>/utils/php/
+  $repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname(dirname(dirname(__DIR__)))), '/\\');
 }
 $repoRoot = rtrim($repoRoot, '/\\');
 putenv('TK_REPO_ROOT=' . $repoRoot);

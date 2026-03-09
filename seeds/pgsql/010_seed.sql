@@ -1,3 +1,0 @@
--- test/seeds/pgsql/010_seed.sql
--- Postgres data seed (ejemplo)
--- INSERT INTO ...

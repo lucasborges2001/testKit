@@ -1,7 +1,7 @@
 ﻿name: CI
 
 # Ejemplo para un repo donde la carpeta del kit es el root del checkout.
-# Si el kit vive en <repo>/test/, ajustá los paths en consecuencia.
+# Si el kit vive en <project>/test/, ajustá los paths en consecuencia.
 
 on:
   push:

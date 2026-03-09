@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * /test/scripts/common/query_report.php
+ * /testkit/scripts/query_report.php
  *
  * Lee test/_out/querylog.jsonl (generado por db_profiler.php) y produce un reporte:
  * - top tablas / columnas

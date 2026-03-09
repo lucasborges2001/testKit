@@ -38,7 +38,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // runFrontTest.mjs está en: <repoRoot>/test/front/runFrontTest.mjs
-const repoRoot = path.resolve(__dirname, "..", "..");
+const testkitRoot = process.env.TESTKIT_ROOT || path.resolve(__dirname, "..");
+const repoRoot = process.env.TK_REPO_ROOT || process.env.TESTKIT_PROJECT_ROOT || path.resolve(testkitRoot, "..");
 
 // Preferred: <repo>/test/front/tests (so kit updates don't overwrite tests)
 // Back-compat: <repo>/test/front
@@ -95,7 +96,7 @@ if (!tests.length) {
 }
 
 // Loader: <repoRoot>/test/utils/js/front_loader.mjs
-const loaderPath = path.join(repoRoot, "test", "utils", "js", "front_loader.mjs");
+const loaderPath = path.join(testkitRoot, "utils", "js", "front_loader.mjs");
 const loaderUrl = pathToFileURL(loaderPath).href;
 
 // Bootstrap (opcional)
@@ -132,7 +133,7 @@ function runOne(testFile, workerId) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: repoRoot,
-      env: { ...process.env, TEST_WORKER_ID: String(workerId) },
+      env: { ...process.env, TEST_WORKER_ID: String(workerId), TESTKIT_ROOT: testkitRoot, TK_REPO_ROOT: repoRoot },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -159,7 +160,7 @@ if (jobs <= 1) {
 
     const r = spawnSync(process.execPath, makeArgs(t), {
       cwd: repoRoot,
-      env: { ...process.env, TEST_WORKER_ID: "1" },
+      env: { ...process.env, TEST_WORKER_ID: "1", TESTKIT_ROOT: testkitRoot, TK_REPO_ROOT: repoRoot },
       stdio: ["ignore", "inherit", "inherit"],
     });
 

@@ -1,3 +1,0 @@
--- test/seeds/mysql/010_seed.sql
--- MySQL data seed (ejemplo)
--- INSERT INTO ...
