@@ -71,19 +71,19 @@ function Mk-DbName([int]$w) {
 
 function Seed-MySqlShared {
   Write-Host "==> Seeding MySQL (shared)…"
-  & $Testkit run --rm testkit php scripts/seed_router.php mysql
+  & $Testkit run --rm testkit php /workspace/testkit/scripts/seed_router.php mysql
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Seed-MySqlDb([string]$db) {
   Write-Host ("==> Seeding MySQL DB: {0}" -f $db)
-  & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php scripts/seed_router.php mysql
+  & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/seed_router.php mysql
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Seed-PgShared {
   Write-Host "==> Seeding Postgres…"
-  & $Testkit run --rm testkit php scripts/seed_router.php pgsql
+  & $Testkit run --rm testkit php /workspace/testkit/scripts/seed_router.php pgsql
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

@@ -23,15 +23,22 @@ function Pick-EnvFile {
 }
 
 function EnvFile-ToContainerDbEnvPath([string]$EnvFilePath) {
-  # volume: .. -> /app
-  $a = (Join-Path $TestRoot ".env.test")
-  $b = (Join-Path $ProjectRoot ".env.test")
-  if ((Test-Path $a) -and ($EnvFilePath -eq (Resolve-Path $a).Path)) { return "/app/test/.env.test" }
-  if ((Test-Path $b) -and ($EnvFilePath -eq (Resolve-Path $b).Path)) { return "/app/.env.test" }
+  $projectRootPath = (Resolve-Path $ProjectRoot).Path
+  $envFileResolved = (Resolve-Path $EnvFilePath).Path
 
-  # fallback: relative to repo root
-  $rel = $EnvFilePath.Substring($RepoRoot.Path.Length).TrimStart("\\","/")
-  return ("/app/" + ($rel -replace "\\","/"))
+  $a = Join-Path $ProjectRoot "test\.env.test"
+  $b = Join-Path $ProjectRoot ".env.test"
+  if ((Test-Path $a) -and ($envFileResolved -eq (Resolve-Path $a).Path)) { return "/workspace/project/test/.env.test" }
+  if ((Test-Path $b) -and ($envFileResolved -eq (Resolve-Path $b).Path)) { return "/workspace/project/.env.test" }
+
+  # fallback: relative to project root
+  if ($envFileResolved.StartsWith($projectRootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $rel = $envFileResolved.Substring($projectRootPath.Length) -replace '^[\\/]+', ''
+    return ("/workspace/project/" + ($rel -replace "\\","/"))
+  }
+
+  # final fallback: canonical path
+  return "/workspace/project/test/.env.test"
 }
 
 function Load-EnvKVSafe([string]$Path) {
@@ -202,7 +209,7 @@ $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
 $files = @("-f", $Base)
 if ($Args.Count -gt 0 -and $Args[0] -eq "--pg") {
   $files += @("-f", $Pg)
-  $Args = $Args[1..($Args.Count-1)]
+  $Args = if ($Args.Count -gt 1) { $Args[1..($Args.Count-1)] } else { @() }
 }
 
 $cmd = @("compose", "--env-file", $envFile) + $files + $Args

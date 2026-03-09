@@ -16,10 +16,10 @@ function Resolve-Testkit {
   if ($override -and (Test-Path $override)) { return (Resolve-Path $override).Path }
 
   $candidates = @(
-    Join-Path $TestRoot "bin/testkit.ps1",
-    Join-Path $ProjectRoot "bin/testkit.ps1",
-    Join-Path $TestRoot "bin/testkit",
-    Join-Path $ProjectRoot "bin/testkit"
+    $(Join-Path $TestRoot "bin/testkit.ps1"),
+    $(Join-Path $ProjectRoot "bin/testkit.ps1"),
+    $(Join-Path $TestRoot "bin/testkit"),
+    $(Join-Path $ProjectRoot "bin/testkit")
   )
 
   foreach ($c in $candidates) {
@@ -37,5 +37,5 @@ if ($IsWindows -and -not $Testkit.ToLower().EndsWith(".ps1")) {
 Set-Location $TestRoot
 
 # Passthrough: todos los args se pasan al meta-runner
-& $Testkit run --rm testkit php runTest.php @args
+& $Testkit run --rm testkit php /workspace/testkit/runTest.php @args
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

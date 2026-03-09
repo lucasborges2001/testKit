@@ -50,18 +50,18 @@ mk_db_name() { local w="$1"; printf "%s" "${BASE_DB}$(printf "$SUFFIX_FMT" "$w")
 
 apply_mysql_shared() {
   echo "==> Seeding MySQL (shared)…"
-  "$TK" run --rm testkit php scripts/seed_router.php mysql
+  "$TK" run --rm testkit php /workspace/testkit/scripts/seed_router.php mysql
 }
 
 apply_mysql_db() {
   local db="$1"
   echo "==> Seeding MySQL DB: $db"
-  "$TK" run --rm -e DB_NAME="$db" -e TEST_MYSQL_DB="$db" testkit php scripts/seed_router.php mysql
+  "$TK" run --rm -e DB_NAME="$db" -e TEST_MYSQL_DB="$db" testkit php /workspace/testkit/scripts/seed_router.php mysql
 }
 
 apply_pg_shared() {
   echo "==> Seeding Postgres…"
-  "$TK" run --rm testkit php scripts/seed_router.php pgsql
+  "$TK" run --rm testkit php /workspace/testkit/scripts/seed_router.php pgsql
 }
 
 if [[ "$STRATEGY" == "per_worker" ]]; then

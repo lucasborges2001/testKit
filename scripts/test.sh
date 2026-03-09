@@ -19,4 +19,4 @@ find_testkit() {
 
 TK="$(find_testkit)"
 
-"$TK" run --rm testkit php runTest.php "$@"
+"$TK" run --rm testkit php /workspace/testkit/runTest.php "$@"

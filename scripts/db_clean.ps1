@@ -15,10 +15,10 @@ function Resolve-Testkit {
   if ($override -and (Test-Path $override)) { return (Resolve-Path $override).Path }
 
   $candidates = @(
-    Join-Path $TestRoot "bin/testkit.ps1",
-    Join-Path $ProjectRoot "bin/testkit.ps1",
-    Join-Path $TestRoot "bin/testkit",
-    Join-Path $ProjectRoot "bin/testkit"
+    $(Join-Path $TestRoot "bin/testkit.ps1"),
+    $(Join-Path $ProjectRoot "bin/testkit.ps1"),
+    $(Join-Path $TestRoot "bin/testkit"),
+    $(Join-Path $ProjectRoot "bin/testkit")
   )
 
   foreach ($c in $candidates) {

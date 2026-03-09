@@ -58,7 +58,7 @@ declare(strict_types=1);
  * ============================================================================= */
 
 $testkitRoot = dirname(__DIR__); // <testkit>
-$repoRoot = rtrim((string)(getenv('TESTKIT_PROJECT_ROOT') ?: dirname($testkitRoot)), '/\\'); // <project>
+$repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: (getenv('TESTKIT_PROJECT_ROOT') ?: dirname($testkitRoot))), '/\\'); // <project>
 $testRoot = $repoRoot . '/test';          // <project>/test
 putenv('TESTKIT_ROOT=' . $testkitRoot);
 putenv('TK_REPO_ROOT=' . $repoRoot);
