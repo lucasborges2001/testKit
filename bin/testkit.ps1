@@ -9,6 +9,7 @@ $Base = Join-Path $TestRoot "compose.yaml"
 $Pg = Join-Path $TestRoot "compose.pg.yaml"
 
 $ProjectRoot = if ($env:TESTKIT_PROJECT_ROOT) { Resolve-Path $env:TESTKIT_PROJECT_ROOT } else { Resolve-Path (Join-Path $TestRoot "..") }
+$DoctorDockerMode = if ($env:TESTKIT_DOCTOR_DOCKER_MODE) { $env:TESTKIT_DOCTOR_DOCKER_MODE } else { 'auto' }
 
 function Pick-EnvFile {
   if ($env:TESTKIT_ENV_FILE -and (Test-Path $env:TESTKIT_ENV_FILE)) {
@@ -24,7 +25,7 @@ function Pick-EnvFile {
 function EnvFile-ToContainerDbEnvPath([string]$EnvFilePath) {
   # volume: .. -> /app
   $a = (Join-Path $TestRoot ".env.test")
-  $b = (Join-Path $RepoRoot ".env.test")
+  $b = (Join-Path $ProjectRoot ".env.test")
   if ((Test-Path $a) -and ($EnvFilePath -eq (Resolve-Path $a).Path)) { return "/app/test/.env.test" }
   if ((Test-Path $b) -and ($EnvFilePath -eq (Resolve-Path $b).Path)) { return "/app/.env.test" }
 
@@ -61,7 +62,20 @@ function Port-InUse([int]$Port) {
   }
 }
 
+function Get-OrDefault([string]$Value, [string]$DefaultValue) {
+  if ([string]::IsNullOrWhiteSpace($Value)) {
+    return $DefaultValue
+  }
+  return $Value
+}
+
 function Dump-Config([string]$EnvFilePath) {
+  $tkBackDir = Get-OrDefault $env:TK_BACK_DIR "back"
+  $tkPublicDir = Get-OrDefault $env:TK_PUBLIC_DIR "public_html"
+  $testJobs = Get-OrDefault $env:TEST_JOBS "1"
+  $testDbStrategy = Get-OrDefault $env:TEST_DB_STRATEGY "shared"
+  $testDbWorkerSuffixFormat = Get-OrDefault $env:TEST_DB_WORKER_SUFFIX_FORMAT "_w%02d"
+
   Write-Host ""
   Write-Host "-- Effective TestKit config --"
   Write-Host "projectRoot: $ProjectRoot"
@@ -69,12 +83,12 @@ function Dump-Config([string]$EnvFilePath) {
   Write-Host "envFile:  $EnvFilePath"
   Write-Host "DB_ENV_PATH(in-container): $env:TESTKIT_DB_ENV_PATH"
   Write-Host ""
-  Write-Host ("TK_BACK_DIR:   {0}" -f ($env:TK_BACK_DIR ? $env:TK_BACK_DIR : "back"))
-  Write-Host ("TK_PUBLIC_DIR: {0}" -f ($env:TK_PUBLIC_DIR ? $env:TK_PUBLIC_DIR : "public_html"))
+  Write-Host ("TK_BACK_DIR:   {0}" -f $tkBackDir)
+  Write-Host ("TK_PUBLIC_DIR: {0}" -f $tkPublicDir)
   Write-Host ""
-  Write-Host ("TEST_JOBS: {0}" -f ($env:TEST_JOBS ? $env:TEST_JOBS : "1"))
-  Write-Host ("TEST_DB_STRATEGY: {0}" -f ($env:TEST_DB_STRATEGY ? $env:TEST_DB_STRATEGY : "shared"))
-  Write-Host ("TEST_DB_WORKER_SUFFIX_FORMAT: {0}" -f ($env:TEST_DB_WORKER_SUFFIX_FORMAT ? $env:TEST_DB_WORKER_SUFFIX_FORMAT : "_w%02d"))
+  Write-Host ("TEST_JOBS: {0}" -f $testJobs)
+  Write-Host ("TEST_DB_STRATEGY: {0}" -f $testDbStrategy)
+  Write-Host ("TEST_DB_WORKER_SUFFIX_FORMAT: {0}" -f $testDbWorkerSuffixFormat)
   Write-Host ""
 }
 
@@ -126,8 +140,8 @@ function Run-Doctor {
     Write-Host "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
   }
 
-  $mysqlPort = [int]($env:TEST_MYSQL_PORT ? $env:TEST_MYSQL_PORT : 33070)
-  $pgPort = [int]($env:TEST_PG_PORT ? $env:TEST_PG_PORT : 54370)
+  $mysqlPort = [int](Get-OrDefault $env:TEST_MYSQL_PORT "33070")
+  $pgPort = [int](Get-OrDefault $env:TEST_PG_PORT "54370")
 
   if (Port-InUse $mysqlPort) { Write-Host "[WARN] puerto MySQL ocupado: $mysqlPort (TEST_MYSQL_PORT)" }
   else { Write-Host "[OK] puerto MySQL libre: $mysqlPort" }
@@ -135,14 +149,29 @@ function Run-Doctor {
   if (Port-InUse $pgPort) { Write-Host "[WARN] puerto Postgres ocupado: $pgPort (TEST_PG_PORT)" }
   else { Write-Host "[OK] puerto Postgres libre: $pgPort" }
 
-  try { docker --version | Out-Null; Write-Host "[OK] docker CLI" }
-  catch { Write-Host "[FAIL] docker no está disponible"; $ok = $false }
+  $dockerRequired = $false
+  if ($DoctorDockerMode -match '^(1|docker|required|strict)$') { $dockerRequired = $true }
 
-  try { docker info | Out-Null; Write-Host "[OK] docker daemon" }
-  catch { Write-Host "[FAIL] docker daemon no responde (¿Docker Desktop?)"; $ok = $false }
+  $dockerCliOk = $false
+  try { docker --version | Out-Null; Write-Host "[OK] docker CLI"; $dockerCliOk = $true }
+  catch {
+    if ($dockerRequired) { Write-Host "[FAIL] docker no está disponible"; $ok = $false }
+    else { Write-Host "[WARN] docker no está disponible (ok en flujo local)" }
+  }
 
-  try { docker compose version | Out-Null; Write-Host "[OK] docker compose v2" }
-  catch { Write-Host "[FAIL] docker compose v2 no disponible"; $ok = $false }
+  if ($dockerCliOk) {
+    try { docker info | Out-Null; Write-Host "[OK] docker daemon" }
+    catch {
+      if ($dockerRequired) { Write-Host "[FAIL] docker daemon no responde (¿Docker Desktop?)"; $ok = $false }
+      else { Write-Host "[WARN] docker daemon no responde (ok si vas a correr local)" }
+    }
+
+    try { docker compose version | Out-Null; Write-Host "[OK] docker compose v2" }
+    catch {
+      if ($dockerRequired) { Write-Host "[FAIL] docker compose v2 no disponible"; $ok = $false }
+      else { Write-Host "[WARN] docker compose v2 no disponible (ok si no usás flujo Docker)" }
+    }
+  }
 
   if ($Dump -and $envFile) {
     $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)

@@ -10,6 +10,7 @@ if [[ -z "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd "${HERE}/.." && pwd)"
 fi
 PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
+DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
 
 # Env contract:
 # - Preferred: <repo>/test/.env.test
@@ -37,7 +38,7 @@ env_file_to_container_db_env_path() {
   if [[ "$env_file" == "${HERE}/.env.test" ]]; then
     echo "/app/test/.env.test"; return 0
   fi
-  if [[ "$env_file" == "${ROOT}/.env.test" ]]; then
+  if [[ "$env_file" == "${PROJECT_ROOT}/.env.test" ]]; then
     echo "/app/.env.test"; return 0
   fi
   # fallback: try to infer relative to repo root
@@ -199,22 +200,43 @@ doctor() {
   fi
 
   # Docker
+  local docker_required=0
+  if [[ "$DOCTOR_DOCKER_MODE" =~ ^(1|docker|required|strict)$ ]]; then
+    docker_required=1
+  fi
+
+  local docker_cli_ok=0
   if command -v docker >/dev/null 2>&1; then
     echo "[OK] docker CLI"
+    docker_cli_ok=1
   else
-    echo "[FAIL] docker no está instalado/en PATH"; ok=0
+    if [[ $docker_required -eq 1 ]]; then
+      echo "[FAIL] docker no está instalado/en PATH"; ok=0
+    else
+      echo "[WARN] docker no está instalado/en PATH (ok en flujo local)"
+    fi
   fi
 
-  if docker info >/dev/null 2>&1; then
-    echo "[OK] docker daemon"
-  else
-    echo "[FAIL] docker daemon no responde (¿Docker Desktop/servicio?)"; ok=0
-  fi
+  if [[ $docker_cli_ok -eq 1 ]]; then
+    if docker info >/dev/null 2>&1; then
+      echo "[OK] docker daemon"
+    else
+      if [[ $docker_required -eq 1 ]]; then
+        echo "[FAIL] docker daemon no responde (¿Docker Desktop/servicio?)"; ok=0
+      else
+        echo "[WARN] docker daemon no responde (ok si vas a correr local)"
+      fi
+    fi
 
-  if docker compose version >/dev/null 2>&1; then
-    echo "[OK] docker compose v2"
-  else
-    echo "[FAIL] docker compose v2 no disponible"; ok=0
+    if docker compose version >/dev/null 2>&1; then
+      echo "[OK] docker compose v2"
+    else
+      if [[ $docker_required -eq 1 ]]; then
+        echo "[FAIL] docker compose v2 no disponible"; ok=0
+      else
+        echo "[WARN] docker compose v2 no disponible (ok si no usás flujo Docker)"
+      fi
+    fi
   fi
 
   # Node/PHP local (solo info; en Docker viene incluido)

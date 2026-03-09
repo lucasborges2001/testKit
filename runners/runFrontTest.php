@@ -95,7 +95,7 @@ function scope_match(string $file, string $scope): bool {
   return str_contains($p, '/' . $scope . '/');
 }
 
-$all = discover_tests($testsDir);
+$all = is_dir($testsDir) ? discover_tests($testsDir) : [];
 $tests = [];
 foreach ($all as $f) {
   if (!scope_match($f, $scope)) continue;
@@ -111,6 +111,11 @@ echo "Running " . count($tests) . " tests PHP (front) (scope={$scope}, failFast=
 if ($dbEnvPath) echo "DB_ENV_PATH: {$dbEnvPath}\n";
 if ($match !== '') echo "TEST_MATCH: {$match}\n";
 if ($coverage) echo "Coverage: on ({$coverageFormat}) dir={$coverageDir}\n";
+
+if (!$tests) {
+  fwrite(STDERR, "SKIP: no se encontraron tests PHP de front en {$testsDir} (scope={$scope}, match={$match}).\n");
+  exit(defined('PVT_EXIT_SKIP') ? PVT_EXIT_SKIP : 2);
+}
 
 if ($listOnly) {
   foreach ($tests as $file) {

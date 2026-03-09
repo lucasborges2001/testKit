@@ -170,7 +170,7 @@ $baseEnv = build_base_env();
  * @param array<string,string> $baseEnv
  * @return array{proc:resource,pipes:array{0:resource,1:resource,2:resource},rel:string,file:string,worker:int}
  */
-function start_proc(string $file, string $rel, int $workerId, bool $coverage, string $coverageFormat, string $coverageDir, string $prepend, array $baseEnv, string $repoRoot): array {
+function start_proc(string $file, string $rel, int $workerId, bool $coverage, string $coverageFormat, string $coverageDir, string $prepend, array $baseEnv, string $repoRoot, string $testkitRoot): array {
   $php = PHP_BINARY;
 
   $cmd = [$php];
@@ -252,7 +252,7 @@ if ($jobs <= 1) {
     if (function_exists('pvt_ui_test_head')) echo pvt_ui_test_head($rel);
     else echo "==> {$rel}\n";
 
-    $job = start_proc($file, $rel, 1, $coverage, $coverageFormat, $coverageDir, $prepend, $baseEnv, $repoRoot);
+    $job = start_proc($file, $rel, 1, $coverage, $coverageFormat, $coverageDir, $prepend, $baseEnv, $repoRoot, $testkitRoot);
     $res = finish_proc($job);
 
     if ($res['stdout'] !== '') fwrite(STDOUT, $res['stdout']);
@@ -278,7 +278,7 @@ if ($jobs <= 1) {
       $file = array_shift($queue);
       $rel = str_replace($repoRoot . '/', '', str_replace('\\', '/', $file));
       $wid = array_shift($freeWorkers);
-      $running[] = start_proc($file, $rel, (int)$wid, $coverage, $coverageFormat, $coverageDir, $prepend, $baseEnv, $repoRoot);
+      $running[] = start_proc($file, $rel, (int)$wid, $coverage, $coverageFormat, $coverageDir, $prepend, $baseEnv, $repoRoot, $testkitRoot);
     }
 
     $doneIdx = null;

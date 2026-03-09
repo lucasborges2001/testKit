@@ -50,6 +50,7 @@ const scope = (process.env.TEST_SCOPE || "all").toLowerCase();
 const failFast = (process.env.TEST_FAIL_FAST || "1") === "1";
 const match = (process.env.TEST_MATCH || "").toLowerCase();
 const listOnly = (process.env.TEST_LIST || "0") === "1";
+const requireTests = (process.env.TEST_JS_REQUIRE_TESTS || "0") === "1";
 
 const jobs = Math.max(1, parseInt(process.env.TEST_JOBS || "1", 10) || 1);
 
@@ -81,7 +82,9 @@ function matchesScope(p) {
   return n.includes(`/${scope}/`);
 }
 
-let tests = walk(testsDir)
+const testsDirExists = fs.existsSync(testsDir) && fs.statSync(testsDir).isDirectory();
+
+let tests = (testsDirExists ? walk(testsDir) : [])
   .filter((p) => p.endsWith(".test.mjs"))
   .filter(matchesScope)
   .sort((a, b) => a.localeCompare(b));
@@ -91,8 +94,17 @@ if (match) {
 }
 
 if (!tests.length) {
-  console.error(`No se encontraron tests JS en ${testsDir} (scope=${scope}, match=${match || ""}).`);
-  process.exit(PVT_EXIT_ERROR);
+  const msg = `No se encontraron tests JS en ${testsDir} (scope=${scope}, match=${match || ""}).`;
+  if (requireTests) {
+    console.error(msg);
+    process.exit(PVT_EXIT_FAIL);
+  }
+  banner("FRONT / JS");
+  console.log(bold(`Running 0 tests JS (scope=${scope}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
+  console.log(dim(`repoRoot:  ${repoRoot}`));
+  console.log(dim(`testsDir:  ${testsDir}`));
+  console.log(gray(`SKIP: ${msg}`));
+  process.exit(PVT_EXIT_SKIP);
 }
 
 // Loader: <repoRoot>/test/utils/js/front_loader.mjs
