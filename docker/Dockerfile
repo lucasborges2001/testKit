@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git unzip zip curl ca-certificates \
     default-mysql-client postgresql-client \
     libzip-dev libicu-dev libpq-dev \
+    python3 \
   && docker-php-ext-install intl zip mysqli pdo pdo_mysql pdo_pgsql \
   && pecl install xdebug \
   && docker-php-ext-enable xdebug \
