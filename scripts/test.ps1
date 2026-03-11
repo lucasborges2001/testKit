@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 # /testkit/scripts/test.ps1
 # Ejecuta el meta-runner dentro del contenedor TestKit.
-# Uso: .\test\scripts\test.ps1 [back|front|front-js|...]
+# Uso: .\test\scripts\test.ps1 [all|back|back-py|front|smoke|perf|...]
 # =============================================================================
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 # /testkit/scripts/test.sh
-# Ejecuta el meta-runner dentro del contenedor TestKit.
+# Ejecuta el meta-runner dentro del contenedor TestKit. Targets: all|back|back-py|front|smoke|perf|stress.
 # =============================================================================
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."  # <testkit>

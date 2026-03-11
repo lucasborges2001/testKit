@@ -1,51 +1,107 @@
 # testkit
 
-Repo reusable de tooling para tests. No contiene tests del dominio del proyecto.
+`testkit` is the shared testing platform for this repository.
 
-## Modelo
+It does not contain domain tests. It provides reusable runners, conventions, diagnostics and reports so each module (for example `ocpp_server`) can test without rebuilding infra.
 
-- `testkit/` vive en su propio repo y remoto.
-- cada proyecto mantiene sus suites en `<project>/test/**`
-- `testkit` apunta al proyecto vía `TESTKIT_PROJECT_ROOT`
-- los runners viven solo en `testkit/`
-- las seeds del proyecto viven en `<project>/test/seeds/{mysql,pgsql}`
+## What it provides
 
-## Layout en contenedor
+- Unified execution for:
+  - `unit`
+  - `integration`
+  - `smoke`
+  - `perf`
+  - `stress`
+- Suite runners:
+  - `back_php`
+  - `back_python`
+  - `front_php`
+  - `front_js`
+- Useful reporting:
+  - suite summary
+  - module summary
+  - grouped failures
+  - slow tests
+  - fragility hints (history based)
+- Coverage as diagnostics (not KPI only):
+  - lcov/json output
+  - low coverage zones by file/module
+  - critical files without coverage (configurable)
 
-- proyecto: `/workspace/project`
-- testkit: `/workspace/testkit`
-- tests del proyecto: `/workspace/project/test`
+## Quick start
 
-## Uso básico
-
-Linux/macOS:
+Linux/macOS (Docker):
 
 ```bash
-export TESTKIT_PROJECT_ROOT=/ruta/al/proyecto
+export TESTKIT_PROJECT_ROOT=/path/to/project
 ./bin/testkit doctor
 ./bin/testkit up -d
 ./bin/testkit run --rm testkit php runTest.php
-./bin/testkit run --rm testkit php runTest.php back
-./bin/testkit run --rm testkit php runTest.php front
-./bin/testkit run --rm testkit php scripts/seed_router.php mysql
 ```
 
-PowerShell:
+PowerShell (Docker):
 
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 doctor
 .\bin\testkit.ps1 up -d
-.\bin\testkit.ps1 run --rm testkit php runTest.php back
+.\bin\testkit.ps1 run --rm testkit php runTest.php
 ```
 
-## Contrato mínimo del proyecto
+## Common targets
+
+```bash
+# full
+php runTest.php
+
+# suites
+php runTest.php back
+php runTest.php back-php
+php runTest.php back-py
+php runTest.php front
+php runTest.php front-php
+php runTest.php front-js
+
+# categories
+php runTest.php smoke
+php runTest.php perf
+php runTest.php stress
+
+# filters
+TEST_SCOPE=integration TEST_MATCH=ocpp php runTest.php back
+TEST_CATEGORY=critical php runTest.php all
+```
+
+## Outputs
+
+- `testkit/_out/reports/*_latest.json`
+- `testkit/_out/history/*.json`
+- `testkit/_out/coverage/*`
+
+Human report:
+
+```bash
+php scripts/report.php
+```
+
+DB profile report (if enabled):
+
+```bash
+php scripts/query_report.php
+```
+
+## Documentation
+
+- [`docs/USO.md`](docs/USO.md)
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md)
+- [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md)
+
+## Contract with project
+
+Expected project layout:
 
 - `<project>/test/back/**`
-- `<project>/test/front/**` o `<project>/test/front/tests/**`
-- `<project>/test/seeds/mysql/*.sql` y opcionalmente `<project>/test/seeds/pgsql/*.sql`
-- `<project>/test/.env.test` o `<project>/.env.test`
+- `<project>/test/front/**` (optional)
+- `<project>/test/.env.test` (preferred) or `<project>/.env.test`
 
-## Nota
-
-`testkit` puede ofrecer Docker, ejecución local, profiling, coverage y helpers reutilizables. El proyecto usa solo lo que necesita.
+The platform is intentionally generic and module-agnostic.

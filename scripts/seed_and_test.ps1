@@ -3,9 +3,9 @@ $ErrorActionPreference = "Stop"
 
 param(
     # Target del meta-runner (test/runTest.php)
-    # Valores soportados: all|back|front|front-php|front-js|php|js
+    # Valores soportados: all|back|back-php|back-py|front|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow
     [Parameter(Position = 0)]
-    [ValidateSet('all', 'back', 'front', 'front-php', 'front-js', 'php', 'js')]
+    [ValidateSet('all', 'back', 'back-php', 'back-py', 'front', 'front-php', 'front-js', 'php', 'js', 'smoke', 'perf', 'stress', 'contract', 'critical', 'slow')]
     [string]$Target = 'all',
 
     # Modo DB:

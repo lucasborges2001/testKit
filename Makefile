@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 help:
-	@echo "Targets: doctor up up-pg down seed test test-back test-front cov-back cov-front query-report"
+	@echo "Targets: doctor up up-pg down seed test test-back test-back-py test-front test-smoke test-perf test-stress cov-back cov-front report query-report"
 
 doctor:
 	./bin/testkit doctor
@@ -24,14 +24,29 @@ test:
 test-back:
 	./bin/testkit run --rm testkit php runTest.php back
 
+test-back-py:
+	./bin/testkit run --rm testkit php runTest.php back-py
+
 test-front:
 	./bin/testkit run --rm testkit php runTest.php front
 
+test-smoke:
+	./bin/testkit run --rm -e TEST_CATEGORY=smoke testkit php runTest.php smoke
+
+test-perf:
+	./bin/testkit run --rm -e TEST_CATEGORY=perf testkit php runTest.php perf
+
+test-stress:
+	./bin/testkit run --rm -e TEST_CATEGORY=stress testkit php runTest.php stress
+
 cov-back:
-	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=lcov testkit php runTest.php back
+	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php back-php
 
 cov-front:
-	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=lcov testkit php runTest.php front-php
+	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php front-php
+
+report:
+	./bin/testkit run --rm testkit php /workspace/testkit/scripts/report.php
 
 query-report:
-	./bin/testkit run --rm testkit php test/scripts/query_report.php
+	./bin/testkit run --rm testkit php /workspace/testkit/scripts/query_report.php

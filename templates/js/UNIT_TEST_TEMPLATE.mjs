@@ -1,10 +1,6 @@
 /**
- * TEMPLATE FRONT JS (generico)
- *
- * TAGS: unit,contract
+ * TAGS: unit
  * SCOPE: unit
- *
- * Copiar a: test/front/tests/unit/<nombre>.test.mjs
  */
 
 import path from 'node:path';
@@ -12,11 +8,11 @@ import { pathToFileURL } from 'node:url';
 
 const testkitRoot = process.env.TESTKIT_ROOT || path.resolve(process.cwd(), 'testkit');
 const assertLib = await import(pathToFileURL(path.join(testkitRoot, 'utils', 'js', 'assert.mjs')).href);
-const { t_case, t_assert, TestSkip, t_print_fail, t_print_skip } = assertLib;
+const { t_case, t_eq, TestSkip, t_print_fail, t_print_skip } = assertLib;
 
 try {
-  await t_case('template front js works', async () => {
-    t_assert(true, 'replace with real assertions');
+  await t_case('js unit template', async () => {
+    t_eq(1 + 1, 2, 'math sanity');
   });
   process.exit(0);
 } catch (e) {
