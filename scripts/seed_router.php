@@ -14,8 +14,15 @@ if (!is_dir($seedDir)) {
 }
 $files = glob($seedDir . '/*.sql') ?: [];
 sort($files);
+
 if (!$files) {
-    fwrite(STDERR, "No hay seeds SQL en {$seedDir}\n");
+    $nestedSeedDir = $seedDir . '/seeds';
+    $files = glob($nestedSeedDir . '/*.sql') ?: [];
+    sort($files);
+}
+
+if (!$files) {
+    fwrite(STDERR, "No hay seeds SQL en {$seedDir} ni en {$seedDir}/seeds\n");
     exit(1);
 }
 $host = getenv($driver === 'mysql' ? 'DB_HOST' : 'PG_HOST') ?: ($driver === 'mysql' ? 'mysql_test' : 'postgres_test');
