@@ -290,7 +290,7 @@ final class TK_ProfiledPDO {
  * Env esperado:
  * - TEST_DB_DSN, TEST_DB_USER, TEST_DB_PASS
  * - TEST_DB_PROFILE=0|1
- * - TEST_DB_PROFILE_LOG=/workspace/testkit/_out/querylog.jsonl (default)
+ * - TEST_DB_PROFILE_LOG=<repo>/test/querylog.jsonl (default)
  */
 function tk_pdo(): TK_ProfiledPDO|\PDO {
   $dsn = (string) (getenv('TEST_DB_DSN') ?: '');
@@ -311,7 +311,8 @@ function tk_pdo(): TK_ProfiledPDO|\PDO {
     return $pdo;
   }
 
-  $logPath = (string) (getenv('TEST_DB_PROFILE_LOG') ?: (dirname(__DIR__, 2) . '/_out/querylog.jsonl'));
+  $repoRoot = (string) (getenv('TK_REPO_ROOT') ?: dirname(dirname(dirname(__DIR__))));
+  $logPath = (string) (getenv('TEST_DB_PROFILE_LOG') ?: (rtrim(str_replace('\\', '/', $repoRoot), '/') . '/test/querylog.jsonl'));
   $driver = strtolower((string) strtok($dsn, ':'));
   if ($driver === '') {
     $driver = 'unknown';

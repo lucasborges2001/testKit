@@ -30,7 +30,8 @@ final class Paths
 
     public static function outRoot(): string
     {
-        return self::normalize(self::testkitRoot() . '/_out');
+        self::ensureDir(self::testRoot());
+        return self::testRoot();
     }
 
     public static function reportsRoot(): string

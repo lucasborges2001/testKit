@@ -4,19 +4,20 @@ declare(strict_types=1);
 /**
  * /testkit/scripts/query_report.php
  *
- * Lee test/_out/querylog.jsonl (generado por db_profiler.php) y produce un reporte:
+ * Lee test/querylog.jsonl (generado por db_profiler.php) y produce un reporte:
  * - top tablas / columnas
  * - candidatos de índices (heurístico)
  * - slow queries + sugerencia EXPLAIN
  *
  * Env:
- * - TEST_DB_PROFILE_LOG  (default: test/_out/querylog.jsonl)
+ * - TEST_DB_PROFILE_LOG  (default: test/querylog.jsonl)
  * - TEST_DB_PROFILE_TOP  (default: 20)
  * - TEST_DB_PROFILE_SLOW (default: 15)
  */
 
 $root = dirname(__DIR__);
-$log = getenv('TEST_DB_PROFILE_LOG') ?: ($root . '/_out/querylog.jsonl');
+$repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname($root)), '/\\');
+$log = getenv('TEST_DB_PROFILE_LOG') ?: ($repoRoot . '/test/querylog.jsonl');
 
 if (!is_file($log)) {
   fwrite(STDERR, "No existe log: {$log}\n\n");

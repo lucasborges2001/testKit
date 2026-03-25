@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * TestKit report aggregator.
  *
- * Reads latest JSON outputs from testkit/_out/reports and prints:
+ * Reads latest JSON outputs from <repo>/test/reports and prints:
  * - suite summary
  * - grouped failures
  * - slow tests
@@ -13,7 +13,8 @@ declare(strict_types=1);
  */
 
 $testkitRoot = rtrim((string)(getenv('TESTKIT_ROOT') ?: dirname(__DIR__)), '/\\');
-$reportsRoot = $testkitRoot . '/_out/reports';
+$repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname($testkitRoot)), '/\\');
+$reportsRoot = $repoRoot . '/test/reports';
 
 if (!is_dir($reportsRoot)) {
     fwrite(STDERR, "No existe directorio de reportes: {$reportsRoot}\n");
@@ -126,9 +127,9 @@ if (!$hasFragility) {
 
 echo "\nCoverage diagnostics\n";
 $covDirs = [
-    $testkitRoot . '/_out/coverage/php_back',
-    $testkitRoot . '/_out/coverage/php_front',
-    $testkitRoot . '/_out/coverage/python_back',
+    $repoRoot . '/test/coverage/php_back',
+    $repoRoot . '/test/coverage/php_front',
+    $repoRoot . '/test/coverage/python_back',
 ];
 $printedCoverage = false;
 foreach ($covDirs as $dir) {

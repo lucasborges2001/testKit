@@ -21,7 +21,7 @@ final class BackPhpSuite
         $config = RunnerConfig::forSuite(
             'back_php',
             $testsDir,
-            $testkitRoot . '/_out/coverage/php_back',
+            $repoRoot . '/test/coverage/php_back',
             'php'
         );
 

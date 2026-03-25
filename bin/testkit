@@ -192,11 +192,12 @@ doctor() {
   fi
 
   # Out dir
-  mkdir -p "${HERE}/_out" >/dev/null 2>&1 || true
-  if [[ -w "${HERE}/_out" ]]; then
-    echo "[OK] testkit/_out writable"
+  local test_out_dir="${PROJECT_ROOT}/test"
+  mkdir -p "${test_out_dir}" >/dev/null 2>&1 || true
+  if [[ -w "${test_out_dir}" ]]; then
+    echo "[OK] ${test_out_dir} writable"
   else
-    echo "[FAIL] testkit/_out no es escribible"; ok=0
+    echo "[FAIL] ${test_out_dir} no es escribible"; ok=0
   fi
 
   # Docker

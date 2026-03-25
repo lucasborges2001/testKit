@@ -18,7 +18,7 @@ final class BackPythonSuite
         $config = RunnerConfig::forSuite(
             'back_python',
             $testsRoot,
-            $testkitRoot . '/_out/coverage/python_back',
+            $repoRoot . '/test/coverage/python_back',
             'python'
         );
 

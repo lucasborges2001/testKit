@@ -1,2 +1,5 @@
-_out/
+test/reports/
+test/history/
+test/coverage/
+test/querylog.jsonl
 .env.test

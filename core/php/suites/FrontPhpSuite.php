@@ -21,7 +21,7 @@ final class FrontPhpSuite
         $config = RunnerConfig::forSuite(
             'front_php',
             $testsDir,
-            $testkitRoot . '/_out/coverage/php_front',
+            $repoRoot . '/test/coverage/php_front',
             'php'
         );
 
