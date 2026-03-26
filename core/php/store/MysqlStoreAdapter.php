@@ -14,16 +14,31 @@ final class MysqlStoreAdapter implements StoreAdapter
 
     public function resolveDatabaseName(): string
     {
-        return (string)(getenv('DB_NAME') ?: (getenv('TEST_MYSQL_DB') ?: 'app_test'));
+        return $this->requireEnv(
+            ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE'],
+            'nombre de base MySQL'
+        );
     }
 
     public function connect(?string $database = null): PDO
     {
-        $host = (string)(getenv('DB_HOST') ?: 'mysql_test');
-        $port = (string)(getenv('DB_PORT') ?: '3306');
+        $host = $this->requireEnv(
+            ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
+            'host MySQL'
+        );
+        $port = $this->requireEnv(
+            ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
+            'puerto MySQL'
+        );
         $dbName = $database ?? $this->resolveDatabaseName();
-        $user = (string)(getenv('DB_USER') ?: (getenv('TEST_MYSQL_USER') ?: 'app'));
-        $pass = (string)(getenv('DB_PASS') ?: (getenv('TEST_MYSQL_PASSWORD') ?: 'app'));
+        $user = $this->requireEnv(
+            ['DB_USER', 'TEST_MYSQL_USER', 'MYSQL_USER'],
+            'usuario MySQL'
+        );
+        $pass = $this->requireEnv(
+            ['DB_PASS', 'TEST_MYSQL_PASSWORD', 'MYSQL_PASSWORD'],
+            'password MySQL'
+        );
 
         return new PDO(
             "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4",
@@ -41,10 +56,22 @@ final class MysqlStoreAdapter implements StoreAdapter
         $dbName = $database ?? $this->resolveDatabaseName();
         $this->assertSafeDatabaseName($dbName);
 
-        $host = (string)(getenv('DB_HOST') ?: 'mysql_test');
-        $port = (string)(getenv('DB_PORT') ?: '3306');
-        $adminUser = (string)(getenv('TEST_MYSQL_ADMIN_USER') ?: 'root');
-        $adminPass = (string)(getenv('TEST_MYSQL_ROOT_PASSWORD') ?: '');
+        $host = $this->requireEnv(
+            ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
+            'host MySQL'
+        );
+        $port = $this->requireEnv(
+            ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
+            'puerto MySQL'
+        );
+        $adminUser = $this->requireEnv(
+            ['TEST_MYSQL_ADMIN_USER', 'MYSQL_ROOT_USER'],
+            'usuario admin MySQL'
+        );
+        $adminPass = $this->requireEnv(
+            ['TEST_MYSQL_ROOT_PASSWORD', 'MYSQL_ROOT_PASSWORD'],
+            'password admin MySQL'
+        );
 
         $pdo = new PDO(
             "mysql:host={$host};port={$port};charset=utf8mb4",
@@ -167,5 +194,29 @@ final class MysqlStoreAdapter implements StoreAdapter
         if (preg_match('/^[A-Za-z0-9._-]+$/', $dbName) !== 1) {
             throw new \RuntimeException("Nombre de DB MySQL inválido: {$dbName}");
         }
+    }
+
+    /**
+     * @param array<int,string> $keys
+     */
+    private function requireEnv(array $keys, string $label): string
+    {
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if ($value === false) {
+                continue;
+            }
+
+            $value = trim((string)$value);
+            if ($value === '') {
+                continue;
+            }
+
+            return $value;
+        }
+
+        throw new \RuntimeException(
+            'Falta ' . $label . ' (' . implode('/', $keys) . ') en test/.env.test o DB_ENV_PATH.'
+        );
     }
 }

@@ -21,6 +21,7 @@ require_once __DIR__ . '/reporting/HistoryRepository.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';
 
 require_once __DIR__ . '/suites/SuiteOrchestrator.php';
+require_once __DIR__ . '/suites/ContractWorldBootstrap.php';
 require_once __DIR__ . '/suites/BackPhpSuite.php';
 require_once __DIR__ . '/suites/FrontPhpSuite.php';
 require_once __DIR__ . '/suites/BackPythonSuite.php';

@@ -21,6 +21,7 @@ final class BackPythonSuite
             $repoRoot . '/test/coverage/python_back',
             'python'
         );
+        ContractWorldBootstrap::prepare('back_python', $repoRoot);
 
         $python = (string)$config['python_binary'];
 

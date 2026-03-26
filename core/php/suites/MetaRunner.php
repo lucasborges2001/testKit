@@ -113,6 +113,9 @@ final class MetaRunner
 
     private static function runFrontJsSuite(): int
     {
+        $repoRoot = Paths::repoRoot();
+        ContractWorldBootstrap::prepare('front_js', $repoRoot);
+
         $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
         if (!is_file($runner)) {
             fwrite(STDERR, 'Falta runner JS: ' . $runner . PHP_EOL);
@@ -129,10 +132,10 @@ final class MetaRunner
 
         $env = self::baseEnv();
         $env['TESTKIT_ROOT'] = Paths::testkitRoot();
-        $env['TK_REPO_ROOT'] = Paths::repoRoot();
+        $env['TK_REPO_ROOT'] = $repoRoot;
         $env['TESTKIT_REPORT_FILE'] = Paths::reportsRoot() . '/front_js_latest.json';
 
-        $job = ProcessRunner::start([$nodePath, $runner], Paths::repoRoot(), $env);
+        $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
         $done = ProcessRunner::finish($job);
 
         $stdout = (string)($done['stdout'] ?? '');

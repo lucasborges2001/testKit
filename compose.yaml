@@ -8,7 +8,7 @@ services:
         NODE_VERSION: ${TESTKIT_NODE_VERSION:-20}
     working_dir: /workspace/project
     volumes:
-      - ${TESTKIT_PROJECT_ROOT}:/workspace/project
+      - ${TESTKIT_PROJECT_ROOT:-..}:/workspace/project
       - .:/workspace/testkit
     environment:
       APP_ENV: test
@@ -23,24 +23,46 @@ services:
     depends_on:
       mysql_test:
         condition: service_healthy
+      redis_test:
+        condition: service_healthy
 
   mysql_test:
     image: mysql:8.0
+    command:
+      - --log-bin-trust-function-creators=1
+      - --slow_query_log=ON
+      - --long_query_time=0.2
+      - --log_output=FILE
+      - --slow_query_log_file=/var/lib/mysql/slow.log
+      - --performance_schema=ON
     environment:
-      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${TEST_MYSQL_DB:-app_test}
-      MYSQL_USER: ${TEST_MYSQL_USER:-app}
-      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD:-app}
+      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${TEST_MYSQL_DB}
+      MYSQL_USER: ${TEST_MYSQL_USER}
+      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD}
     ports:
       - "${TEST_MYSQL_PORT:-33070}:3306"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p${TEST_MYSQL_ROOT_PASSWORD:-root} || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p${TEST_MYSQL_ROOT_PASSWORD} || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 30
     volumes:
       - testkit_mysql:/var/lib/mysql
-      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+
+  redis_test:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 volumes:
   testkit_mysql:

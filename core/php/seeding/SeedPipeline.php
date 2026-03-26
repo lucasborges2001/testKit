@@ -130,7 +130,10 @@ final class SeedPipeline
         }
 
         echo "==> {$file}\n";
-        $pdo->exec($sql);
+        $statements = self::splitSqlStatements($sql);
+        foreach ($statements as $statement) {
+            self::executeStatement($pdo, $statement);
+        }
     }
 
     /**
@@ -183,5 +186,70 @@ final class SeedPipeline
         }
 
         return in_array(strtolower(trim((string)$raw)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function splitSqlStatements(string $sql): array
+    {
+        $lines = preg_split('/\R/', $sql) ?: [];
+        $buffer = '';
+        $statements = [];
+        $insideCompoundStatement = false;
+
+        foreach ($lines as $line) {
+            $trimmed = ltrim($line);
+            if ($buffer === '' && ($trimmed === '' || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#'))) {
+                continue;
+            }
+
+            if (!$insideCompoundStatement && preg_match('/^\s*CREATE\s+(TRIGGER|PROCEDURE|FUNCTION|EVENT)\b/i', $line) === 1) {
+                $insideCompoundStatement = true;
+            }
+
+            $buffer .= $line . "\n";
+
+            if ($insideCompoundStatement) {
+                if (preg_match('/\bEND\s*;\s*$/i', $line) === 1) {
+                    $statement = trim($buffer);
+                    if ($statement !== '') {
+                        $statements[] = $statement;
+                    }
+                    $buffer = '';
+                    $insideCompoundStatement = false;
+                }
+                continue;
+            }
+
+            if (preg_match('/;\s*$/', $line) === 1) {
+                $statement = trim($buffer);
+                if ($statement !== '') {
+                    $statements[] = $statement;
+                }
+                $buffer = '';
+            }
+        }
+
+        $tail = trim($buffer);
+        if ($tail !== '') {
+            $statements[] = $tail;
+        }
+
+        return $statements;
+    }
+
+    private static function executeStatement(PDO $pdo, string $statement): void
+    {
+        if (preg_match('/^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN|WITH)\b/i', $statement) === 1) {
+            $result = $pdo->query($statement);
+            if ($result !== false) {
+                $result->fetchAll(PDO::FETCH_ASSOC);
+                $result->closeCursor();
+            }
+            return;
+        }
+
+        $pdo->exec($statement);
     }
 }

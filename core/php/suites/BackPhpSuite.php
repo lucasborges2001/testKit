@@ -36,6 +36,7 @@ final class BackPhpSuite
 
         putenv('APP_ENV=test');
         putenv('APP_DEBUG=1');
+        ContractWorldBootstrap::prepare('back_php', $repoRoot);
 
         $prepend = $testkitRoot . '/utils/php/auto_prepend.php';
         $phpBinary = self::phpBinary();

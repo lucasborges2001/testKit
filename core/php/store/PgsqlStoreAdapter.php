@@ -14,16 +14,31 @@ final class PgsqlStoreAdapter implements StoreAdapter
 
     public function resolveDatabaseName(): string
     {
-        return (string)(getenv('PG_DB') ?: (getenv('TEST_PG_DB') ?: 'app_test'));
+        return $this->requireEnv(
+            ['PG_DB', 'TEST_PG_DB', 'DB_NAME'],
+            'nombre de base Postgres'
+        );
     }
 
     public function connect(?string $database = null): PDO
     {
-        $host = (string)(getenv('PG_HOST') ?: 'postgres_test');
-        $port = (string)(getenv('PG_PORT') ?: '5432');
+        $host = $this->requireEnv(
+            ['PG_HOST', 'TEST_PG_HOST', 'DB_HOST'],
+            'host Postgres'
+        );
+        $port = $this->requireEnv(
+            ['PG_PORT', 'TEST_PG_PORT', 'DB_PORT'],
+            'puerto Postgres'
+        );
         $dbName = $database ?? $this->resolveDatabaseName();
-        $user = (string)(getenv('PG_USER') ?: (getenv('TEST_PG_USER') ?: 'app'));
-        $pass = (string)(getenv('PG_PASS') ?: (getenv('TEST_PG_PASSWORD') ?: 'app'));
+        $user = $this->requireEnv(
+            ['PG_USER', 'TEST_PG_USER', 'DB_USER'],
+            'usuario Postgres'
+        );
+        $pass = $this->requireEnv(
+            ['PG_PASS', 'TEST_PG_PASSWORD', 'DB_PASS'],
+            'password Postgres'
+        );
 
         return new PDO(
             "pgsql:host={$host};port={$port};dbname={$dbName}",
@@ -95,5 +110,29 @@ final class PgsqlStoreAdapter implements StoreAdapter
         if (preg_match('/^[A-Za-z0-9._-]+$/', $dbName) !== 1) {
             throw new \RuntimeException("Nombre de DB Postgres inválido: {$dbName}");
         }
+    }
+
+    /**
+     * @param array<int,string> $keys
+     */
+    private function requireEnv(array $keys, string $label): string
+    {
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if ($value === false) {
+                continue;
+            }
+
+            $value = trim((string)$value);
+            if ($value === '') {
+                continue;
+            }
+
+            return $value;
+        }
+
+        throw new \RuntimeException(
+            'Falta ' . $label . ' (' . implode('/', $keys) . ') en test/.env.test o DB_ENV_PATH.'
+        );
     }
 }
