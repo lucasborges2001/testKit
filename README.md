@@ -23,6 +23,11 @@ It does not contain domain tests. It provides reusable runners, conventions, dia
   - grouped failures
   - slow tests
   - fragility hints (history based)
+- Store lifecycle:
+  - env resolution
+  - DB/store naming per worker
+  - structural seed orchestration (`schema -> base -> migrations -> validations`)
+  - operational entrypoints (`db_reset`, `seed`, `test`)
 - Coverage as diagnostics (not KPI only):
   - lcov/json output
   - low coverage zones by file/module
@@ -105,3 +110,5 @@ Expected project layout:
 - `<project>/test/.env.test` (preferred) or `<project>/.env.test`
 
 The platform is intentionally generic and module-agnostic.
+
+For layered seeds, `testkit` owns lifecycle and orchestration. Project support should build scenarios with builders/helpers after the structural base exists; it should not redefine reset policy or the seed pipeline.

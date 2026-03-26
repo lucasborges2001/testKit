@@ -17,6 +17,8 @@ declare(strict_types=1);
  * - (Opcional) Coverage por proceso (TEST_COVERAGE=1 + Xdebug).
  */
 
+require_once __DIR__ . '/../../core/php/store/bootstrap.php';
+
 // --- helpers internos --------------------------------------------------------
 
 /** @return string */
@@ -226,7 +228,7 @@ try {
 // --- DB clean (opcional; explícito) -----------------------------------------
 
 /** @return void */
-function tk__mysql_clean_if_enabled(): void {
+function tk__store_clean_if_enabled(): void {
   $strategy = strtolower((string)(getenv('TEST_DB_STRATEGY') ?: 'shared'));
   if ($strategy !== 'clean') return;
 
@@ -241,35 +243,15 @@ function tk__mysql_clean_if_enabled(): void {
   $isE2e = str_contains($file, '/e2e/');
   if (!$always && !$isIntegration && !$isE2e) return;
 
-  $dsn  = (string)(getenv('TEST_DB_DSN') ?: '');
-  if (stripos($dsn, 'mysql:') !== 0) return;
-  $user = (string)(getenv('TEST_DB_USER') ?: getenv('DB_USER') ?: '');
-  $pass = (string)(getenv('TEST_DB_PASS') ?: getenv('DB_PASS') ?: '');
-
   try {
-    $pdo = new PDO($dsn, $user, $pass, [
-      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-
-    $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-    $q = $pdo->query("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type='BASE TABLE'");
-    $tables = $q ? $q->fetchAll(PDO::FETCH_COLUMN) : [];
-
-    foreach ($tables as $t) {
-      if (!is_string($t) || $t === '') continue;
-      // sane identifier
-      if (!preg_match('/^[A-Za-z0-9_]+$/', $t)) continue;
-      $pdo->exec('TRUNCATE TABLE `' . $t . '`');
-    }
-
-    $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
+    $driver = \Testkit\Core\Store\StoreRegistry::detectDriver('mysql');
+    \Testkit\Core\Store\StoreMaintenance::clean($driver);
   } catch (Throwable $e) {
     fwrite(STDERR, "DB_CLEAN WARN: " . $e->getMessage() . "\n");
   }
 }
 
-tk__mysql_clean_if_enabled();
+tk__store_clean_if_enabled();
 
 // --- Coverage por proceso (opcional) ----------------------------------------
 

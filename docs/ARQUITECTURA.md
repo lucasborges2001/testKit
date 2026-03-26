@@ -39,6 +39,14 @@ testkit/
 - `reporting`: reportes utiles para decidir acciones.
 - `coverage`: cobertura por archivo/modulo + zonas criticas sin cobertura.
 - `suites`: orquestacion por tecnologia/suite.
+- `scripts`: lifecycle operativo del entorno y de los stores.
+
+## 3.1) Frontera con el proyecto
+
+- `testkit` decide entorno, workers, naming de DB/store y pipeline estructural de seeds.
+- `test/seeds` define solo `schema`, `base`, migraciones y validaciones estructurales.
+- `test/_support` queda para builders, helpers, asserts y composición de escenarios del proyecto.
+- Los escenarios de negocio no entran por el lifecycle de `testkit`.
 
 ## 4) Entry points
 
@@ -82,3 +90,4 @@ Para agregar una categoria:
 - Coverage se usa como diagnostico accionable.
 - Fragilidad se detecta por historial local, no por una sola corrida.
 - Runners y scripts se mantienen finos; la logica vive en `core/php`.
+- El pipeline layered de seeds vive en `testkit`, no en `_support`.

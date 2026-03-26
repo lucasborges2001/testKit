@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 # =============================================================================
 # /testkit/scripts/db_clean.ps1
-# TRUNCATE de todas las tablas en mysql_test (docker).
+# Limpieza de datos por store dentro del contenedor TestKit.
 # =============================================================================
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -65,12 +65,23 @@ $envFile = Pick-EnvFile
 if ($envFile) { Load-EnvKVSafe $envFile }
 
 $strategy = $env:TEST_DB_STRATEGY; if (-not $strategy) { $strategy = "shared" }
+$driver = if ($env:TEST_DB_DRIVER) { $env:TEST_DB_DRIVER } else { $env:DB_DRIVER }
+if (-not $driver) {
+  if (($env:TEST_PG_DB -or $env:PG_DB) -and -not $env:TEST_MYSQL_DB) { $driver = "pgsql" }
+  else { $driver = "mysql" }
+}
+if ($driver.ToLower().StartsWith("pg")) { $driver = "pgsql" } else { $driver = "mysql" }
 
 $jobs = 1
 if ($env:TEST_JOBS) { [int]::TryParse($env:TEST_JOBS, [ref]$jobs) | Out-Null }
 if ($jobs -lt 1) { $jobs = 1 }
 
 $baseDb = $env:TEST_MYSQL_DB; if (-not $baseDb) { $baseDb = "app_test" }
+if ($driver -eq "pgsql") {
+  $baseDb = $env:TEST_PG_DB
+  if (-not $baseDb) { $baseDb = $env:PG_DB }
+  if (-not $baseDb) { $baseDb = "app_test" }
+}
 $fmt = $env:TEST_DB_WORKER_SUFFIX_FORMAT; if (-not $fmt) { $fmt = "_w%02d" }
 
 $mode = "base"; $worker = 1
@@ -90,24 +101,14 @@ function Mk-DbName([int]$w) {
 }
 
 function Clean-Db([string]$db) {
-  Write-Host ("==> Cleaning MySQL DB: {0}" -f $db)
+  Write-Host ("==> Cleaning {0} DB: {1}" -f $driver, $db)
 
-  $tables = & $Testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1" -Nse "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\"BASE TABLE\";"' -- $db
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-  if (-not $tables -or ($tables -join "").Trim() -eq "") {
-    Write-Host "   (no tables found or DB missing)"
-    return
+  if ($driver -eq "pgsql") {
+    & $Testkit run --rm -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean pgsql
   }
-
-  $sql = "SET FOREIGN_KEY_CHECKS=0;`n"
-  foreach ($t in $tables) {
-    $tt = $t.Trim()
-    if ($tt -match '^[A-Za-z0-9_]+$') { $sql += "TRUNCATE TABLE ``$tt``;`n" }
+  else {
+    & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean mysql
   }
-  $sql += "SET FOREIGN_KEY_CHECKS=1;`n"
-
-  $sql | & $Testkit exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- $db
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

@@ -33,6 +33,14 @@ $env:TESTKIT_PROJECT_ROOT='D:\Proyecto'
 .\bin\testkit.ps1 run --rm testkit php /workspace/testkit/scripts/report.php
 ```
 
+### Seeds y lifecycle
+
+- `scripts/seed.sh` / `scripts/seed.ps1` provisionan el store target y aplican el pipeline estructural.
+- En modo layered, `testkit` ejecuta `schema/`, luego `base/`, luego migraciones pedidas y al final `validations/`.
+- `TEST_SEED_MIGRATIONS=m1,m2` agrega migraciones estructurales sobre la base mínima.
+- `TEST_SEED_FIXTURES` deja de ser parte del lifecycle de infraestructura en modo layered.
+- Los escenarios de negocio deben construirse desde `test/_support` con builders del proyecto.
+
 ## 3) Targets
 
 ### Suites
@@ -136,6 +144,9 @@ Incluye:
 - `TEST_META_FAIL_FAST`
 - `TEST_CHILD_FAIL_FAST`
 - `TEST_JOBS`
+- `TEST_DB_STRATEGY`
+- `TEST_DB_WORKER_SUFFIX_FORMAT`
+- `TEST_SEED_MIGRATIONS`
 - `TEST_PYTHON_BINARY`
 - `TEST_COVERAGE`
 - `TEST_COVERAGE_FORMAT`

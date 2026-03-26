@@ -3,8 +3,8 @@ $ErrorActionPreference = "Stop"
 
 # =============================================================================
 # /testkit/scripts/seed.ps1
-# Aplica seeds del proyecto dentro del contenedor TestKit.
-# Lee SQL desde <project>/test/seeds/{mysql,pgsql}.
+# Aplica la base estructural del proyecto por store dentro del contenedor TestKit.
+# Lifecycle: bootstrap(store) -> reset -> schema -> base -> migrations -> validations.
 # =============================================================================
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -58,46 +58,83 @@ $strategy = $env:TEST_DB_STRATEGY; if (-not $strategy) { $strategy = "shared" }
 $jobs = 1
 if ($env:TEST_JOBS) { [int]::TryParse($env:TEST_JOBS, [ref]$jobs) | Out-Null }
 if ($jobs -lt 1) { $jobs = 1 }
-$baseDb = $env:TEST_MYSQL_DB; if (-not $baseDb) { $baseDb = "app_test" }
+$baseMysqlDb = $env:TEST_MYSQL_DB; if (-not $baseMysqlDb) { $baseMysqlDb = "app_test" }
+$basePgDb = $env:TEST_PG_DB; if (-not $basePgDb) { $basePgDb = "app_test" }
 $fmt = $env:TEST_DB_WORKER_SUFFIX_FORMAT; if (-not $fmt) { $fmt = "_w%02d" }
+$services = & $Testkit ps --services 2>$null
+$serviceNames = @($services -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
 
-function Mk-DbName([int]$w) {
+function Mk-DbName([string]$baseName, [int]$w) {
   if ($fmt -match '%0(\d+)d') {
     $width = [int]$Matches[1]
-    return ($baseDb + "_w" + $w.ToString("D$width"))
+    return ($baseName + "_w" + $w.ToString("D$width"))
   }
-  return ($baseDb + "_w" + $w)
+  return ($baseName + "_w" + $w)
 }
 
-function Seed-MySqlShared {
-  Write-Host "==> Seeding MySQL (shared)…"
-  & $Testkit run --rm testkit php /workspace/testkit/scripts/seed_router.php mysql
+function Assert-SafeDbName([string]$db) {
+  if ($db -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "Nombre de DB inválido para provisioning: $db"
+  }
+}
+
+function Normalize-Driver([string]$driver) {
+  if (-not $driver) { return "mysql" }
+  if ($driver.ToLower().StartsWith("pg")) { return "pgsql" }
+  return "mysql"
+}
+
+function Driver-BaseDb([string]$driver) {
+  if ($driver -eq "pgsql") {
+    if ($env:TEST_PG_DB) { return $env:TEST_PG_DB }
+    if ($env:PG_DB) { return $env:PG_DB }
+    return $basePgDb
+  }
+  if ($env:DB_NAME) { return $env:DB_NAME }
+  return $baseMysqlDb
+}
+
+function Bootstrap-StoreShared([string]$driver) {
+  Write-Host ("==> Bootstrapping store: {0} (shared)" -f $driver)
+  & $Testkit run --rm testkit php /workspace/testkit/scripts/store_router.php bootstrap $driver
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Seed-MySqlDb([string]$db) {
-  Write-Host ("==> Seeding MySQL DB: {0}" -f $db)
-  & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/seed_router.php mysql
+function Bootstrap-StoreDb([string]$driver, [string]$db) {
+  Write-Host ("==> Bootstrapping store: {0} / db={1}" -f $driver, $db)
+  Assert-SafeDbName $db
+  if ($driver -eq "pgsql") {
+    & $Testkit run --rm -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap pgsql
+  }
+  else {
+    & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap mysql
+  }
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Seed-PgShared {
-  Write-Host "==> Seeding Postgres…"
-  & $Testkit run --rm testkit php /workspace/testkit/scripts/seed_router.php pgsql
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+function Bootstrap-Driver([string]$driver) {
+  $baseDb = Driver-BaseDb $driver
+  if ($strategy -eq "per_worker") {
+    for ($i = 1; $i -le $jobs; $i++) {
+      Bootstrap-StoreDb $driver (Mk-DbName $baseDb $i)
+    }
+    return
+  }
+
+  Bootstrap-StoreShared $driver
 }
 
-if ($strategy -eq "per_worker") {
-  for ($i = 1; $i -le $jobs; $i++) { Seed-MySqlDb (Mk-DbName $i) }
-} else {
-  Seed-MySqlShared
+$configuredDriver = if ($env:TEST_DB_DRIVER) { $env:TEST_DB_DRIVER } else { $env:DB_DRIVER }
+if ($configuredDriver) {
+  Bootstrap-Driver (Normalize-Driver $configuredDriver)
+  exit 0
 }
 
-$services = & $Testkit ps --services
-if ($services -match '(^|?
-)postgres_test(?
-|$)') {
-  Seed-PgShared
-} else {
-  Write-Host "==> Postgres no activo (ok)."
+$drivers = New-Object System.Collections.Generic.List[string]
+if ($serviceNames -contains 'mysql_test') { $drivers.Add('mysql') }
+if ($serviceNames -contains 'postgres_test') { $drivers.Add('pgsql') }
+if ($drivers.Count -eq 0) { $drivers.Add('mysql') }
+
+foreach ($driver in $drivers) {
+  Bootstrap-Driver $driver
 }

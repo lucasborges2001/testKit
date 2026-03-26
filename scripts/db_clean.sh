@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 # /testkit/scripts/db_clean.sh
-# TRUNCATE de todas las tablas en mysql_test (docker).
+# Limpieza de datos por store dentro del contenedor TestKit.
 # =============================================================================
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."  # <testkit>
@@ -45,7 +45,19 @@ load_env_kv_safe "$ENV_FILE" || true
 
 STRATEGY="${TEST_DB_STRATEGY:-shared}"
 JOBS="${TEST_JOBS:-1}"
+DRIVER="${TEST_DB_DRIVER:-${DB_DRIVER:-}}"
+if [[ -z "$DRIVER" ]]; then
+  if [[ -n "${TEST_PG_DB:-${PG_DB:-}}" && -z "${TEST_MYSQL_DB:-}" ]]; then
+    DRIVER="pgsql"
+  else
+    DRIVER="mysql"
+  fi
+fi
+[[ "$DRIVER" =~ ^pg ]] && DRIVER="pgsql"
 BASE_DB="${TEST_MYSQL_DB:-app_test}"
+if [[ "$DRIVER" == "pgsql" ]]; then
+  BASE_DB="${TEST_PG_DB:-${PG_DB:-app_test}}"
+fi
 SUFFIX_FMT="${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
 
 MODE="base"   # base|worker|all
@@ -57,22 +69,16 @@ mk_db_name() { local w="$1"; printf "%s" "${BASE_DB}$(printf "$SUFFIX_FMT" "$w")
 
 clean_db() {
   local db="$1"
-  echo "==> Cleaning MySQL DB: ${db}"
+  echo "==> Cleaning ${DRIVER} DB: ${db}"
 
-  local tables
-  tables="$("$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1" -Nse "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\"BASE TABLE\";"' -- "$db" || true)"
+  local env_args=()
+  if [[ "$DRIVER" == "pgsql" ]]; then
+    env_args=(-e PG_DB="$db" -e TEST_PG_DB="$db")
+  else
+    env_args=(-e DB_NAME="$db" -e TEST_MYSQL_DB="$db")
+  fi
 
-  [[ -z "${tables//[[:space:]]/}" ]] && { echo "   (no tables found or DB missing)" >&2; return 0; }
-
-  {
-    printf "SET FOREIGN_KEY_CHECKS=0;\n"
-    while IFS= read -r t; do
-      t="${t//$'\r'/}"
-      [[ -z "$t" ]] && continue
-      [[ "$t" =~ ^[A-Za-z0-9_]+$ ]] && printf "TRUNCATE TABLE \`%s\`;\n" "$t"
-    done <<< "$tables"
-    printf "SET FOREIGN_KEY_CHECKS=1;\n"
-  } | "$TK" exec -T mysql_test sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$1"' -- "$db"
+  "$TK" run --rm "${env_args[@]}" testkit php /workspace/testkit/scripts/store_router.php clean "$DRIVER"
 }
 
 if [[ "$STRATEGY" == "per_worker" ]]; then
