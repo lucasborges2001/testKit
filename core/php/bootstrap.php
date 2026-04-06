@@ -16,6 +16,7 @@ require_once __DIR__ . '/execution/SuiteExecutor.php';
 require_once __DIR__ . '/coverage/CoverageMerger.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
+require_once __DIR__ . '/reporting/UI.php';
 require_once __DIR__ . '/reporting/ConsoleReporter.php';
 require_once __DIR__ . '/reporting/HistoryRepository.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';
