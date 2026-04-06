@@ -11,22 +11,20 @@ final class ConsoleReporter
     public static function printSuiteStart(array $config, int $testsCount): void
     {
         $name = strtoupper(str_replace('_', ' ', (string)$config['suite_id']));
-        if (function_exists('pvt_ui_banner')) {
-            pvt_ui_banner($name);
-        }
+        UI::header($name);
 
-        echo 'Running ' . $testsCount . ' tests';
-        echo ' (scope=' . (string)$config['scope'];
-        echo ', category=' . (string)$config['category'];
-        echo ', failFast=' . ((bool)$config['fail_fast'] ? '1' : '0');
-        echo ', jobs=' . (int)$config['jobs'] . ")\n";
+        echo UI::bold("Running {$testsCount} tests");
+        echo " (scope=" . UI::gray((string)$config['scope']);
+        echo ", category=" . UI::gray((string)$config['category']);
+        echo ", failFast=" . UI::gray((bool)$config['fail_fast'] ? '1' : '0');
+        echo ", jobs=" . UI::gray((string)$config['jobs']) . ")\n";
 
         if ((bool)$config['coverage']) {
-            echo 'Coverage: on (' . (string)$config['coverage_format'] . ') dir=' . (string)$config['coverage_dir'] . "\n";
+            echo "Coverage: " . UI::success("on") . " (" . (string)$config['coverage_format'] . ") dir=" . UI::gray((string)$config['coverage_dir']) . "\n";
         }
 
         if ((string)$config['match'] !== '') {
-            echo 'Match: ' . (string)$config['match'] . "\n";
+            echo "Match:    " . UI::info((string)$config['match']) . "\n";
         }
     }
 
@@ -36,7 +34,7 @@ final class ConsoleReporter
     public static function printList(array $tests): void
     {
         foreach ($tests as $test) {
-            echo (string)$test['rel'] . "\n";
+            echo "  " . UI::gray((string)$test['rel']) . "\n";
         }
     }
 
@@ -50,11 +48,11 @@ final class ConsoleReporter
         $skip = (int)($result['skip'] ?? 0);
         $duration = (int)($result['duration_ms'] ?? 0);
 
-        $counts = function_exists('pvt_ui_counts')
-            ? pvt_ui_counts($pass, $fail, $skip)
-            : ('PASS=' . $pass . ' FAIL=' . $fail . ' SKIP=' . $skip);
+        $p = UI::success("PASS={$pass}");
+        $f = $fail > 0 ? UI::failure("FAIL={$fail}") : UI::gray("FAIL={$fail}");
+        $s = $skip > 0 ? UI::warning("SKIP={$skip}") : UI::gray("SKIP={$skip}");
 
-        echo "\nSummary: {$counts} time_ms={$duration}\n";
+        echo "\n" . UI::bold("Summary:") . " {$p} {$f} {$s} " . UI::gray("time_ms={$duration}") . "\n";
 
         self::printModuleSummary($result);
         self::printFailures($result);
@@ -68,21 +66,16 @@ final class ConsoleReporter
      */
     public static function printMeta(array $meta): void
     {
-        if (function_exists('pvt_ui_banner')) {
-            pvt_ui_banner('META SUMMARY');
-        }
+        UI::header("META SUMMARY");
 
         foreach (($meta['suites'] ?? []) as $suite) {
             $name = (string)($suite['suite_id'] ?? 'suite');
             $code = (int)($suite['exit_code'] ?? 1);
-            if (function_exists('pvt_ui_summary_line')) {
-                echo pvt_ui_summary_line($name, $code);
-            } else {
-                echo str_pad($name, 24) . ' -> code=' . $code . "\n";
-            }
+            $status = $code === 0 ? UI::success("OK") : ($code === 2 ? UI::warning("SKIP") : UI::failure("FAIL"));
+            echo "  " . str_pad($name, 24) . " -> " . $status . UI::gray(" (code={$code})") . "\n";
         }
 
-        echo 'Total time_ms=' . (int)($meta['duration_ms'] ?? 0) . "\n";
+        echo "\n" . UI::bold("Total time_ms=") . UI::gray((string)($meta['duration_ms'] ?? 0)) . "\n";
     }
 
     /**
@@ -95,13 +88,18 @@ final class ConsoleReporter
             return;
         }
 
-        echo "\nModule summary\n";
+        UI::section("Module Summary");
+        echo UI::gray(str_pad("Module", 30) . " | Total | Pass | Fail | Skip") . "\n";
+        UI::separator();
         foreach ($summary as $module => $stat) {
             $pass = (int)($stat['pass'] ?? 0);
             $fail = (int)($stat['fail'] ?? 0);
             $skip = (int)($stat['skip'] ?? 0);
             $total = (int)($stat['total'] ?? 0);
-            echo '  ' . str_pad((string)$module, 26) . ' total=' . $total . ' pass=' . $pass . ' fail=' . $fail . ' skip=' . $skip . "\n";
+            
+            $moduleStr = str_pad((string)$module, 30);
+            $f = $fail > 0 ? UI::failure(sprintf("%4d", $fail)) : sprintf("%4d", $fail);
+            echo sprintf("%s | %5d | %4d | %s | %4d\n", $moduleStr, $total, $pass, $f, $skip);
         }
     }
 
@@ -115,11 +113,11 @@ final class ConsoleReporter
             return;
         }
 
-        echo "\nFailed tests\n";
+        UI::section("Failed Tests");
         foreach ($failed as $test) {
             $rel = (string)($test['rel'] ?? 'unknown');
             $code = (int)($test['exit_code'] ?? 1);
-            echo '  - ' . $rel . ' (exit=' . $code . ")\n";
+            echo "  " . UI::failure("X") . " {$rel} " . UI::gray("(exit={$code})") . "\n";
 
             $stderr = trim((string)($test['stderr'] ?? ''));
             $stdout = trim((string)($test['stdout'] ?? ''));
@@ -127,11 +125,18 @@ final class ConsoleReporter
 
             if ($snippet !== '') {
                 $lines = preg_split('/\r\n|\r|\n/', $snippet) ?: [];
-                $lines = array_slice($lines, 0, 10);
+                $lines = array_slice($lines, 0, 8);
                 foreach ($lines as $line) {
-                    echo '      ' . $line . "\n";
+                    echo "    " . UI::gray("|") . " " . $line . "\n";
                 }
+                echo "    " . UI::gray("+-- (truncated)") . "\n";
             }
+        }
+        
+        if ($failed) {
+            $suiteId = (string)($result['suite_id'] ?? '');
+            $target = str_replace('_', '-', $suiteId);
+            echo "\n" . UI::bold("Next step:") . " " . UI::info("TEST_MATCH='{$failed[0]['rel']}' php runTest.php {$target}") . "\n";
         }
     }
 
@@ -145,9 +150,9 @@ final class ConsoleReporter
             return;
         }
 
-        echo "\nSlow tests\n";
+        UI::section("Slow Tests");
         foreach ($slow as $test) {
-            echo '  - ' . str_pad((string)$test['duration_ms'], 6, ' ', STR_PAD_LEFT) . ' ms  ' . (string)$test['rel'] . "\n";
+            echo sprintf("  " . UI::warning("!") . " %6d ms  %s\n", (int)$test['duration_ms'], (string)$test['rel']);
         }
     }
 

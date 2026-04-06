@@ -123,7 +123,8 @@ _dump_config() {
 
 doctor() {
   local ok=1
-  echo "== TestKit doctor =="
+  echo ""
+  echo -e "\033[1m== TESTKIT DOCTOR ==\033[0m"
 
   # Env
   ENV_FILE="$(pick_env_file || true)"

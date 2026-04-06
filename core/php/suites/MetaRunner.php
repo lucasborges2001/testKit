@@ -67,6 +67,12 @@ final class MetaRunner
         ConsoleReporter::printMeta($meta);
         ResultWriter::writeMeta($meta);
 
+        if ($overallFail) {
+            echo "\n[Action Required]\n";
+            echo "Alguna suite falló. Revisá los logs de arriba o corré el reporte detallado:\n";
+            echo "  php scripts/report.php\n";
+        }
+
         return $overallFail ? 1 : 0;
     }
 
@@ -79,21 +85,10 @@ final class MetaRunner
         $scope = Env::string('TEST_SCOPE', 'all');
         $match = Env::string('TEST_MATCH', '');
 
-        echo "== TestKit Startup ==\n";
-        echo "Target:   " . $target;
-        
-        $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
-        if (Env::string($envKey, '') !== '') {
-            echo " (override: {$envKey})";
-        }
-        echo "\n";
-
-        echo "Suites:   " . implode(', ', $suites) . "\n";
-        echo "Filters:  scope={$scope}, category={$category}";
-        if ($match !== '') {
-            echo ", match={$match}";
-        }
-        echo "\n";
+        UI::header("TESTKIT STARTUP");
+        UI::label("Target", $target . (Env::string('TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target)), '') !== '' ? " (override)" : ""));
+        UI::label("Suites", implode(', ', $suites));
+        UI::label("Filters", "scope={$scope}, category={$category}" . ($match !== '' ? ", match={$match}" : ""));
 
         $overrides = [];
         foreach (['TK_BACK_PHP_DIR', 'TK_BACK_PYTHON_DIR', 'TK_FRONT_PHP_DIR', 'TK_FRONT_JS_DIR', 'TK_MODULE_LEVEL', 'TK_TAG_MAP'] as $key) {
@@ -104,9 +99,9 @@ final class MetaRunner
         }
 
         if ($overrides !== []) {
-            echo "Context:  " . implode(', ', $overrides) . "\n";
+            UI::label("Context", implode(', ', $overrides));
         }
-        echo "---------------------\n\n";
+        UI::separator();
     }
 
     /**

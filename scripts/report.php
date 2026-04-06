@@ -51,22 +51,36 @@ if (!$reports) {
 
 usort($reports, static fn(array $a, array $b): int => strcmp((string)$a['suite_id'], (string)$b['suite_id']));
 
-echo "== TestKit Report ==\n";
-echo "reports: {$reportsRoot}\n\n";
-
-echo "Suite summary\n";
-foreach ($reports as $report) {
-    $suite = (string)$report['suite_id'];
-    $pass = (int)($report['pass'] ?? 0);
-    $fail = (int)($report['fail'] ?? 0);
-    $skip = (int)($report['skip'] ?? 0);
-    $duration = (int)($report['duration_ms'] ?? 0);
-    $exitCode = (int)($report['exit_code'] ?? 1);
-
-    echo str_pad($suite, 20) . " exit={$exitCode} pass={$pass} fail={$fail} skip={$skip} time_ms={$duration}\n";
+$totalPass = 0; $totalFail = 0; $totalSkip = 0; $totalTests = 0;
+foreach ($reports as $r) {
+    $totalPass += (int)($r['pass'] ?? 0);
+    $totalFail += (int)($r['fail'] ?? 0);
+    $totalSkip += (int)($r['skip'] ?? 0);
+    $totalTests += (int)($r['tests_total'] ?? 0);
 }
 
-echo "\nFailed tests by suite\n";
+echo "== TestKit Executive Summary ==\n";
+echo "Status:    " . ($totalFail > 0 ? "FAIL" : "PASS") . "\n";
+echo "Total:     {$totalTests} tests\n";
+echo "Results:   pass={$totalPass} fail={$totalFail} skip={$totalSkip}\n";
+echo "Reports:   {$reportsRoot}\n";
+echo str_repeat("=", 32) . "\n\n";
+
+echo "Suite Summary\n";
+echo str_pad("Suite", 20) . " | Exit | Pass | Fail | Skip | Time (ms)\n";
+echo str_repeat("-", 65) . "\n";
+foreach ($reports as $report) {
+    $suite = str_pad((string)$report['suite_id'], 20);
+    $pass = str_pad((string)($report['pass'] ?? 0), 4, " ", STR_PAD_LEFT);
+    $fail = str_pad((string)($report['fail'] ?? 0), 4, " ", STR_PAD_LEFT);
+    $skip = str_pad((string)($report['skip'] ?? 0), 4, " ", STR_PAD_LEFT);
+    $duration = str_pad((string)($report['duration_ms'] ?? 0), 9, " ", STR_PAD_LEFT);
+    $exitCode = (int)($report['exit_code'] ?? 1);
+
+    echo "{$suite} |  {$exitCode}   | {$pass} | {$fail} | {$skip} | {$duration}\n";
+}
+
+echo "\nFailed Tests by Suite\n";
 $hasFailures = false;
 foreach ($reports as $report) {
     $failed = $report['failed_tests'] ?? [];
