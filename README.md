@@ -1,8 +1,10 @@
 # testkit
 
-`testkit` is the shared testing platform for this repository.
+`testkit` is an opinionated testing platform designed to provide a unified environment and execution engine for this repository.
 
 It does not contain domain tests. It provides reusable runners, conventions, diagnostics and reports so each module (for example `ocpp_server`) can test without rebuilding infra.
+
+While it aims for reusability, it depends on specific layout conventions and standard suites (PHP/Python/JS) to function effectively.
 
 ## What it provides
 
@@ -79,9 +81,10 @@ TEST_CATEGORY=critical php runTest.php all
 
 ## Outputs
 
-- `testkit/_out/reports/*_latest.json`
-- `testkit/_out/history/*.json`
-- `testkit/_out/coverage/*`
+- `test/reports/*_latest.json`
+- `test/history/*.json`
+- `test/coverage/*`
+- `test/querylog.jsonl` (si el profiling de DB está activo)
 
 Human report:
 
@@ -103,12 +106,23 @@ php scripts/query_report.php
 
 ## Contract with project
 
-Expected project layout:
+To adopt `testkit`, a project should align with the following expectations:
 
-- `<project>/test/back/**`
-- `<project>/test/front/**` (optional)
-- `<project>/test/.env.test` (preferred) or `<project>/.env.test`
+### Contractual (Strict Requirements)
+- **Root `test/` folder**: All test-related logic must reside here.
+- **Environment file**: A `.env.test` file is required (either in `<project>/test/` or at the root).
+- **Test Discovery suffixes**: Files must follow standard naming (e.g., `_unit.php`, `.test.py`) or be located in directories named after their scope (e.g., `/integration/`).
 
-The platform is intentionally generic and module-agnostic.
+### Conventions (Configurable Defaults)
+- **Source folders**: Defaults to `back/` and `public_html/` (configurable via `TK_BACK_DIR` and `TK_PUBLIC_DIR`).
+- **Suite roots**:
+  - `TK_BACK_PHP_DIR`: Root for PHP back tests (default: `test/back`).
+  - `TK_BACK_PYTHON_DIR`: Root for Python tests (default: `test/back`).
+  - `TK_FRONT_PHP_DIR`: Root for PHP front tests (default: `test/front`).
+  - `TK_FRONT_JS_DIR`: Root for JS front tests (default: `test/front`).
+- **Seed layout**: Database initialization follows a layered structure in `test/seeds/<driver>/`.
+
+Ownership:
+`testkit` is an execution platform and environment manager. It does not own the results; all test outputs, history, and coverage data are stored within the host project's `test/` directory to ensure they belong to the project being tested.
 
 For layered seeds, `testkit` owns lifecycle and orchestration. Project support should build scenarios with builders/helpers after the structural base exists; it should not redefine reset policy or the seed pipeline.

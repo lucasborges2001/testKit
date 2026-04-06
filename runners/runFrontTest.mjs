@@ -24,8 +24,9 @@ const __dirname = path.dirname(__filename);
 const testkitRoot = process.env.TESTKIT_ROOT || path.resolve(__dirname, "..");
 const repoRoot = process.env.TK_REPO_ROOT || process.env.TESTKIT_PROJECT_ROOT || path.resolve(testkitRoot, "..");
 
-const testsDirPreferred = path.join(repoRoot, "test", "front", "tests");
-const testsDir = fs.existsSync(testsDirPreferred) ? testsDirPreferred : path.join(repoRoot, "test", "front");
+const testRel = process.env.TK_FRONT_JS_DIR || "test/front";
+const testsDirPreferred = path.join(repoRoot, testRel, "tests");
+const testsDir = fs.existsSync(testsDirPreferred) ? testsDirPreferred : path.join(repoRoot, testRel);
 
 const scope = (process.env.TEST_SCOPE || "all").toLowerCase();
 const category = (process.env.TEST_CATEGORY || "all").toLowerCase();

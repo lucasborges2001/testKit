@@ -99,6 +99,11 @@ _dump_config() {
   echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
   echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
   echo ""
+  echo "TK_BACK_PHP_DIR:    ${TK_BACK_PHP_DIR:-test/back}"
+  echo "TK_BACK_PYTHON_DIR: ${TK_BACK_PYTHON_DIR:-test/back}"
+  echo "TK_FRONT_PHP_DIR:   ${TK_FRONT_PHP_DIR:-test/front}"
+  echo "TK_FRONT_JS_DIR:    ${TK_FRONT_JS_DIR:-test/front}"
+  echo ""
   echo "TEST_JOBS: ${TEST_JOBS:-1}"
   echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
   echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
@@ -129,18 +134,30 @@ doctor() {
   if [[ -d "${PROJECT_ROOT}/${back_dir}" ]]; then
     echo "[OK] ${back_dir}/ (TK_BACK_DIR)"
   else
-    echo "[FAIL] falta ${PROJECT_ROOT}/${back_dir} (set TK_BACK_DIR en env)"; ok=0
+    echo "[INFO] carpeta ${back_dir}/ no detectada. Esto es normal si tu layout es distinto."
   fi
   if [[ -d "${PROJECT_ROOT}/${public_dir}" ]]; then
     echo "[OK] ${public_dir}/ (TK_PUBLIC_DIR)"
   else
-    echo "[FAIL] falta ${PROJECT_ROOT}/${public_dir} (set TK_PUBLIC_DIR en env)"; ok=0
+    echo "[INFO] carpeta ${public_dir}/ no detectada. (Opcional)"
   fi
   if [[ -d "${PROJECT_ROOT}/test" ]]; then
     echo "[OK] test/ del proyecto"
   else
     echo "[FAIL] falta ${PROJECT_ROOT}/test"; ok=0
   fi
+
+  # Suite roots (validar si existen o avisar)
+  local bp="${TK_BACK_PHP_DIR:-test/back}"
+  local bpy="${TK_BACK_PYTHON_DIR:-test/back}"
+  local fp="${TK_FRONT_PHP_DIR:-test/front}"
+  local fjs="${TK_FRONT_JS_DIR:-test/front}"
+
+  for d in "$bp" "$bpy" "$fp" "$fjs"; do
+    if [[ ! -d "${PROJECT_ROOT}/$d" ]]; then
+      echo "[WARN] suite root no detectado: $d. (Opcional)"
+    fi
+  done
 
   # Bootstrap hints (no hard-fail por defecto)
   local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"

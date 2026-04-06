@@ -65,10 +65,11 @@ testkit/
   - `2`: skip
   - `3`: error de runner/config
 
-- Artefactos:
-  - `testkit/_out/reports/*.json`
-  - `testkit/_out/history/*.json`
-  - `testkit/_out/coverage/*`
+- Artefactos (propiedad del proyecto anfitrión):
+  - `test/reports/*.json`
+  - `test/history/*.json`
+  - `test/coverage/*`
+  - `test/querylog.jsonl`
 
 ## 6) Extensibilidad
 
@@ -86,7 +87,8 @@ Para agregar una categoria:
 
 ## 7) Decisiones importantes
 
-- El meta-runner soporta PHP, Python y JS sin mezclar logica de dominio.
+- El meta-runner soporta PHP, Python y JS bajo convenciones de layout estándar.
+- El sistema es una plataforma de opinión fuerte (opinionated) que requiere adherencia a su estructura de `test/`.
 - Coverage se usa como diagnostico accionable.
 - Fragilidad se detecta por historial local, no por una sola corrida.
 - Runners y scripts se mantienen finos; la logica vive en `core/php`.

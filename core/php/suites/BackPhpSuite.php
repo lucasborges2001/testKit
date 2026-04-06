@@ -15,7 +15,8 @@ final class BackPhpSuite
         $repoRoot = Paths::repoRoot();
         $testkitRoot = Paths::testkitRoot();
 
-        $testsRoot = $repoRoot . '/test/back';
+        $testRel = Env::string('TK_BACK_PHP_DIR', 'test/back');
+        $testsRoot = $repoRoot . '/' . $testRel;
         $testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
 
         $config = RunnerConfig::forSuite(

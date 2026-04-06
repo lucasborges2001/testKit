@@ -121,12 +121,13 @@ final class SuiteExecutor
             }
 
             $doneIndex = null;
-            foreach ($running as $index => $row) {
+            foreach ($running as $index => &$row) {
                 if (!ProcessRunner::isRunning($row['job'])) {
                     $doneIndex = $index;
                     break;
                 }
             }
+            unset($row);
 
             if ($doneIndex === null) {
                 usleep(20000);

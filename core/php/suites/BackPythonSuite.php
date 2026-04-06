@@ -13,7 +13,8 @@ final class BackPythonSuite
     {
         $repoRoot = Paths::repoRoot();
         $testkitRoot = Paths::testkitRoot();
-        $testsRoot = $repoRoot . '/test/back';
+        $testRel = Env::string('TK_BACK_PYTHON_DIR', 'test/back');
+        $testsRoot = $repoRoot . '/' . $testRel;
 
         $config = RunnerConfig::forSuite(
             'back_python',

@@ -15,7 +15,8 @@ final class FrontPhpSuite
         $repoRoot = Paths::repoRoot();
         $testkitRoot = Paths::testkitRoot();
 
-        $testsRoot = $repoRoot . '/test/front';
+        $testRel = Env::string('TK_FRONT_PHP_DIR', 'test/front');
+        $testsRoot = $repoRoot . '/' . $testRel;
         $testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
 
         $config = RunnerConfig::forSuite(

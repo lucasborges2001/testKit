@@ -33,8 +33,8 @@ final class ProcessRunner
         }
 
         fclose($pipes[0]);
-        stream_set_blocking($pipes[1], true);
-        stream_set_blocking($pipes[2], true);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
 
         return [
             'ok' => true,
@@ -50,11 +50,13 @@ final class ProcessRunner
     /**
      * @param array<string,mixed> $job
      */
-    public static function isRunning(array $job): bool
+    public static function isRunning(array &$job): bool
     {
         if (!($job['ok'] ?? false)) {
             return false;
         }
+
+        self::consume($job);
 
         if (!is_resource($job['proc'])) {
             return false;
@@ -68,25 +70,106 @@ final class ProcessRunner
      * @param array<string,mixed> $job
      * @return array<string,mixed>
      */
-    public static function finish(array $job): array
+    public static function finish(array &$job): array
     {
         if (!($job['ok'] ?? false)) {
             $job['duration_ms'] = max(0, self::nowMs() - (int)($job['start_ms'] ?? self::nowMs()));
             return $job;
         }
 
-        $stdout = (string)stream_get_contents($job['pipes'][1]);
-        $stderr = (string)stream_get_contents($job['pipes'][2]);
-        fclose($job['pipes'][1]);
-        fclose($job['pipes'][2]);
+        if (is_resource($job['proc'] ?? null)) {
+            while (true) {
+                self::consume($job);
+                $status = proc_get_status($job['proc']);
+                if (!is_array($status) || !($status['running'] ?? false)) {
+                    break;
+                }
+                usleep(10000);
+            }
+        }
+
+        self::consume($job);
+        self::closeReadablePipe($job, 1);
+        self::closeReadablePipe($job, 2);
 
         $code = is_resource($job['proc']) ? (int)proc_close($job['proc']) : 127;
 
         $job['code'] = $code;
-        $job['stdout'] = $stdout;
-        $job['stderr'] = $stderr;
         $job['duration_ms'] = max(0, self::nowMs() - (int)($job['start_ms'] ?? self::nowMs()));
         return $job;
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    private static function consume(array &$job): void
+    {
+        if (!isset($job['stdout']) || !is_string($job['stdout'])) {
+            $job['stdout'] = '';
+        }
+        if (!isset($job['stderr']) || !is_string($job['stderr'])) {
+            $job['stderr'] = '';
+        }
+
+        if (!isset($job['pipes']) || !is_array($job['pipes'])) {
+            return;
+        }
+
+        $read = [];
+        $map = [];
+        foreach ([1 => 'stdout', 2 => 'stderr'] as $index => $key) {
+            if (!isset($job['pipes'][$index]) || !is_resource($job['pipes'][$index])) {
+                continue;
+            }
+
+            $stream = $job['pipes'][$index];
+            $read[] = $stream;
+            $map[(int)$stream] = $key;
+        }
+
+        if ($read === []) {
+            return;
+        }
+
+        $write = [];
+        $except = [];
+        $ready = @stream_select($read, $write, $except, 0, 0);
+        if ($ready === false || $ready === 0) {
+            return;
+        }
+
+        foreach ($read as $stream) {
+            $key = $map[(int)$stream] ?? null;
+            if ($key === null) {
+                continue;
+            }
+
+            while (true) {
+                $chunk = fread($stream, 8192);
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+
+                $job[$key] .= $chunk;
+
+                if (strlen($chunk) < 8192) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $job
+     */
+    private static function closeReadablePipe(array &$job, int $index): void
+    {
+        if (isset($job['pipes'][$index]) && is_resource($job['pipes'][$index])) {
+            fclose($job['pipes'][$index]);
+        }
+        if (isset($job['pipes'][$index])) {
+            unset($job['pipes'][$index]);
+        }
     }
 
     /**
