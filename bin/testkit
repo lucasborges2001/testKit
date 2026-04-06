@@ -111,6 +111,14 @@ _dump_config() {
   echo "TEST_COVERAGE: ${TEST_COVERAGE:-0}"
   echo "TEST_USE_PUBLIC_LOADER: ${TEST_USE_PUBLIC_LOADER:-1}"
   echo ""
+
+  # Listar overrides de targets si existen
+  local targets=$(env | grep '^TESTKIT_TARGET_' || true)
+  if [[ -n "$targets" ]]; then
+    echo "-- Target Overrides --"
+    echo "$targets"
+    echo ""
+  fi
 }
 
 doctor() {
@@ -153,11 +161,30 @@ doctor() {
   local fp="${TK_FRONT_PHP_DIR:-test/front}"
   local fjs="${TK_FRONT_JS_DIR:-test/front}"
 
-  for d in "$bp" "$bpy" "$fp" "$fjs"; do
-    if [[ ! -d "${PROJECT_ROOT}/$d" ]]; then
-      echo "[WARN] suite root no detectado: $d. (Opcional)"
+  for d in "TK_BACK_PHP_DIR:$bp" "TK_BACK_PYTHON_DIR:$bpy" "TK_FRONT_PHP_DIR:$fp" "TK_FRONT_JS_DIR:$fjs"; do
+    local key="${d%%:*}"
+    local val="${d#*:}"
+    if [[ ! -d "${PROJECT_ROOT}/$val" ]]; then
+      echo "[WARN] $key: ruta no detectada: $val. (Opcional)"
+    else
+      # Indicar si es override
+      if env | grep -q "^$key="; then
+        echo "[OK] $key: $val (override)"
+      else
+        echo "[OK] $key: $val (default)"
+      fi
     fi
   done
+
+  # Target overrides info
+  local target_overrides=$(env | grep '^TESTKIT_TARGET_' || true)
+  if [[ -n "$target_overrides" ]]; then
+     echo "[INFO] targets personalizados detectados: $(echo "$target_overrides" | cut -d= -f1 | xargs | tr ' ' ',')"
+  fi
+
+  # Discovery info
+  if [[ -n "${TK_MODULE_LEVEL:-}" ]]; then echo "[OK] TK_MODULE_LEVEL: $TK_MODULE_LEVEL (override)"; fi
+  if [[ -n "${TK_TAG_MAP:-}" ]]; then echo "[OK] TK_TAG_MAP: $TK_TAG_MAP (override)"; fi
 
   # Bootstrap hints (no hard-fail por defecto)
   local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"

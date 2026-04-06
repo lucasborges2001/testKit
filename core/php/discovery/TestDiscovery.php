@@ -132,14 +132,20 @@ final class TestDiscovery
     private static function moduleFromRel(string $rel): string
     {
         $parts = array_values(array_filter(explode('/', str_replace('\\', '/', $rel)), static fn(string $p): bool => $p !== ''));
-        if (count($parts) < 3) {
-            return $parts[0] ?? 'unknown';
+        if ($parts === []) {
+            return 'unknown';
         }
 
-        if ($parts[0] === 'test' && isset($parts[1], $parts[2])) {
-            return $parts[1] . '/' . $parts[2];
+        $level = max(1, (int)(getenv('TK_MODULE_LEVEL') ?: 2));
+
+        if ($parts[0] === 'test' && count($parts) >= ($level + 1)) {
+            return implode('/', array_slice($parts, 1, $level));
         }
 
-        return $parts[0] . '/' . $parts[1];
+        if (count($parts) >= $level) {
+            return implode('/', array_slice($parts, 0, $level));
+        }
+
+        return $parts[0];
     }
 }

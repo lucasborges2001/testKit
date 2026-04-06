@@ -46,8 +46,21 @@ final class TestTagger
             'fragile' => ['fragile', 'flaky', 'inestable'],
         ];
 
+        // Extender el mapa vía env: "tag:token1,token2;tag2:token3"
+        $customMap = (string)(getenv('TK_TAG_MAP') ?: '');
+        if ($customMap !== '') {
+            foreach (explode(';', $customMap) as $pair) {
+                if (!str_contains($pair, ':')) continue;
+                [$tag, $tokens] = explode(':', $pair, 2);
+                $tag = trim($tag);
+                if (!isset($tokenMap[$tag])) $tokenMap[$tag] = [];
+                $tokenMap[$tag] = array_merge($tokenMap[$tag], array_map('trim', explode(',', $tokens)));
+            }
+        }
+
         foreach ($tokenMap as $tag => $tokens) {
             foreach ($tokens as $token) {
+                if ($token === '') continue;
                 if (
                     str_contains($normalized, '/' . $token . '/') ||
                     str_contains($normalized, '_' . $token . '_') ||

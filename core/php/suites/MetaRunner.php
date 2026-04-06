@@ -71,6 +71,45 @@ final class MetaRunner
     }
 
     /**
+     * @param array<int,string> $suites
+     */
+    private static function printStartupSummary(string $target, array $suites): void
+    {
+        $category = Env::string('TEST_CATEGORY', 'all');
+        $scope = Env::string('TEST_SCOPE', 'all');
+        $match = Env::string('TEST_MATCH', '');
+
+        echo "== TestKit Startup ==\n";
+        echo "Target:   " . $target;
+        
+        $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
+        if (Env::string($envKey, '') !== '') {
+            echo " (override: {$envKey})";
+        }
+        echo "\n";
+
+        echo "Suites:   " . implode(', ', $suites) . "\n";
+        echo "Filters:  scope={$scope}, category={$category}";
+        if ($match !== '') {
+            echo ", match={$match}";
+        }
+        echo "\n";
+
+        $overrides = [];
+        foreach (['TK_BACK_PHP_DIR', 'TK_BACK_PYTHON_DIR', 'TK_FRONT_PHP_DIR', 'TK_FRONT_JS_DIR', 'TK_MODULE_LEVEL', 'TK_TAG_MAP'] as $key) {
+            $val = Env::string($key, '');
+            if ($val !== '') {
+                $overrides[] = "{$key}={$val}";
+            }
+        }
+
+        if ($overrides !== []) {
+            echo "Context:  " . implode(', ', $overrides) . "\n";
+        }
+        echo "---------------------\n\n";
+    }
+
+    /**
      * @return array<int,string>
      */
     private static function resolveTarget(string $target): array
@@ -96,6 +135,24 @@ final class MetaRunner
             'critical' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'slow' => ['back_php', 'back_python', 'front_php', 'front_js'],
         ];
+
+        $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
+        $envVal = Env::string($envKey, '');
+
+        if ($envVal !== '') {
+            $parts = array_filter(array_map('trim', explode(',', $envVal)));
+            $suites = [];
+            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js'];
+
+            foreach ($parts as $suite) {
+                if (!in_array($suite, $validSuites, true)) {
+                    fwrite(STDERR, "Error en {$envKey}: suite '{$suite}' no reconocida. Valores validos: " . implode('|', $validSuites) . "\n");
+                    exit(3);
+                }
+                $suites[] = $suite;
+            }
+            return array_values(array_unique($suites));
+        }
 
         return $map[$target] ?? [];
     }

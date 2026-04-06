@@ -120,6 +120,12 @@ To adopt `testkit`, a project should align with the following expectations:
   - `TK_BACK_PYTHON_DIR`: Root for Python tests (default: `test/back`).
   - `TK_FRONT_PHP_DIR`: Root for PHP front tests (default: `test/front`).
   - `TK_FRONT_JS_DIR`: Root for JS front tests (default: `test/front`).
+- **Discovery & Tagging**:
+  - `TK_MODULE_LEVEL`: Number of path segments to use for module name (default: `2`).
+  - `TK_TAG_MAP`: Extend path-based tagging (format: `tag:token1,token2;tag2:token3`).
+- **Aggregate Targets Overrides**: Allows customizing which suites run for a given target.
+  - `TESTKIT_TARGET_ALL`, `TESTKIT_TARGET_BACK`, `TESTKIT_TARGET_FRONT`, etc.
+  - Format: comma-separated suite names (`back_php,back_python,front_php,front_js`).
 - **Seed layout**: Database initialization follows a layered structure in `test/seeds/<driver>/`.
 
 Ownership:
