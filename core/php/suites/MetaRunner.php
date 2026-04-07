@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\Suites;
 
 use Testkit\Core\Common\Env;
+use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ResultWriter;
@@ -54,12 +55,17 @@ final class MetaRunner
             }
         }
 
+        // Use the same scoped report root that suites computed, if they all agreed on one.
+        $reportRoot = Paths::aggregateMetaReportRoot();
+        Paths::ensureDir($reportRoot);
+
         $meta = [
-            'target' => $target,
-            'category' => Env::string('TEST_CATEGORY', 'all'),
-            'suites' => $suiteRows,
+            'target'      => $target,
+            'category'    => Env::string('TEST_CATEGORY', 'all'),
+            'suites'      => $suiteRows,
             'duration_ms' => max(0, self::nowMs() - $metaStart),
-            'started_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'started_at'  => gmdate('Y-m-d\TH:i:s\Z'),
+            'report_root' => $reportRoot,
         ];
 
         ConsoleReporter::printMeta($meta);

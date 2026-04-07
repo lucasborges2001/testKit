@@ -5,6 +5,7 @@ namespace Testkit\Core\Suites;
 
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ProcessRunner;
 
 final class FrontJsSuite
@@ -28,12 +29,37 @@ final class FrontJsSuite
             return $requireNode ? 1 : 2;
         }
 
-        $env = self::baseEnv();
-        $env['TESTKIT_ROOT'] = Paths::testkitRoot();
-        $env['TK_REPO_ROOT'] = $repoRoot;
-        $env['TESTKIT_REPORT_FILE'] = Paths::reportsRoot() . '/front_js_latest.json';
+        // Pre-compute report root from PHP-side discovery so both PHP and JS agree on the path.
+        $testsRel  = Env::string('TK_FRONT_JS_DIR', 'test/front');
+        $testsDir  = Paths::normalize($repoRoot . '/' . $testsRel);
+        $discoverConfig = [
+            'scope'             => strtolower(Env::string('TEST_SCOPE', 'all')),
+            'category'          => strtolower(Env::string('TEST_CATEGORY', 'all')),
+            'match'             => Env::string('TEST_MATCH', ''),
+            'metadata_lines'    => 10,
+            'tags_from_filename' => true,
+            'module_level'      => max(1, Env::int('TK_MODULE_LEVEL', 2)),
+            'tag_map'           => '',
+        ];
+        $discovered  = TestDiscovery::discover($testsDir, ['.test.mjs'], $discoverConfig);
+        $reportRoot  = Paths::resolveReportRoot($discovered);
+        $moduleScope = '';
+        if ($reportRoot !== Paths::reportsRoot() && !empty($discovered)) {
+            $moduleScope = Paths::extractFunctionalModule((string)($discovered[0]['rel'] ?? '')) ?? '';
+        }
 
-        $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
+        Paths::recordSuiteReportRoot($reportRoot);
+
+        $env = self::baseEnv();
+        $env['TESTKIT_ROOT']               = Paths::testkitRoot();
+        $env['TK_REPO_ROOT']               = $repoRoot;
+        $env['TESTKIT_REPORT_ROOT']        = $reportRoot;
+        $env['TESTKIT_REPORT_SCOPE_REL']   = Paths::relativeToRepo($reportRoot);
+        $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
+        // Keep for backward compat with any external tooling that reads TESTKIT_REPORT_FILE
+        $env['TESTKIT_REPORT_FILE']        = $reportRoot . '/front_js_latest.json';
+
+        $job  = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
         $done = ProcessRunner::finish($job);
 
         $stdout = (string)($done['stdout'] ?? '');

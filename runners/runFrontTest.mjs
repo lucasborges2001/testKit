@@ -6,7 +6,8 @@
  * - Soporta loader ESM para redirigir imports test/front -> <TK_PUBLIC_DIR>.
  * - Soporta paralelismo por archivos (TEST_JOBS).
  * - Soporta filtrado por scope/category/match.
- * - Escribe reporte JSON si TESTKIT_REPORT_FILE esta definido.
+ * - Resuelve report root desde los tests descubiertos (test/<side>/<module>/report).
+ * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx 5 por prefijo).
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -38,13 +39,23 @@ const jobs = Math.max(1, parseInt(process.env.TEST_JOBS || "1", 10) || 1);
 const useLoader = (process.env.TEST_USE_PUBLIC_LOADER || "1") === "1";
 const slowThresholdMs = Math.max(1, parseInt(process.env.TEST_SLOW_THRESHOLD_MS || "1500", 10) || 1500);
 const slowTop = Math.max(1, parseInt(process.env.TEST_SLOW_TOP || "10", 10) || 10);
-const reportFile = process.env.TESTKIT_REPORT_FILE || "";
+
+// Report root: prefer the PHP-precomputed value; fall back to computing from discovered tests.
+const envReportRoot = process.env.TESTKIT_REPORT_ROOT || "";
+const envModuleScope = process.env.TESTKIT_SELECTED_MODULE_SCOPE || "";
+const envReportScopeRel = process.env.TESTKIT_REPORT_SCOPE_REL || "";
+// Legacy fallback for external tooling that still reads TESTKIT_REPORT_FILE
+const legacyReportFile = process.env.TESTKIT_REPORT_FILE || "";
 
 const VALID_SCOPES = new Set(["unit", "integration", "e2e", "all"]);
 if (!VALID_SCOPES.has(scope)) {
   console.error(`TEST_SCOPE invalido: "${scope}". Valores: unit|integration|e2e|all`);
   process.exit(PVT_EXIT_ERROR);
 }
+
+// ---------------------------------------------------------------------------
+// File helpers
+// ---------------------------------------------------------------------------
 
 function walk(dir, acc = []) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -64,6 +75,10 @@ function walk(dir, acc = []) {
 function norm(p) {
   return p.replaceAll("\\", "/");
 }
+
+// ---------------------------------------------------------------------------
+// Scope / tag helpers
+// ---------------------------------------------------------------------------
 
 function matchesScope(filePath) {
   if (scope === "all") return true;
@@ -117,12 +132,165 @@ function moduleSummary(entries) {
     const mod = entry.module || "unknown";
     if (!out[mod]) out[mod] = { total: 0, pass: 0, fail: 0, skip: 0 };
     out[mod].total += 1;
-    out[mod][entry.status] += 1;
+    out[mod][entry.status] = (out[mod][entry.status] || 0) + 1;
   }
   return out;
 }
 
-function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exitCode }) {
+// ---------------------------------------------------------------------------
+// Report root resolution (mirrors Paths::resolveReportRoot in PHP)
+// ---------------------------------------------------------------------------
+
+function extractFunctionalModule(rel) {
+  const parts = norm(rel).split("/").filter(Boolean);
+  if (parts.length < 3 || parts[0] !== "test") return null;
+  if (parts[1] !== "back" && parts[1] !== "front") return null;
+  return `${parts[1]}/${parts[2]}`;
+}
+
+function resolveReportRootFromRels(rels) {
+  const fallback = path.join(repoRoot, "test", "reports");
+  if (!rels.length) return fallback;
+
+  const modules = new Set();
+  for (const rel of rels) {
+    const m = extractFunctionalModule(rel);
+    if (m === null) return fallback;
+    modules.add(m);
+  }
+  if (modules.size !== 1) return fallback;
+
+  const [module] = modules;
+  return path.join(repoRoot, "test", module, "report");
+}
+
+function commonDirFromRels(rels) {
+  if (!rels.length) return "";
+  const dirs = [...new Set(rels.map((r) => norm(path.dirname(r))))];
+  if (dirs.length === 1) return dirs[0];
+  const parts = dirs.map((d) => d.split("/").filter(Boolean));
+  const minLen = Math.min(...parts.map((p) => p.length));
+  const common = [];
+  for (let i = 0; i < minLen; i++) {
+    const seg = parts[0][i];
+    if (parts.every((p) => p[i] === seg)) {
+      common.push(seg);
+    } else {
+      break;
+    }
+  }
+  return common.join("/");
+}
+
+// ---------------------------------------------------------------------------
+// Retention / pruning (mirrors ResultWriter::pruneOldRuns in PHP)
+// ---------------------------------------------------------------------------
+
+function pruneOldRuns(dir, prefix, keep = 5) {
+  try {
+    const safePrefix = prefix.toLowerCase().replace(/[^a-z0-9._-]+/g, "_");
+    const re = new RegExp(`^${safePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_\\d{8}_\\d{6}\\.json$`);
+    const files = fs.readdirSync(dir).filter((f) => re.test(f)).sort();
+    for (let i = 0; i < files.length - keep; i++) {
+      try { fs.unlinkSync(path.join(dir, files[i])); } catch { /* ignore */ }
+    }
+  } catch { /* ignore if dir does not exist yet */ }
+}
+
+// ---------------------------------------------------------------------------
+// Failure enrichment
+// ---------------------------------------------------------------------------
+
+function textExcerpt(text, maxLines) {
+  if (!text) return null;
+  const lines = text.split("\n").filter((l) => l.trim());
+  if (!lines.length) return null;
+  return lines.slice(0, maxLines).join("\n");
+}
+
+function extractFirstMessage(text) {
+  if (!text) return null;
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    if (/^(at\s+|#\d+\s|Stack trace:)/.test(t)) continue;
+    return t.slice(0, 200);
+  }
+  return null;
+}
+
+function extractTrace(text) {
+  if (!text) return null;
+  const lines = text.split("\n").filter((l) => /^\s*(at\s+|#\d+|\w.*:\d+)/.test(l));
+  if (!lines.length) return null;
+  return lines.slice(0, 10).join("\n");
+}
+
+function buildFailureEntry(t) {
+  const stdout = t.stdout || "";
+  const stderr = t.stderr || "";
+
+  const message = extractFirstMessage(stderr) || extractFirstMessage(stdout) || null;
+  const traceExcerpt = extractTrace(stderr || stdout);
+  const stdoutExcerpt = textExcerpt(stdout, 15);
+  const stderrExcerpt = textExcerpt(stderr, 15);
+
+  const tags = t.tags || [];
+  const scopeTags = tags.filter((tag) => ["unit", "integration", "e2e"].includes(tag));
+  const catTags = tags.filter((tag) => !["unit", "integration", "e2e"].includes(tag));
+
+  return {
+    test_id: t.rel || t.file || "",
+    test_name: path.basename(t.rel || t.file || "", ".test.mjs"),
+    suite: t.module || "",
+    scope: scopeTags.join(","),
+    file: t.rel || "",
+    line: null,
+    category: catTags.join(","),
+    status: t.status,
+    duration_ms: t.duration_ms,
+    error_type: `exit_code_${t.exit_code}`,
+    message,
+    assertion: null,
+    diff_excerpt: null,
+    trace_excerpt: traceExcerpt || null,
+    stdout_excerpt: stdoutExcerpt || null,
+    stderr_excerpt: stderrExcerpt || null,
+  };
+}
+
+function groupFailures(failures) {
+  const byFile = {};
+  const byErrorType = {};
+  const byMessage = {};
+
+  for (const f of failures) {
+    const testId = f.test_id || f.file || "unknown";
+    const file = f.file || "unknown";
+    const errorType = f.error_type || "unknown";
+    const msg = f.message || "";
+
+    if (!byFile[file]) byFile[file] = [];
+    byFile[file].push(testId);
+
+    if (!byErrorType[errorType]) byErrorType[errorType] = [];
+    byErrorType[errorType].push(testId);
+
+    if (msg) {
+      const normMsg = msg.replace(/\s+/g, " ").slice(0, 80);
+      if (!byMessage[normMsg]) byMessage[normMsg] = [];
+      byMessage[normMsg].push(testId);
+    }
+  }
+
+  return { by_file: byFile, by_error_type: byErrorType, by_message: byMessage };
+}
+
+// ---------------------------------------------------------------------------
+// Report builder
+// ---------------------------------------------------------------------------
+
+function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exitCode, reportRoot, moduleScope, reportScopeRel, commonDir }) {
   const finishedAt = new Date().toISOString();
   const durationMs = Math.max(0, Math.round(performance.now() - startedMs));
 
@@ -132,16 +300,36 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
     .sort((a, b) => b.duration_ms - a.duration_ms)
     .slice(0, slowTop);
 
+  const failures = failedTests.map(buildFailureEntry);
+  const groupedFailures = groupFailures(failures);
+  const selectedTestFiles = tests.map((t) => t.rel);
+
   return {
     suite_id: "front_js",
     language: "js",
     scope,
     category,
+    match,
+    report_root: reportRoot,
+    report_scope_rel: reportScopeRel,
+    selected_module_scope: moduleScope,
+    selected_common_dir: commonDir,
+    selected_test_count: tests.length,
+    selected_test_files: selectedTestFiles,
+    summary: {
+      total: tests.length,
+      passed,
+      failed,
+      skipped,
+      duration_ms: durationMs,
+    },
     tests_total: tests.length,
     pass: passed,
     fail: failed,
     skip: skipped,
     tests,
+    failures,
+    grouped_failures: groupedFailures,
     failed_tests: failedTests,
     slow_tests: slowTests,
     module_summary: moduleSummary(tests),
@@ -154,15 +342,41 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
   };
 }
 
-function writeReport(report) {
-  if (!reportFile) return;
+// ---------------------------------------------------------------------------
+// Report writer (latest + timestamped + prune)
+// ---------------------------------------------------------------------------
+
+function writeReport(report, reportRoot) {
   try {
-    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
-    fs.writeFileSync(reportFile, JSON.stringify(report, null, 2), "utf8");
+    fs.mkdirSync(reportRoot, { recursive: true });
+
+    const now = new Date();
+    const ts = now.toISOString().replace(/-/g, "").replace(/:/g, "").replace("T", "_").slice(0, 15);
+    const suiteIdSafe = "front_js";
+
+    const latestPath = path.join(reportRoot, `${suiteIdSafe}_latest.json`);
+    const tsPath = path.join(reportRoot, `${suiteIdSafe}_${ts}.json`);
+    const json = JSON.stringify(report, null, 2);
+
+    fs.writeFileSync(latestPath, json, "utf8");
+    fs.writeFileSync(tsPath, json, "utf8");
+    pruneOldRuns(reportRoot, suiteIdSafe);
+
+    // Legacy: also write to TESTKIT_REPORT_FILE if it points somewhere different
+    if (legacyReportFile && norm(legacyReportFile) !== norm(latestPath)) {
+      try {
+        fs.mkdirSync(path.dirname(legacyReportFile), { recursive: true });
+        fs.writeFileSync(legacyReportFile, json, "utf8");
+      } catch { /* ignore */ }
+    }
   } catch (err) {
-    console.error(`WARN: no se pudo escribir TESTKIT_REPORT_FILE (${reportFile}): ${err?.message || err}`);
+    console.error(`WARN: no se pudo escribir reporte (${reportRoot}): ${err?.message || err}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Discovery
+// ---------------------------------------------------------------------------
 
 const testsDirExists = fs.existsSync(testsDir) && fs.statSync(testsDir).isDirectory();
 let tests = (testsDirExists ? walk(testsDir) : [])
@@ -175,6 +389,20 @@ if (match) {
   tests = tests.filter((p) => norm(path.relative(repoRoot, p)).toLowerCase().includes(match));
 }
 
+// Compute report root: prefer value passed by PHP; fall back to self-computed from discovered tests.
+const testRels = tests.map((t) => norm(path.relative(repoRoot, t)));
+const computedReportRoot = envReportRoot || resolveReportRootFromRels(testRels);
+const computedModuleScope = envModuleScope || (() => {
+  const mods = new Set(testRels.map(extractFunctionalModule).filter(Boolean));
+  return mods.size === 1 ? [...mods][0] : "";
+})();
+const computedReportScopeRel = envReportScopeRel || norm(path.relative(repoRoot, computedReportRoot));
+const computedCommonDir = commonDirFromRels(testRels);
+
+// ---------------------------------------------------------------------------
+// Early exit if no tests
+// ---------------------------------------------------------------------------
+
 const suiteStartedAt = new Date().toISOString();
 const suiteStartedMs = performance.now();
 
@@ -183,21 +411,36 @@ if (!tests.length) {
 
   banner("FRONT / JS");
   console.log(bold(`Running 0 tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
-  console.log(dim(`repoRoot:  ${repoRoot}`));
-  console.log(dim(`testsDir:  ${testsDir}`));
+  console.log(dim(`repoRoot:    ${repoRoot}`));
+  console.log(dim(`testsDir:    ${testsDir}`));
+  console.log(dim(`reportRoot:  ${computedReportRoot}`));
 
   if (requireTests) {
     console.error(msg);
-    const report = buildReport({ startedAt: suiteStartedAt, startedMs: suiteStartedMs, tests: [], passed: 0, failed: 1, skipped: 0, exitCode: PVT_EXIT_FAIL });
-    writeReport(report);
+    const report = buildReport({
+      startedAt: suiteStartedAt, startedMs: suiteStartedMs,
+      tests: [], passed: 0, failed: 1, skipped: 0, exitCode: PVT_EXIT_FAIL,
+      reportRoot: computedReportRoot, moduleScope: computedModuleScope,
+      reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
+    });
+    writeReport(report, computedReportRoot);
     process.exit(PVT_EXIT_FAIL);
   }
 
   console.log(gray(`SKIP: ${msg}`));
-  const report = buildReport({ startedAt: suiteStartedAt, startedMs: suiteStartedMs, tests: [], passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_SKIP });
-  writeReport(report);
+  const report = buildReport({
+    startedAt: suiteStartedAt, startedMs: suiteStartedMs,
+    tests: [], passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_SKIP,
+    reportRoot: computedReportRoot, moduleScope: computedModuleScope,
+    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
+  });
+  writeReport(report, computedReportRoot);
   process.exit(PVT_EXIT_SKIP);
 }
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
 
 const loaderPath = path.join(testkitRoot, "utils", "js", "front_loader.mjs");
 const loaderUrl = pathToFileURL(loaderPath).href;
@@ -208,11 +451,13 @@ const bootstrapUrl = fs.existsSync(bootstrapPath) ? pathToFileURL(bootstrapPath)
 
 banner("FRONT / JS");
 console.log(bold(`Running ${tests.length} tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
-console.log(dim(`repoRoot:  ${repoRoot}`));
-console.log(dim(`testsDir:  ${testsDir}`));
-if (bootstrapUrl) console.log(dim(`bootstrap: ${bootstrapPath}`));
-if (useLoader) console.log(dim(`loader:    ${loaderPath}`));
-if (match) console.log(dim(`match:     ${match}`));
+console.log(dim(`repoRoot:    ${repoRoot}`));
+console.log(dim(`testsDir:    ${testsDir}`));
+console.log(dim(`reportRoot:  ${computedReportRoot}`));
+if (computedModuleScope) console.log(dim(`module:      ${computedModuleScope}`));
+if (bootstrapUrl) console.log(dim(`bootstrap:   ${bootstrapPath}`));
+if (useLoader) console.log(dim(`loader:      ${loaderPath}`));
+if (match) console.log(dim(`match:       ${match}`));
 console.log("");
 
 if (listOnly) {
@@ -229,12 +474,23 @@ if (listOnly) {
       status: "listed",
       exit_code: 0,
       duration_ms: 0,
+      stdout: "",
+      stderr: "",
     };
   });
-  const report = buildReport({ startedAt: suiteStartedAt, startedMs: suiteStartedMs, tests: listed, passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_PASS });
-  writeReport(report);
+  const report = buildReport({
+    startedAt: suiteStartedAt, startedMs: suiteStartedMs,
+    tests: listed, passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_PASS,
+    reportRoot: computedReportRoot, moduleScope: computedModuleScope,
+    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
+  });
+  writeReport(report, computedReportRoot);
   process.exit(PVT_EXIT_PASS);
 }
+
+// ---------------------------------------------------------------------------
+// Execution helpers
+// ---------------------------------------------------------------------------
 
 function makeArgs(testFile) {
   const args = [];
@@ -259,18 +515,18 @@ function runOne(testFile, workerId) {
     let out = "";
     let err = "";
 
-    child.stdout.on("data", (d) => {
-      out += d.toString("utf8");
-    });
-    child.stderr.on("data", (d) => {
-      err += d.toString("utf8");
-    });
+    child.stdout.on("data", (d) => { out += d.toString("utf8"); });
+    child.stderr.on("data", (d) => { err += d.toString("utf8"); });
 
     child.on("close", (code) => {
       resolve({ rel, file: norm(testFile), code: code ?? 1, out, err, durationMs: Math.max(0, Math.round(performance.now() - t0)), tags: tagsForPath(testFile) });
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
 
 let passed = 0;
 let failed = 0;
@@ -371,10 +627,26 @@ if (jobs <= 1) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Final report
+// ---------------------------------------------------------------------------
+
 console.log(gray(`Summary JS: ${counts({ pass: passed, fail: failed, skip: skipped })}`));
 
 const exitCode = failed > 0 ? PVT_EXIT_FAIL : (passed === 0 && skipped > 0 ? PVT_EXIT_SKIP : PVT_EXIT_PASS);
-const report = buildReport({ startedAt: suiteStartedAt, startedMs: suiteStartedMs, tests: entries, passed, failed, skipped, exitCode });
-writeReport(report);
+const report = buildReport({
+  startedAt: suiteStartedAt,
+  startedMs: suiteStartedMs,
+  tests: entries,
+  passed,
+  failed,
+  skipped,
+  exitCode,
+  reportRoot: computedReportRoot,
+  moduleScope: computedModuleScope,
+  reportScopeRel: computedReportScopeRel,
+  commonDir: computedCommonDir,
+});
+writeReport(report, computedReportRoot);
 
 process.exit(exitCode);

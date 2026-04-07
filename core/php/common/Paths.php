@@ -5,6 +5,9 @@ namespace Testkit\Core\Common;
 
 final class Paths
 {
+    /** @var array<int,string> */
+    private static array $suiteReportRoots = [];
+
     public static function testkitRoot(): string
     {
         $fromEnv = Env::string('TESTKIT_ROOT');
@@ -67,5 +70,84 @@ final class Paths
         if (!is_dir($dir)) {
             @mkdir($dir, 0777, true);
         }
+    }
+
+    /**
+     * Resolve the report directory from the set of discovered tests.
+     *
+     * If every test shares a single functional module under test/back/<module>
+     * or test/front/<module>, returns <repoRoot>/test/<side>/<module>/report.
+     * Otherwise falls back to <repoRoot>/test/reports.
+     *
+     * @param array<int,array<string,mixed>> $tests  Each element must contain 'rel' (string)
+     */
+    public static function resolveReportRoot(array $tests): string
+    {
+        if (empty($tests)) {
+            return self::reportsRoot();
+        }
+
+        $modules = [];
+        foreach ($tests as $test) {
+            $rel = self::normalize((string)($test['rel'] ?? ''));
+            $module = self::extractFunctionalModule($rel);
+            if ($module === null) {
+                return self::reportsRoot();
+            }
+            $modules[$module] = true;
+        }
+
+        if (count($modules) !== 1) {
+            return self::reportsRoot();
+        }
+
+        $module = (string)array_key_first($modules);
+        return self::normalize(self::repoRoot() . '/test/' . $module . '/report');
+    }
+
+    /**
+     * Extract "back/<module>" or "front/<module>" from a repo-relative path.
+     * Example: "test/back/auth/integration/login.test.php" => "back/auth"
+     * Returns null if the path does not match the expected structure.
+     */
+    public static function extractFunctionalModule(string $rel): ?string
+    {
+        $parts = array_values(array_filter(
+            explode('/', str_replace('\\', '/', $rel)),
+            static fn(string $p): bool => $p !== ''
+        ));
+
+        if (count($parts) < 3) {
+            return null;
+        }
+        if ($parts[0] !== 'test') {
+            return null;
+        }
+        if (!in_array($parts[1], ['back', 'front'], true)) {
+            return null;
+        }
+
+        return $parts[1] . '/' . $parts[2];
+    }
+
+    /**
+     * Record a report root computed by a suite, for later aggregation by MetaRunner.
+     */
+    public static function recordSuiteReportRoot(string $root): void
+    {
+        self::$suiteReportRoots[] = $root;
+    }
+
+    /**
+     * Return the single shared report root if all suites agreed on one, otherwise the fallback.
+     */
+    public static function aggregateMetaReportRoot(): string
+    {
+        $fallback = self::reportsRoot();
+        if (empty(self::$suiteReportRoots)) {
+            return $fallback;
+        }
+        $unique = array_values(array_unique(self::$suiteReportRoots));
+        return count($unique) === 1 ? $unique[0] : $fallback;
     }
 }
