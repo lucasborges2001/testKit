@@ -26,6 +26,8 @@ final class TestDiscovery
         $match = strtolower((string)($config['match'] ?? ''));
         $scanLines = (int)($config['metadata_lines'] ?? 60);
         $tagsFromFilename = (bool)($config['tags_from_filename'] ?? true);
+        $moduleLevel = max(1, (int)($config['module_level'] ?? 2));
+        $tagMap = (string)($config['tag_map'] ?? '');
 
         $out = [];
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($testsDir));
@@ -48,7 +50,7 @@ final class TestDiscovery
                 continue;
             }
 
-            $tags = TestTagger::tagsFor($fullPath, $scanLines, $tagsFromFilename);
+            $tags = TestTagger::tagsFor($fullPath, $scanLines, $tagsFromFilename, $tagMap);
 
             if (!self::scopeMatch($rel, $tags, $scope)) {
                 continue;
@@ -60,7 +62,7 @@ final class TestDiscovery
             $out[] = [
                 'file' => $fullPath,
                 'rel' => $rel,
-                'module' => self::moduleFromRel($rel),
+                'module' => self::moduleFromRel($rel, $moduleLevel),
                 'tags' => $tags,
             ];
         }
@@ -129,14 +131,14 @@ final class TestDiscovery
         return in_array($category, $tags, true);
     }
 
-    private static function moduleFromRel(string $rel): string
+    private static function moduleFromRel(string $rel, int $level): string
     {
         $parts = array_values(array_filter(explode('/', str_replace('\\', '/', $rel)), static fn(string $p): bool => $p !== ''));
         if ($parts === []) {
             return 'unknown';
         }
 
-        $level = max(1, (int)(getenv('TK_MODULE_LEVEL') ?: 2));
+        $level = max(1, $level);
 
         if ($parts[0] === 'test' && count($parts) >= ($level + 1)) {
             return implode('/', array_slice($parts, 1, $level));

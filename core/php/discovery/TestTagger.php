@@ -8,12 +8,12 @@ final class TestTagger
     /**
      * @return array<int,string>
      */
-    public static function tagsFor(string $file, int $scanLines = 60, bool $tagsFromFilename = true): array
+    public static function tagsFor(string $file, int $scanLines = 60, bool $tagsFromFilename = true, string $tagMap = ''): array
     {
         $tags = [];
 
         if ($tagsFromFilename) {
-            $tags = array_merge($tags, self::tagsFromPath($file));
+            $tags = array_merge($tags, self::tagsFromPath($file, $tagMap));
         }
 
         $tags = array_merge($tags, self::tagsFromHeader($file, $scanLines));
@@ -28,7 +28,7 @@ final class TestTagger
     /**
      * @return array<int,string>
      */
-    private static function tagsFromPath(string $file): array
+    private static function tagsFromPath(string $file, string $tagMap = ''): array
     {
         $normalized = strtolower(str_replace('\\', '/', $file));
         $tags = [];
@@ -46,10 +46,9 @@ final class TestTagger
             'fragile' => ['fragile', 'flaky', 'inestable'],
         ];
 
-        // Extender el mapa vía env: "tag:token1,token2;tag2:token3"
-        $customMap = (string)(getenv('TK_TAG_MAP') ?: '');
-        if ($customMap !== '') {
-            foreach (explode(';', $customMap) as $pair) {
+        // Extender el mapa vía config: "tag:token1,token2;tag2:token3"
+        if ($tagMap !== '') {
+            foreach (explode(';', $tagMap) as $pair) {
                 if (!str_contains($pair, ':')) continue;
                 [$tag, $tokens] = explode(':', $pair, 2);
                 $tag = trim($tag);

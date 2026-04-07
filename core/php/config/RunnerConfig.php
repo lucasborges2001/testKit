@@ -34,6 +34,9 @@ final class RunnerConfig
             'flake_window' => max(5, Env::int('TEST_FLAKE_WINDOW', 20)),
         ];
 
+        $moduleLevel = max(1, Env::int('TK_MODULE_LEVEL', 2));
+        $tagMap = Env::string('TK_TAG_MAP', '');
+
         return [
             'suite_id' => $suiteId,
             'language' => $language,
@@ -55,6 +58,8 @@ final class RunnerConfig
             'js_require_node' => Env::bool('TEST_JS_REQUIRE_NODE', false),
             'metadata_lines' => max(10, Env::int('TEST_METADATA_SCAN_LINES', 60)),
             'tags_from_filename' => Env::bool('TEST_TAGS_FROM_FILENAME', true),
+            'module_level' => $moduleLevel,
+            'tag_map' => $tagMap,
             'critical_tags' => Env::csv('TEST_CRITICAL_TAGS', 'critical,contract'),
         ];
     }

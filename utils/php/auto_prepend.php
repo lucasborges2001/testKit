@@ -29,46 +29,6 @@ function tk__env(string $k, string $default = ''): string {
   return $v === '' ? $default : $v;
 }
 
-/**
- * Parse seguro de KEY=VALUE (sin ejecutar shell).
- * - ignora comentarios y líneas vacías
- * - soporta comillas simples/dobles en el valor
- */
-function tk__load_env_file(string $path, bool $overrideEmptyOnly = true): void {
-  if (!is_file($path)) return;
-
-  $lines = @file($path, FILE_IGNORE_NEW_LINES);
-  if (!is_array($lines)) return;
-
-  foreach ($lines as $line) {
-    $line = trim((string)$line);
-    if ($line === '' || str_starts_with($line, '#')) continue;
-    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*=/', $line)) continue;
-
-    [$k, $v] = explode('=', $line, 2);
-    $k = trim($k);
-    $v = trim($v);
-
-    // strip quotes (simple)
-    if (strlen($v) >= 2) {
-      $q1 = $v[0];
-      $q2 = $v[strlen($v) - 1];
-      if (($q1 === '"' && $q2 === '"') || ($q1 === "'" && $q2 === "'")) {
-        $v = substr($v, 1, -1);
-      }
-    }
-
-    $cur = getenv($k);
-    if ($overrideEmptyOnly) {
-      if ($cur !== false && (string)$cur !== '') continue;
-    }
-
-    putenv($k . '=' . $v);
-    $_ENV[$k] = $v;
-    $_SERVER[$k] = $v;
-  }
-}
-
 /** @return string absolute path */
 function tk__abs_path(string $repoRoot, string $p): string {
   $p = trim($p);
@@ -97,16 +57,13 @@ if ($repoRoot === '') {
 $repoRoot = rtrim($repoRoot, '/\\');
 putenv('TK_REPO_ROOT=' . $repoRoot);
 
-// Cargar env del proyecto si existe.
+// Cargar env del proyecto delegando en ProjectEnv.
 // Nota: docker compose NO exporta todas las variables del env-file al contenedor;
 // por eso usamos DB_ENV_PATH como fuente de verdad.
-$dbEnvPath = tk__env('DB_ENV_PATH', '');
-if ($dbEnvPath !== '') {
-  $dbEnvAbs = tk__abs_path($repoRoot, $dbEnvPath);
-  // override solo si vacío (permite override por env del proceso)
-  $overrideEmptyOnly = (tk__env('TK_ENV_OVERRIDE', '0') !== '1');
-  tk__load_env_file($dbEnvAbs, $overrideEmptyOnly);
-}
+\Testkit\Core\Common\ProjectEnv::hydrateCurrentProcess(
+  $repoRoot,
+  tk__env('TK_ENV_OVERRIDE', '0') === '1'
+);
 
 // Defaults base
 if (tk__env('APP_ENV', '') === '') putenv('APP_ENV=test');
