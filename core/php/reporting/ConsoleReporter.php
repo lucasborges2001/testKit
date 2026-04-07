@@ -72,10 +72,23 @@ final class ConsoleReporter
             $name = (string)($suite['suite_id'] ?? 'suite');
             $code = (int)($suite['exit_code'] ?? 1);
             $status = $code === 0 ? UI::success("OK") : ($code === 2 ? UI::warning("SKIP") : UI::failure("FAIL"));
-            echo "  " . str_pad($name, 24) . " -> " . $status . UI::gray(" (code={$code})") . "\n";
+            $tests = (int)($suite['selected_test_count'] ?? 0);
+            $scope = trim((string)($suite['selected_module_scope'] ?? ''));
+            $scopeLabel = $scope !== '' ? $scope : 'global';
+            echo "  " . str_pad($name, 24) . " -> " . $status . UI::gray(" (code={$code}, tests={$tests}, scope={$scopeLabel})") . "\n";
         }
 
-        echo "\n" . UI::bold("Total time_ms=") . UI::gray((string)($meta['duration_ms'] ?? 0)) . "\n";
+        $summary = is_array($meta['summary'] ?? null) ? $meta['summary'] : [];
+        $failedFiles = is_array($meta['failed_files'] ?? null) ? $meta['failed_files'] : [];
+        echo "\n" . UI::bold("Meta:") . " ";
+        echo UI::gray('total=' . (int)($summary['total'] ?? 0));
+        echo ' ' . UI::gray('pass=' . (int)($summary['passed'] ?? 0));
+        echo ' ' . ((int)($summary['failed'] ?? 0) > 0 ? UI::failure('fail=' . (int)($summary['failed'] ?? 0)) : UI::gray('fail=' . (int)($summary['failed'] ?? 0)));
+        echo ' ' . UI::gray('skip=' . (int)($summary['skipped'] ?? 0));
+        echo ' ' . UI::gray('time_ms=' . (int)($summary['duration_ms'] ?? $meta['duration_ms'] ?? 0));
+        echo "\n";
+        echo UI::gray('report_root=' . (string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
+        echo UI::gray('selected_tests=' . (int)($meta['selected_test_count'] ?? 0) . ', failed_files=' . count($failedFiles)) . "\n";
     }
 
     /**
@@ -96,7 +109,7 @@ final class ConsoleReporter
             $fail = (int)($stat['fail'] ?? 0);
             $skip = (int)($stat['skip'] ?? 0);
             $total = (int)($stat['total'] ?? 0);
-            
+
             $moduleStr = str_pad((string)$module, 30);
             $f = $fail > 0 ? UI::failure(sprintf("%4d", $fail)) : sprintf("%4d", $fail);
             echo sprintf("%s | %5d | %4d | %s | %4d\n", $moduleStr, $total, $pass, $f, $skip);
@@ -108,35 +121,40 @@ final class ConsoleReporter
      */
     private static function printFailures(array $result): void
     {
-        $failed = $result['failed_tests'] ?? [];
-        if (!is_array($failed) || !$failed) {
+        $failures = ReportSummary::canonicalFailures($result);
+        if ($failures === []) {
             return;
         }
 
         UI::section("Failed Tests");
-        foreach ($failed as $test) {
-            $rel = (string)($test['rel'] ?? 'unknown');
-            $code = (int)($test['exit_code'] ?? 1);
-            echo "  " . UI::failure("X") . " {$rel} " . UI::gray("(exit={$code})") . "\n";
+        foreach ($failures as $failure) {
+            $rel = (string)($failure['file'] ?? $failure['test_id'] ?? 'unknown');
+            $code = (string)($failure['error_type'] ?? 'fail');
+            echo "  " . UI::failure("X") . " {$rel} " . UI::gray("({$code})") . "\n";
 
-            $stderr = trim((string)($test['stderr'] ?? ''));
-            $stdout = trim((string)($test['stdout'] ?? ''));
-            $snippet = $stderr !== '' ? $stderr : $stdout;
-
-            if ($snippet !== '') {
+            foreach (['message', 'assertion', 'trace_excerpt', 'stderr_excerpt', 'stdout_excerpt'] as $field) {
+                $snippet = trim((string)($failure[$field] ?? ''));
+                if ($snippet === '') {
+                    continue;
+                }
                 $lines = preg_split('/\r\n|\r|\n/', $snippet) ?: [];
                 $lines = array_slice($lines, 0, 8);
                 foreach ($lines as $line) {
                     echo "    " . UI::gray("|") . " " . $line . "\n";
                 }
-                echo "    " . UI::gray("+-- (truncated)") . "\n";
+                if (count($lines) > 0) {
+                    echo "    " . UI::gray("+-- ({$field})") . "\n";
+                }
+                break;
             }
         }
-        
-        if ($failed) {
+
+        $first = $failures[0];
+        $firstFile = (string)($first['file'] ?? $first['test_id'] ?? '');
+        if ($firstFile !== '') {
             $suiteId = (string)($result['suite_id'] ?? '');
             $target = str_replace('_', '-', $suiteId);
-            echo "\n" . UI::bold("Next step:") . " " . UI::info("TEST_MATCH='{$failed[0]['rel']}' php runTest.php {$target}") . "\n";
+            echo "\n" . UI::bold("Next step:") . " " . UI::info("TEST_MATCH='{$firstFile}' php runTest.php {$target}") . "\n";
         }
     }
 
@@ -152,7 +170,7 @@ final class ConsoleReporter
 
         UI::section("Slow Tests");
         foreach ($slow as $test) {
-            echo sprintf("  " . UI::warning("!") . " %6d ms  %s\n", (int)$test['duration_ms'], (string)$test['rel']);
+            echo sprintf("  " . UI::warning("!") . " %6d ms  %s\n", (int)$test['duration_ms'], (string)($test['rel'] ?? $test['file'] ?? 'unknown'));
         }
     }
 
@@ -171,7 +189,7 @@ final class ConsoleReporter
             if (($hint['type'] ?? '') !== 'flaky') {
                 continue;
             }
-            echo '  - flaky: ' . (string)$hint['test'] . ' (pass=' . (int)$hint['pass_count'] . ', fail=' . (int)$hint['fail_count'] . ")\n";
+            echo '  - flaky: ' . (string)$hint['test'] . ' (pass=' . (int)($hint['pass_count'] ?? 0) . ', fail=' . (int)($hint['fail_count'] ?? 0) . ")\n";
         }
     }
 

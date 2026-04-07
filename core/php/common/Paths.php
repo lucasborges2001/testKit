@@ -5,7 +5,7 @@ namespace Testkit\Core\Common;
 
 final class Paths
 {
-    /** @var array<int,string> */
+    /** @var array<string,string> */
     private static array $suiteReportRoots = [];
 
     public static function testkitRoot(): string
@@ -133,9 +133,29 @@ final class Paths
     /**
      * Record a report root computed by a suite, for later aggregation by MetaRunner.
      */
-    public static function recordSuiteReportRoot(string $root): void
+    public static function recordSuiteReportRoot(string $root, string $suiteId = ''): void
     {
-        self::$suiteReportRoots[] = $root;
+        $normalized = self::normalize($root);
+        if ($normalized === '') {
+            return;
+        }
+
+        $key = $suiteId !== '' ? $suiteId : ('__idx_' . count(self::$suiteReportRoots));
+        self::$suiteReportRoots[$key] = $normalized;
+    }
+
+    public static function reportRootForSuite(string $suiteId): ?string
+    {
+        $root = self::$suiteReportRoots[$suiteId] ?? null;
+        return is_string($root) && $root !== '' ? $root : null;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    public static function suiteReportRoots(): array
+    {
+        return array_values(array_unique(array_values(self::$suiteReportRoots)));
     }
 
     /**
@@ -144,10 +164,10 @@ final class Paths
     public static function aggregateMetaReportRoot(): string
     {
         $fallback = self::reportsRoot();
-        if (empty(self::$suiteReportRoots)) {
+        $unique = self::suiteReportRoots();
+        if ($unique === []) {
             return $fallback;
         }
-        $unique = array_values(array_unique(self::$suiteReportRoots));
         return count($unique) === 1 ? $unique[0] : $fallback;
     }
 }

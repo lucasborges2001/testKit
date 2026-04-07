@@ -78,10 +78,39 @@ final class HistoryRepository
         }
 
         usort($hints, static fn(array $a, array $b): int => ((int)$b['fail_count']) <=> ((int)$a['fail_count']));
+        $hints = self::filterHintsForScope($hints, (string)($result['selected_module_scope'] ?? ''));
+
         return [
             'history_file' => $file,
             'fragility_hints' => array_slice($hints, 0, 10),
         ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $hints
+     * @return array<int,array<string,mixed>>
+     */
+    private static function filterHintsForScope(array $hints, string $selectedModuleScope): array
+    {
+        $selectedModuleScope = trim($selectedModuleScope);
+        if ($selectedModuleScope === '') {
+            return $hints;
+        }
+
+        $filtered = [];
+        foreach ($hints as $hint) {
+            $test = trim((string)($hint['test'] ?? ''));
+            if ($test === '') {
+                continue;
+            }
+
+            $module = Paths::extractFunctionalModule($test);
+            if ($module === $selectedModuleScope) {
+                $filtered[] = $hint;
+            }
+        }
+
+        return $filtered;
     }
 
     /**

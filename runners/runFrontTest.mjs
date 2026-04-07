@@ -134,7 +134,7 @@ function moduleSummary(entries) {
     out[mod].total += 1;
     out[mod][entry.status] = (out[mod][entry.status] || 0) + 1;
   }
-  return out;
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +335,10 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
     module_summary: moduleSummary(tests),
     perf_violations: [],
     fragility_hints: [],
+    failure_contract: {
+      canonical: "failures",
+      legacy_fallback: "failed_tests",
+    },
     started_at: startedAt,
     finished_at: finishedAt,
     duration_ms: durationMs,
@@ -542,8 +546,14 @@ if (jobs <= 1) {
     const r = spawnSync(process.execPath, makeArgs(t), {
       cwd: repoRoot,
       env: { ...process.env, TEST_WORKER_ID: "1", TESTKIT_ROOT: testkitRoot, TK_REPO_ROOT: repoRoot },
-      stdio: ["ignore", "inherit", "inherit"],
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
     });
+
+    const out = typeof r.stdout === "string" ? r.stdout : "";
+    const err = typeof r.stderr === "string" ? r.stderr : "";
+    if (out) process.stdout.write(out);
+    if (err) process.stderr.write(err);
 
     const durationMs = Math.max(0, Math.round(performance.now() - t0));
     const code = r.status ?? (r.signal ? 128 : 1);
@@ -567,8 +577,8 @@ if (jobs <= 1) {
       status,
       exit_code: code,
       duration_ms: durationMs,
-      stdout: "",
-      stderr: "",
+      stdout: out,
+      stderr: err,
     });
 
     console.log("");

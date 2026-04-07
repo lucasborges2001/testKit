@@ -29,37 +29,35 @@ final class FrontJsSuite
             return $requireNode ? 1 : 2;
         }
 
-        // Pre-compute report root from PHP-side discovery so both PHP and JS agree on the path.
-        $testsRel  = Env::string('TK_FRONT_JS_DIR', 'test/front');
-        $testsDir  = Paths::normalize($repoRoot . '/' . $testsRel);
+        $testsRel = Env::string('TK_FRONT_JS_DIR', 'test/front');
+        $testsDir = Paths::normalize($repoRoot . '/' . $testsRel);
         $discoverConfig = [
-            'scope'             => strtolower(Env::string('TEST_SCOPE', 'all')),
-            'category'          => strtolower(Env::string('TEST_CATEGORY', 'all')),
-            'match'             => Env::string('TEST_MATCH', ''),
-            'metadata_lines'    => 10,
+            'scope'              => strtolower(Env::string('TEST_SCOPE', 'all')),
+            'category'           => strtolower(Env::string('TEST_CATEGORY', 'all')),
+            'match'              => Env::string('TEST_MATCH', ''),
+            'metadata_lines'     => 10,
             'tags_from_filename' => true,
-            'module_level'      => max(1, Env::int('TK_MODULE_LEVEL', 2)),
-            'tag_map'           => '',
+            'module_level'       => max(1, Env::int('TK_MODULE_LEVEL', 2)),
+            'tag_map'            => '',
         ];
-        $discovered  = TestDiscovery::discover($testsDir, ['.test.mjs'], $discoverConfig);
-        $reportRoot  = Paths::resolveReportRoot($discovered);
+        $discovered = TestDiscovery::discover($testsDir, ['.test.mjs'], $discoverConfig);
+        $reportRoot = Paths::resolveReportRoot($discovered);
         $moduleScope = '';
         if ($reportRoot !== Paths::reportsRoot() && !empty($discovered)) {
             $moduleScope = Paths::extractFunctionalModule((string)($discovered[0]['rel'] ?? '')) ?? '';
         }
 
-        Paths::recordSuiteReportRoot($reportRoot);
+        Paths::recordSuiteReportRoot($reportRoot, 'front_js');
 
         $env = self::baseEnv();
-        $env['TESTKIT_ROOT']               = Paths::testkitRoot();
-        $env['TK_REPO_ROOT']               = $repoRoot;
-        $env['TESTKIT_REPORT_ROOT']        = $reportRoot;
-        $env['TESTKIT_REPORT_SCOPE_REL']   = Paths::relativeToRepo($reportRoot);
+        $env['TESTKIT_ROOT'] = Paths::testkitRoot();
+        $env['TK_REPO_ROOT'] = $repoRoot;
+        $env['TESTKIT_REPORT_ROOT'] = $reportRoot;
+        $env['TESTKIT_REPORT_SCOPE_REL'] = Paths::relativeToRepo($reportRoot);
         $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
-        // Keep for backward compat with any external tooling that reads TESTKIT_REPORT_FILE
-        $env['TESTKIT_REPORT_FILE']        = $reportRoot . '/front_js_latest.json';
+        $env['TESTKIT_REPORT_FILE'] = $reportRoot . '/front_js_latest.json';
 
-        $job  = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
+        $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
         $done = ProcessRunner::finish($job);
 
         $stdout = (string)($done['stdout'] ?? '');

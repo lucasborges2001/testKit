@@ -7,6 +7,7 @@ use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Reporting\ConsoleReporter;
+use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
 
 final class MetaRunner
@@ -32,8 +33,10 @@ final class MetaRunner
 
         putenv('TEST_FAIL_FAST=' . ((bool)$config['child_fail_fast'] ? '1' : '0'));
 
+        $metaStartedAt = gmdate('Y-m-d\TH:i:s\Z');
         $metaStart = self::nowMs();
         $suiteRows = [];
+        $suiteReports = [];
         $overallFail = false;
 
         foreach ($selected as $suiteId) {
@@ -41,11 +44,27 @@ final class MetaRunner
             $code = self::runSuite($suiteId);
             $duration = max(0, self::nowMs() - $start);
 
-            $suiteRows[] = [
+            $suiteRow = [
                 'suite_id' => $suiteId,
                 'exit_code' => $code,
                 'duration_ms' => $duration,
             ];
+
+            $suiteReport = ReportSummary::loadLatestSuiteReport($suiteId, array_filter([
+                Paths::reportRootForSuite($suiteId) ?? '',
+                Paths::aggregateMetaReportRoot(),
+            ]));
+            if (is_array($suiteReport)) {
+                $suiteReports[] = $suiteReport;
+                $suiteRow['report_root'] = (string)($suiteReport['report_root'] ?? '');
+                $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
+                $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
+                $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
+                $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
+                $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
+            }
+
+            $suiteRows[] = $suiteRow;
 
             if ($code !== 0 && $code !== 2) {
                 $overallFail = true;
@@ -55,18 +74,18 @@ final class MetaRunner
             }
         }
 
-        // Use the same scoped report root that suites computed, if they all agreed on one.
         $reportRoot = Paths::aggregateMetaReportRoot();
         Paths::ensureDir($reportRoot);
 
-        $meta = [
-            'target'      => $target,
-            'category'    => Env::string('TEST_CATEGORY', 'all'),
-            'suites'      => $suiteRows,
-            'duration_ms' => max(0, self::nowMs() - $metaStart),
-            'started_at'  => gmdate('Y-m-d\TH:i:s\Z'),
-            'report_root' => $reportRoot,
-        ];
+        $meta = ReportSummary::buildMetaReport(
+            $target,
+            Env::string('TEST_CATEGORY', 'all'),
+            $suiteRows,
+            $suiteReports,
+            $reportRoot,
+            max(0, self::nowMs() - $metaStart),
+            $metaStartedAt
+        );
 
         ConsoleReporter::printMeta($meta);
         ResultWriter::writeMeta($meta);
