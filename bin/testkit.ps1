@@ -82,62 +82,83 @@ function Normalize-StackCsv([string]$Raw) {
     $Raw = $fallback
   }
 
+  $out = New-Object System.Collections.Generic.List[string]
   $seen = @{}
-  $tokens = New-Object System.Collections.Generic.List[string]
+
   foreach ($part in ($Raw -split ',')) {
     $token = $part.Trim().ToLowerInvariant()
     if ([string]::IsNullOrWhiteSpace($token)) { continue }
+
     switch ($token) {
-      'mysql' { }
-      'redis' { }
-      'pg' { }
+      'mysql' {}
+      'redis' {}
+      'pg' {}
       'postgres' { $token = 'pg' }
       'postgresql' { $token = 'pg' }
-      default {
-        throw "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg"
-      }
+      default { throw "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg" }
     }
 
     if (-not $seen.ContainsKey($token)) {
       $seen[$token] = $true
-      [void]$tokens.Add($token)
+      $out.Add($token)
     }
   }
 
-  if ($tokens.Count -eq 0) {
-    return $fallback
+  if ($out.Count -eq 0) {
+    $out.Add('mysql')
+    $out.Add('redis')
   }
 
-  return ($tokens -join ',')
+  return ($out -join ',')
 }
 
 function Stack-Has([string]$Csv, [string]$Token) {
-  $parts = @($Csv -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ -ne '' })
-  return $parts -contains $Token
+  return (",$Csv,").Contains(",$Token,")
 }
 
 function Resolve-ComposeFiles([string]$StackCsv) {
   $files = New-Object System.Collections.Generic.List[string]
-  [void]$files.Add('-f')
-  [void]$files.Add($Base)
+  $files.Add('-f')
+  $files.Add($Base)
 
   if (Stack-Has $StackCsv 'mysql') {
-    [void]$files.Add('-f')
-    [void]$files.Add($Mysql)
+    $files.Add('-f')
+    $files.Add($Mysql)
   }
   if (Stack-Has $StackCsv 'redis') {
-    [void]$files.Add('-f')
-    [void]$files.Add($Redis)
+    $files.Add('-f')
+    $files.Add($Redis)
   }
   if (Stack-Has $StackCsv 'pg') {
-    [void]$files.Add('-f')
-    [void]$files.Add($Pg)
+    $files.Add('-f')
+    $files.Add($Pg)
   }
 
   return ,$files.ToArray()
 }
 
-function Dump-Config([string]$EnvFilePath, [string]$EffectiveStack) {
+function Rewrite-RunCommandArgs([string[]]$InputArgs) {
+  if (-not $InputArgs -or $InputArgs.Count -eq 0) { return ,$InputArgs }
+  if ($InputArgs[0] -ne 'run') { return ,$InputArgs }
+
+  $rewritten = @($InputArgs)
+  $sawTestkit = $false
+
+  for ($i = 0; $i -lt $rewritten.Count; $i++) {
+    if ($rewritten[$i] -eq 'testkit') {
+      $sawTestkit = $true
+      continue
+    }
+
+    if ($sawTestkit -and @('runTest.php', './runTest.php', '/workspace/project/runTest.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/runTest.php'
+    }
+  }
+
+  return ,$rewritten
+}
+
+function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
   $tkBackDir = Get-OrDefault $env:TK_BACK_DIR "back"
   $tkPublicDir = Get-OrDefault $env:TK_PUBLIC_DIR "public_html"
   $testJobs = Get-OrDefault $env:TEST_JOBS "1"
@@ -151,7 +172,7 @@ function Dump-Config([string]$EnvFilePath, [string]$EffectiveStack) {
   Write-Host "envFile:  $EnvFilePath"
   Write-Host "DB_ENV_PATH(in-container): $env:TESTKIT_DB_ENV_PATH"
   Write-Host ""
-  Write-Host ("TESTKIT_STACK: {0}" -f $EffectiveStack)
+  Write-Host "TESTKIT_STACK: $StackCsv"
   Write-Host ""
   Write-Host ("TK_BACK_DIR:   {0}" -f $tkBackDir)
   Write-Host ("TK_PUBLIC_DIR: {0}" -f $tkPublicDir)
@@ -177,8 +198,8 @@ function Run-Doctor {
     $ok = $false
   }
 
-  $effectiveStack = Normalize-StackCsv $env:TESTKIT_STACK
-  Write-Host "[INFO] TESTKIT_STACK=$effectiveStack"
+  $stackCsv = Normalize-StackCsv $env:TESTKIT_STACK
+  Write-Host "[INFO] TESTKIT_STACK=$stackCsv"
 
   $backDir = Get-OrDefault $env:TK_BACK_DIR "back"
   $pubDir = Get-OrDefault $env:TK_PUBLIC_DIR "public_html"
@@ -217,7 +238,9 @@ function Run-Doctor {
   if ($env:TK_MODULE_LEVEL) { Write-Host "[OK] TK_MODULE_LEVEL: $($env:TK_MODULE_LEVEL) (override)" }
   if ($env:TK_TAG_MAP) { Write-Host "[OK] TK_TAG_MAP: $($env:TK_TAG_MAP) (override)" }
 
-  $backAutoload = Get-OrDefault $env:TK_BACK_AUTOLOAD ("{0}\vendor\autoload.php" -f $backDir)
+  $backAutoload = $env:TK_BACK_AUTOLOAD
+  if (-not $backAutoload) { $backAutoload = ("{0}\vendor\autoload.php" -f $backDir) }
+
   if (Test-Path (Join-Path $ProjectRoot $backAutoload)) {
     Write-Host "[OK] back autoload: $backAutoload"
   } elseif ($env:TK_BACK_BOOTSTRAP -and (Test-Path (Join-Path $ProjectRoot $env:TK_BACK_BOOTSTRAP))) {
@@ -226,7 +249,9 @@ function Run-Doctor {
     Write-Host "[WARN] no detecté bootstrap de BACK. Si tus tests necesitan cargar código del proyecto, seteá TK_BACK_AUTOLOAD o TK_BACK_BOOTSTRAP."
   }
 
-  $pubAutoload = Get-OrDefault $env:TK_PUBLIC_AUTOLOAD ("{0}\vendor\autoload.php" -f $pubDir)
+  $pubAutoload = $env:TK_PUBLIC_AUTOLOAD
+  if (-not $pubAutoload) { $pubAutoload = ("{0}\vendor\autoload.php" -f $pubDir) }
+
   if (Test-Path (Join-Path $ProjectRoot $pubAutoload)) {
     Write-Host "[OK] public autoload: $pubAutoload"
   } elseif ($env:TK_PUBLIC_BOOTSTRAP -and (Test-Path (Join-Path $ProjectRoot $env:TK_PUBLIC_BOOTSTRAP))) {
@@ -237,15 +262,14 @@ function Run-Doctor {
 
   Write-Host "[INFO] TEST_DB_STRATEGY=$(Get-OrDefault $env:TEST_DB_STRATEGY 'shared') TEST_JOBS=$(Get-OrDefault $env:TEST_JOBS '1')"
 
-  $mysqlPort = [int](Get-OrDefault $env:TEST_MYSQL_PORT "33070")
-  $pgPort = [int](Get-OrDefault $env:TEST_PG_PORT "54370")
-
-  if (Stack-Has $effectiveStack 'mysql') {
+  if (Stack-Has $stackCsv 'mysql') {
+    $mysqlPort = [int](Get-OrDefault $env:TEST_MYSQL_PORT "33070")
     if (Port-InUse $mysqlPort) { Write-Host "[WARN] puerto MySQL ocupado: $mysqlPort (TEST_MYSQL_PORT)" }
     else { Write-Host "[OK] puerto MySQL libre: $mysqlPort" }
   }
 
-  if (Stack-Has $effectiveStack 'pg') {
+  if (Stack-Has $stackCsv 'pg') {
+    $pgPort = [int](Get-OrDefault $env:TEST_PG_PORT "54370")
     if (Port-InUse $pgPort) { Write-Host "[WARN] puerto Postgres ocupado: $pgPort (TEST_PG_PORT)" }
     else { Write-Host "[OK] puerto Postgres libre: $pgPort" }
   }
@@ -292,7 +316,7 @@ function Run-Doctor {
   if ($Dump -and $envFile) {
     $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
     $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
-    Dump-Config $envFile.Path $effectiveStack
+    Dump-Config $envFile.Path $stackCsv
   }
 
   if ($ok) { Write-Host "`nDoctor: OK"; exit 0 }
@@ -320,15 +344,17 @@ if ($Args.Count -gt 0 -and $Args[0] -eq "--pg") {
   $Args = if ($Args.Count -gt 1) { $Args[1..($Args.Count-1)] } else { @() }
 }
 
-$effectiveStack = Normalize-StackCsv $env:TESTKIT_STACK
-if ($legacyPgFlag -and -not (Stack-Has $effectiveStack 'pg')) {
-  $effectiveStack = "$effectiveStack,pg"
+$stackCsv = Normalize-StackCsv $env:TESTKIT_STACK
+if ($legacyPgFlag -and -not (Stack-Has $stackCsv 'pg')) {
+  $stackCsv = "$stackCsv,pg"
 }
 
 $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
 $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
 
-$files = Resolve-ComposeFiles $effectiveStack
-$cmd = @("compose", "--env-file", $envFile) + $files + $Args
+$files = Resolve-ComposeFiles $stackCsv
+$runArgs = Rewrite-RunCommandArgs $Args
+
+$cmd = @("compose", "--env-file", $envFile) + $files + $runArgs
 & docker @cmd
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
