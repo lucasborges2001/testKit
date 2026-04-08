@@ -20,11 +20,12 @@ While it aims for reusability, it depends on specific layout conventions and sta
   - `front_php`
   - `front_js`
 - Useful reporting:
-  - suite summary
+  - suite summary (`suite_status`, `no_tests_reason`)
   - module summary
   - grouped failures
   - slow tests
   - fragility hints (history based)
+  - runner capabilities by suite
 - Store lifecycle:
   - env resolution
   - DB/store naming per worker
@@ -81,7 +82,7 @@ TEST_CATEGORY=critical php runTest.php all
 
 ## Outputs
 
-- `test/reports/*_latest.json`
+- `test/reports/*_latest.json` or `test/<side>/<module>/report/*_latest.json`
 - `test/history/*.json`
 - `test/coverage/*`
 - `test/querylog.jsonl` (si el profiling de DB está activo)
@@ -97,6 +98,18 @@ DB profile report (if enabled):
 ```bash
 php scripts/query_report.php
 ```
+
+
+## Reporting contract
+
+Each suite report now exposes, at minimum:
+
+- `report_contract_version`
+- `suite_status` (`passed|failed|all_skipped|no_tests|listed`)
+- `no_tests_reason` when selection is empty
+- `runner_capabilities` so consumers can distinguish what each suite actually supports
+
+`front_js` consumes the same discovered selection produced by the shared PHP discovery layer, so scope/category/match resolution and module-scoped report roots stay aligned across suites.
 
 ## Documentation
 

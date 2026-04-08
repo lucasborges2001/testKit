@@ -60,6 +60,9 @@ final class MetaRunner
                 $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
                 $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
                 $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
+                $suiteRow['suite_status'] = (string)($suiteReport['suite_status'] ?? '');
+                $suiteRow['no_tests_reason'] = (string)($suiteReport['no_tests_reason'] ?? '');
+                $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
                 $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
                 $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
             }
@@ -147,8 +150,8 @@ final class MetaRunner
             'php' => ['back_php', 'front_php'],
             'js' => ['front_js'],
             'smoke' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'perf' => ['back_python', 'front_js'],
-            'stress' => ['back_python', 'front_js'],
+            'perf' => ['back_php', 'back_python', 'front_php', 'front_js'],
+            'stress' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'contract' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'critical' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'slow' => ['back_php', 'back_python', 'front_php', 'front_js'],

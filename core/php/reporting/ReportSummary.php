@@ -205,6 +205,7 @@ final class ReportSummary
         $reportScopeValues = [];
         $moduleScopeValues = [];
         $canonicalFailures = [];
+        $suiteStatusCounts = [];
 
         foreach ($suiteReports as $report) {
             $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
@@ -222,6 +223,11 @@ final class ReportSummary
             $moduleScope = trim((string)($report['selected_module_scope'] ?? ''));
             if ($moduleScope !== '') {
                 $moduleScopeValues[$moduleScope] = true;
+            }
+
+            $suiteStatus = (string)($report['suite_status'] ?? 'passed');
+            if ($suiteStatus !== '') {
+                $suiteStatusCounts[$suiteStatus] = (int)($suiteStatusCounts[$suiteStatus] ?? 0) + 1;
             }
 
             foreach (self::canonicalFailures($report) as $failure) {
@@ -247,6 +253,7 @@ final class ReportSummary
             'report_scope_rel'      => $reportScopeRel,
             'selected_module_scope' => $selectedModuleScope,
             'selected_test_count'   => $selectedTestCount,
+            'suite_status_counts'   => $suiteStatusCounts,
             'summary'               => $summary,
             'failed_files'          => self::failedFiles($canonicalFailures),
             'top_failure_messages'  => self::topFailureMessages($canonicalFailures, 5),

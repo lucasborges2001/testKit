@@ -59,14 +59,18 @@ final class TestTagger
 
         foreach ($tokenMap as $tag => $tokens) {
             foreach ($tokens as $token) {
-                if ($token === '') continue;
-                if (
+                if ($token === '') {
+                    continue;
+                }
+
+                $quoted = preg_quote($token, '/');
+                $matches =
                     str_contains($normalized, '/' . $token . '/') ||
                     str_contains($normalized, '_' . $token . '_') ||
-                    str_ends_with($normalized, '_' . $token . '.php') ||
-                    str_ends_with($normalized, '_' . $token . '.py') ||
-                    str_ends_with($normalized, '_' . $token . '.mjs')
-                ) {
+                    preg_match('/(?:^|[\/_\-.])' . $quoted . '(?:[\/_\-.]|\.test\.(?:php|py|mjs|js|ts)$)/i', $normalized) === 1 ||
+                    preg_match('/(?:_|-|\.)' . $quoted . '\.test\.(?:php|py|mjs|js|ts)$/i', $normalized) === 1;
+
+                if ($matches) {
                     $tags[] = $tag;
                     break;
                 }

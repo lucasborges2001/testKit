@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Suites;
 
+use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Execution\ProcessRunner;

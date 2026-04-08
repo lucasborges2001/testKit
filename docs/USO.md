@@ -101,10 +101,10 @@ TEST_COVERAGE=1 TEST_COVERAGE_FORMAT=both php runTest.php back-php
 
 Salida:
 
-- `testkit/_out/coverage/php_back/coverage.json`
-- `testkit/_out/coverage/php_back/lcov.info`
-- `testkit/_out/coverage/php_back/coverage_diagnostics.json`
-- `testkit/_out/coverage/php_back/coverage_report.md`
+- `test/coverage/php_back/coverage.json`
+- `test/coverage/php_back/lcov.info`
+- `test/coverage/php_back/coverage_diagnostics.json`
+- `test/coverage/php_back/coverage_report.md`
 
 Variables utiles:
 
@@ -117,8 +117,8 @@ Variables utiles:
 
 Archivos generados:
 
-- `testkit/_out/reports/*_latest.json`
-- `testkit/_out/history/*.json`
+- `test/reports/*_latest.json o test/<side>/<module>/report/*_latest.json`
+- `test/history/*.json`
 
 Reporte consolidado:
 
@@ -128,12 +128,24 @@ php scripts/report.php
 
 Incluye:
 
-- resumen por suite
+- resumen por suite (`suite_status`, `no_tests_reason`)
 - resumen por modulo
 - fallas agrupadas
 - tests lentos
 - indicios de fragilidad
+- capacidades reales por suite
 - gaps de coverage
+
+
+## 6.1) Estados y capacidades por suite
+
+Cada `*_latest.json` incluye:
+
+- `suite_status`: `passed|failed|all_skipped|no_tests|listed`
+- `no_tests_reason`: motivo cuando la selección queda vacía
+- `runner_capabilities`: matriz mínima de soporte por suite
+
+Esto evita asumir que todas las suites tienen exactamente la misma superficie de features.
 
 ## 7) Variables clave
 

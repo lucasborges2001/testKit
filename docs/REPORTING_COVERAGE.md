@@ -10,10 +10,12 @@ Por suite:
 - tests lentos
 - violaciones de threshold de perf (si aplica)
 - hints de fragilidad (flaky)
+- `suite_status` y `no_tests_reason`
+- `runner_capabilities`
 
 Archivo por suite:
 
-- `test/reports/<suite>_latest.json`
+- `test/reports/<suite>_latest.json` o `test/<side>/<module>/report/<suite>_latest.json`
 
 Historial:
 
@@ -33,6 +35,21 @@ Entrega una lectura de decision:
 - donde estan los tests lentos
 - que tests parecen fragiles
 - como viene coverage en zonas importantes
+
+
+## 2.1) Lectura mínima del contrato JSON
+
+Campos nuevos/canónicos que conviene consumir:
+
+- `report_contract_version`
+- `suite_status`
+- `no_tests_reason`
+- `runner_capabilities`
+- `summary`
+- `failures`
+- `perf_violations`
+
+No asumas que `exit_code=2` alcanza para distinguir entre "sin tests" y "todo skipped". El campo canónico es `suite_status`.
 
 ## 3) Coverage con lectura util
 
@@ -67,7 +84,7 @@ Variables:
 ## 5) Smoke / perf / stress
 
 - se soportan por tags y filtros de categoria
-- se pueden fijar thresholds de tiempo (`TEST_PERF_MAX_MS`)
+- se pueden fijar thresholds de tiempo (`TEST_PERF_MAX_MS`, `TEST_PERF_WARN_MS`)
 - se listan tests lentos por threshold (`TEST_SLOW_THRESHOLD_MS`)
 
 Esto permite detectar degradaciones sin convertir la suite en benchmark de marketing.

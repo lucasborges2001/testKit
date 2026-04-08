@@ -3,10 +3,9 @@
  * Runner de tests JS (Node, ESM).
  *
  * - Ejecuta cada `*.test.mjs` en proceso separado.
+ * - Consume una selección precomputada desde PHP cuando está disponible.
  * - Soporta loader ESM para redirigir imports test/front -> <TK_PUBLIC_DIR>.
  * - Soporta paralelismo por archivos (TEST_JOBS).
- * - Soporta filtrado por scope/category/match.
- * - Resuelve report root desde los tests descubiertos (test/<side>/<module>/report).
  * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx 5 por prefijo).
  */
 
@@ -34,28 +33,25 @@ const category = (process.env.TEST_CATEGORY || "all").toLowerCase();
 const failFast = (process.env.TEST_FAIL_FAST || "1") === "1";
 const match = (process.env.TEST_MATCH || "").toLowerCase();
 const listOnly = (process.env.TEST_LIST || "0") === "1";
-const requireTests = (process.env.TEST_JS_REQUIRE_TESTS || "0") === "1";
+const requireTests = (process.env.TEST_JS_REQUIRE_TESTS || process.env.TEST_REQUIRE_TESTS || "0") === "1";
 const jobs = Math.max(1, parseInt(process.env.TEST_JOBS || "1", 10) || 1);
 const useLoader = (process.env.TEST_USE_PUBLIC_LOADER || "1") === "1";
 const slowThresholdMs = Math.max(1, parseInt(process.env.TEST_SLOW_THRESHOLD_MS || "1500", 10) || 1500);
 const slowTop = Math.max(1, parseInt(process.env.TEST_SLOW_TOP || "10", 10) || 10);
+const perfMaxMs = Math.max(0, parseInt(process.env.TEST_PERF_MAX_MS || "0", 10) || 0);
+const perfWarnMs = Math.max(0, parseInt(process.env.TEST_PERF_WARN_MS || "0", 10) || 0);
 
-// Report root: prefer the PHP-precomputed value; fall back to computing from discovered tests.
 const envReportRoot = process.env.TESTKIT_REPORT_ROOT || "";
 const envModuleScope = process.env.TESTKIT_SELECTED_MODULE_SCOPE || "";
 const envReportScopeRel = process.env.TESTKIT_REPORT_SCOPE_REL || "";
-// Legacy fallback for external tooling that still reads TESTKIT_REPORT_FILE
 const legacyReportFile = process.env.TESTKIT_REPORT_FILE || "";
+const selectedTestsFile = process.env.TESTKIT_SELECTED_TESTS_FILE || "";
 
 const VALID_SCOPES = new Set(["unit", "integration", "e2e", "all"]);
 if (!VALID_SCOPES.has(scope)) {
   console.error(`TEST_SCOPE invalido: "${scope}". Valores: unit|integration|e2e|all`);
   process.exit(PVT_EXIT_ERROR);
 }
-
-// ---------------------------------------------------------------------------
-// File helpers
-// ---------------------------------------------------------------------------
 
 function walk(dir, acc = []) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -75,71 +71,6 @@ function walk(dir, acc = []) {
 function norm(p) {
   return p.replaceAll("\\", "/");
 }
-
-// ---------------------------------------------------------------------------
-// Scope / tag helpers
-// ---------------------------------------------------------------------------
-
-function matchesScope(filePath) {
-  if (scope === "all") return true;
-  return norm(filePath).includes(`/${scope}/`);
-}
-
-function tagsForPath(filePath) {
-  const n = norm(filePath).toLowerCase();
-  const tags = [];
-  const map = {
-    smoke: ["smoke"],
-    perf: ["perf", "performance", "benchmark"],
-    stress: ["stress", "load", "carga"],
-    critical: ["critical", "critico", "critica"],
-    contract: ["contract", "contrato"],
-    slow: ["slow"],
-    fragile: ["fragile", "flaky", "inestable"],
-    unit: ["unit"],
-    integration: ["integration"],
-    e2e: ["e2e"],
-  };
-
-  for (const [tag, tokens] of Object.entries(map)) {
-    if (tokens.some((token) => n.includes(`/${token}/`) || n.includes(`_${token}_`) || n.endsWith(`_${token}.test.mjs`))) {
-      tags.push(tag);
-    }
-  }
-
-  return Array.from(new Set(tags));
-}
-
-function matchesCategory(filePath) {
-  if (!category || category === "all") return true;
-  return tagsForPath(filePath).includes(category);
-}
-
-function moduleFromRel(rel) {
-  const parts = norm(rel).split("/").filter(Boolean);
-  if (parts.length >= 3 && parts[0] === "test") {
-    return `${parts[1]}/${parts[2]}`;
-  }
-  if (parts.length >= 2) {
-    return `${parts[0]}/${parts[1]}`;
-  }
-  return parts[0] || "unknown";
-}
-
-function moduleSummary(entries) {
-  const out = {};
-  for (const entry of entries) {
-    const mod = entry.module || "unknown";
-    if (!out[mod]) out[mod] = { total: 0, pass: 0, fail: 0, skip: 0 };
-    out[mod].total += 1;
-    out[mod][entry.status] = (out[mod][entry.status] || 0) + 1;
-  }
-  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
-}
-
-// ---------------------------------------------------------------------------
-// Report root resolution (mirrors Paths::resolveReportRoot in PHP)
-// ---------------------------------------------------------------------------
 
 function extractFunctionalModule(rel) {
   const parts = norm(rel).split("/").filter(Boolean);
@@ -182,9 +113,62 @@ function commonDirFromRels(rels) {
   return common.join("/");
 }
 
-// ---------------------------------------------------------------------------
-// Retention / pruning (mirrors ResultWriter::pruneOldRuns in PHP)
-// ---------------------------------------------------------------------------
+function matchesScope(filePath) {
+  if (scope === "all") return true;
+  return norm(filePath).includes(`/${scope}/`);
+}
+
+function tagsForPath(filePath) {
+  const n = norm(filePath).toLowerCase();
+  const tags = [];
+  const map = {
+    smoke: ["smoke"],
+    perf: ["perf", "performance", "benchmark"],
+    stress: ["stress", "load", "carga"],
+    critical: ["critical", "critico", "critica"],
+    contract: ["contract", "contrato"],
+    slow: ["slow"],
+    fragile: ["fragile", "flaky", "inestable"],
+    unit: ["unit"],
+    integration: ["integration", "integracion"],
+    e2e: ["e2e"],
+  };
+
+  for (const [tag, tokens] of Object.entries(map)) {
+    if (tokens.some((token) => n.includes(`/${token}/`) || new RegExp(`(?:_|-|\\.)${token}\\.test\\.(mjs|js|ts)$`, "i").test(n) || new RegExp(`(?:^|[\\/_\\-.])${token}(?:[\\/_\\-.]|\\.test\\.(mjs|js|ts)$)`, "i").test(n))) {
+      tags.push(tag);
+    }
+  }
+
+  return Array.from(new Set(tags));
+}
+
+function matchesCategory(filePath) {
+  if (!category || category === "all") return true;
+  return tagsForPath(filePath).includes(category);
+}
+
+function moduleFromRel(rel) {
+  const parts = norm(rel).split("/").filter(Boolean);
+  if (parts.length >= 3 && parts[0] === "test") {
+    return `${parts[1]}/${parts[2]}`;
+  }
+  if (parts.length >= 2) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return parts[0] || "unknown";
+}
+
+function moduleSummary(entries) {
+  const out = {};
+  for (const entry of entries) {
+    const mod = entry.module || "unknown";
+    if (!out[mod]) out[mod] = { total: 0, pass: 0, fail: 0, skip: 0 };
+    out[mod].total += 1;
+    out[mod][entry.status] = (out[mod][entry.status] || 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
 
 function pruneOldRuns(dir, prefix, keep = 5) {
   try {
@@ -196,10 +180,6 @@ function pruneOldRuns(dir, prefix, keep = 5) {
     }
   } catch { /* ignore if dir does not exist yet */ }
 }
-
-// ---------------------------------------------------------------------------
-// Failure enrichment
-// ---------------------------------------------------------------------------
 
 function textExcerpt(text, maxLines) {
   if (!text) return null;
@@ -229,12 +209,10 @@ function extractTrace(text) {
 function buildFailureEntry(t) {
   const stdout = t.stdout || "";
   const stderr = t.stderr || "";
-
   const message = extractFirstMessage(stderr) || extractFirstMessage(stdout) || null;
   const traceExcerpt = extractTrace(stderr || stdout);
   const stdoutExcerpt = textExcerpt(stdout, 15);
   const stderrExcerpt = textExcerpt(stderr, 15);
-
   const tags = t.tags || [];
   const scopeTags = tags.filter((tag) => ["unit", "integration", "e2e"].includes(tag));
   const catTags = tags.filter((tag) => !["unit", "integration", "e2e"].includes(tag));
@@ -249,8 +227,8 @@ function buildFailureEntry(t) {
     category: catTags.join(","),
     status: t.status,
     duration_ms: t.duration_ms,
-    error_type: `exit_code_${t.exit_code}`,
-    message,
+    error_type: t.perf_violation ? "perf_threshold" : `exit_code_${t.exit_code}`,
+    message: t.perf_violation?.message || message,
     assertion: null,
     diff_excerpt: null,
     trace_excerpt: traceExcerpt || null,
@@ -286,25 +264,38 @@ function groupFailures(failures) {
   return { by_file: byFile, by_error_type: byErrorType, by_message: byMessage };
 }
 
-// ---------------------------------------------------------------------------
-// Report builder
-// ---------------------------------------------------------------------------
+function suiteStatusFor(tests, passed, failed, skipped, listMode) {
+  if (listMode) return "listed";
+  if (!tests.length) return "no_tests";
+  if (failed > 0) return "failed";
+  if (passed === 0 && skipped > 0) return "all_skipped";
+  return "passed";
+}
 
-function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exitCode, reportRoot, moduleScope, reportScopeRel, commonDir }) {
+function noTestsReasonFor(tests) {
+  if (tests.length) return null;
+  let msg = `no tests matched the current filters (scope=${scope}, category=${category}`;
+  if (match) msg += `, match=${match}`;
+  msg += ")";
+  return msg;
+}
+
+function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exitCode, reportRoot, moduleScope, reportScopeRel, commonDir, listMode }) {
   const finishedAt = new Date().toISOString();
   const durationMs = Math.max(0, Math.round(performance.now() - startedMs));
-
   const failedTests = tests.filter((t) => t.status === "fail");
   const slowTests = tests
     .filter((t) => t.duration_ms >= slowThresholdMs)
     .sort((a, b) => b.duration_ms - a.duration_ms)
     .slice(0, slowTop);
-
+  const perfViolations = tests.filter((t) => Boolean(t.perf_violation));
   const failures = failedTests.map(buildFailureEntry);
   const groupedFailures = groupFailures(failures);
   const selectedTestFiles = tests.map((t) => t.rel);
+  const suiteStatus = suiteStatusFor(tests, passed, failed, skipped, listMode);
 
   return {
+    report_contract_version: 2,
     suite_id: "front_js",
     language: "js",
     scope,
@@ -316,12 +307,25 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
     selected_common_dir: commonDir,
     selected_test_count: tests.length,
     selected_test_files: selectedTestFiles,
+    suite_status: suiteStatus,
+    no_tests_reason: noTestsReasonFor(tests),
+    runner_capabilities: {
+      shared_discovery_contract: Boolean(selectedTestsFile),
+      perf_thresholds: true,
+      fragility_history: false,
+      module_scoped_reports: true,
+      native_coverage_artifacts: false,
+      structured_coverage_diagnostics: false,
+      coverage_formats: [],
+      suite_engine: "front_js",
+    },
     summary: {
       total: tests.length,
       passed,
       failed,
       skipped,
       duration_ms: durationMs,
+      suite_status: suiteStatus,
     },
     tests_total: tests.length,
     pass: passed,
@@ -333,7 +337,7 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
     failed_tests: failedTests,
     slow_tests: slowTests,
     module_summary: moduleSummary(tests),
-    perf_violations: [],
+    perf_violations: perfViolations,
     fragility_hints: [],
     failure_contract: {
       canonical: "failures",
@@ -346,18 +350,12 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
   };
 }
 
-// ---------------------------------------------------------------------------
-// Report writer (latest + timestamped + prune)
-// ---------------------------------------------------------------------------
-
 function writeReport(report, reportRoot) {
   try {
     fs.mkdirSync(reportRoot, { recursive: true });
-
     const now = new Date();
     const ts = now.toISOString().replace(/-/g, "").replace(/:/g, "").replace("T", "_").slice(0, 15);
     const suiteIdSafe = "front_js";
-
     const latestPath = path.join(reportRoot, `${suiteIdSafe}_latest.json`);
     const tsPath = path.join(reportRoot, `${suiteIdSafe}_${ts}.json`);
     const json = JSON.stringify(report, null, 2);
@@ -366,7 +364,6 @@ function writeReport(report, reportRoot) {
     fs.writeFileSync(tsPath, json, "utf8");
     pruneOldRuns(reportRoot, suiteIdSafe);
 
-    // Legacy: also write to TESTKIT_REPORT_FILE if it points somewhere different
     if (legacyReportFile && norm(legacyReportFile) !== norm(latestPath)) {
       try {
         fs.mkdirSync(path.dirname(legacyReportFile), { recursive: true });
@@ -378,23 +375,54 @@ function writeReport(report, reportRoot) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
+function loadSelectedEntries() {
+  if (!selectedTestsFile || !fs.existsSync(selectedTestsFile)) {
+    return null;
+  }
 
-const testsDirExists = fs.existsSync(testsDir) && fs.statSync(testsDir).isDirectory();
-let tests = (testsDirExists ? walk(testsDir) : [])
-  .filter((p) => p.endsWith(".test.mjs"))
-  .filter(matchesScope)
-  .filter(matchesCategory)
-  .sort((a, b) => a.localeCompare(b));
+  try {
+    const raw = fs.readFileSync(selectedTestsFile, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
 
-if (match) {
-  tests = tests.filter((p) => norm(path.relative(repoRoot, p)).toLowerCase().includes(match));
+    return parsed
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => {
+        const rel = norm(String(entry.rel || path.relative(repoRoot, String(entry.file || ""))));
+        const file = norm(String(entry.file || path.join(repoRoot, rel)));
+        return {
+          file,
+          rel,
+          module: String(entry.module || moduleFromRel(rel)),
+          tags: Array.isArray(entry.tags) ? Array.from(new Set(entry.tags.map((t) => String(t).toLowerCase().trim()).filter(Boolean))) : tagsForPath(file),
+        };
+      })
+      .sort((a, b) => a.rel.localeCompare(b.rel));
+  } catch (err) {
+    console.error(`WARN: no se pudo leer TESTKIT_SELECTED_TESTS_FILE=${selectedTestsFile}: ${err?.message || err}`);
+    return null;
+  }
 }
 
-// Compute report root: prefer value passed by PHP; fall back to self-computed from discovered tests.
-const testRels = tests.map((t) => norm(path.relative(repoRoot, t)));
+const testsDirExists = fs.existsSync(testsDir) && fs.statSync(testsDir).isDirectory();
+let testEntries = loadSelectedEntries();
+if (!testEntries) {
+  testEntries = (testsDirExists ? walk(testsDir) : [])
+    .filter((p) => p.endsWith(".test.mjs"))
+    .filter(matchesScope)
+    .filter(matchesCategory)
+    .map((p) => {
+      const rel = norm(path.relative(repoRoot, p));
+      return { file: norm(p), rel, module: moduleFromRel(rel), tags: tagsForPath(p) };
+    })
+    .sort((a, b) => a.rel.localeCompare(b.rel));
+
+  if (match) {
+    testEntries = testEntries.filter((entry) => entry.rel.toLowerCase().includes(match));
+  }
+}
+
+const testRels = testEntries.map((t) => t.rel);
 const computedReportRoot = envReportRoot || resolveReportRootFromRels(testRels);
 const computedModuleScope = envModuleScope || (() => {
   const mods = new Set(testRels.map(extractFunctionalModule).filter(Boolean));
@@ -403,14 +431,10 @@ const computedModuleScope = envModuleScope || (() => {
 const computedReportScopeRel = envReportScopeRel || norm(path.relative(repoRoot, computedReportRoot));
 const computedCommonDir = commonDirFromRels(testRels);
 
-// ---------------------------------------------------------------------------
-// Early exit if no tests
-// ---------------------------------------------------------------------------
-
 const suiteStartedAt = new Date().toISOString();
 const suiteStartedMs = performance.now();
 
-if (!tests.length) {
+if (!testEntries.length) {
   const msg = `No se encontraron tests JS en ${testsDir} (scope=${scope}, category=${category}, match=${match || ""}).`;
 
   banner("FRONT / JS");
@@ -419,42 +443,28 @@ if (!tests.length) {
   console.log(dim(`testsDir:    ${testsDir}`));
   console.log(dim(`reportRoot:  ${computedReportRoot}`));
 
-  if (requireTests) {
-    console.error(msg);
-    const report = buildReport({
-      startedAt: suiteStartedAt, startedMs: suiteStartedMs,
-      tests: [], passed: 0, failed: 1, skipped: 0, exitCode: PVT_EXIT_FAIL,
-      reportRoot: computedReportRoot, moduleScope: computedModuleScope,
-      reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
-    });
-    writeReport(report, computedReportRoot);
-    process.exit(PVT_EXIT_FAIL);
-  }
+  const exitCode = requireTests ? PVT_EXIT_FAIL : PVT_EXIT_SKIP;
+  if (requireTests) console.error(msg);
+  else console.log(gray(`SKIP: ${msg}`));
 
-  console.log(gray(`SKIP: ${msg}`));
   const report = buildReport({
     startedAt: suiteStartedAt, startedMs: suiteStartedMs,
-    tests: [], passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_SKIP,
+    tests: [], passed: 0, failed: 0, skipped: 0, exitCode,
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
-    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
+    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: false,
   });
   writeReport(report, computedReportRoot);
-  process.exit(PVT_EXIT_SKIP);
+  process.exit(exitCode);
 }
-
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
 
 const loaderPath = path.join(testkitRoot, "utils", "js", "front_loader.mjs");
 const loaderUrl = pathToFileURL(loaderPath).href;
-
 const bootstrapDefault = path.join(repoRoot, "test", "front", "_support", "bootstrap.mjs");
 const bootstrapPath = process.env.TK_FRONT_BOOTSTRAP || bootstrapDefault;
 const bootstrapUrl = fs.existsSync(bootstrapPath) ? pathToFileURL(bootstrapPath).href : null;
 
 banner("FRONT / JS");
-console.log(bold(`Running ${tests.length} tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
+console.log(bold(`Running ${testEntries.length} tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
 console.log(dim(`repoRoot:    ${repoRoot}`));
 console.log(dim(`testsDir:    ${testsDir}`));
 console.log(dim(`reportRoot:  ${computedReportRoot}`));
@@ -465,36 +475,29 @@ if (match) console.log(dim(`match:       ${match}`));
 console.log("");
 
 if (listOnly) {
-  for (const t of tests) {
-    console.log(norm(path.relative(repoRoot, t)));
+  for (const t of testEntries) {
+    console.log(t.rel);
   }
-  const listed = tests.map((t) => {
-    const rel = norm(path.relative(repoRoot, t));
-    return {
-      rel,
-      file: norm(t),
-      module: moduleFromRel(rel),
-      tags: tagsForPath(t),
-      status: "listed",
-      exit_code: 0,
-      duration_ms: 0,
-      stdout: "",
-      stderr: "",
-    };
-  });
+  const listed = testEntries.map((t) => ({
+    rel: t.rel,
+    file: t.file,
+    module: t.module,
+    tags: t.tags,
+    status: "listed",
+    exit_code: 0,
+    duration_ms: 0,
+    stdout: "",
+    stderr: "",
+  }));
   const report = buildReport({
     startedAt: suiteStartedAt, startedMs: suiteStartedMs,
     tests: listed, passed: 0, failed: 0, skipped: 0, exitCode: PVT_EXIT_PASS,
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
-    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir,
+    reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: true,
   });
   writeReport(report, computedReportRoot);
   process.exit(PVT_EXIT_PASS);
 }
-
-// ---------------------------------------------------------------------------
-// Execution helpers
-// ---------------------------------------------------------------------------
 
 function makeArgs(testFile) {
   const args = [];
@@ -504,10 +507,44 @@ function makeArgs(testFile) {
   return args;
 }
 
-function runOne(testFile, workerId) {
-  const rel = norm(path.relative(repoRoot, testFile));
-  const args = makeArgs(testFile);
+function applyPerfBudgets(entry) {
+  const tags = Array.isArray(entry.tags) ? entry.tags : [];
+  const perfRelevant = category === "perf" || category === "stress" || tags.includes("perf") || tags.includes("stress");
 
+  if (perfMaxMs > 0 && perfRelevant && entry.duration_ms > perfMaxMs) {
+    entry.status = "fail";
+    entry.exit_code = PVT_EXIT_FAIL;
+    entry.perf_violation = {
+      max_ms: perfMaxMs,
+      actual_ms: entry.duration_ms,
+      message: "Tiempo excede threshold de performance.",
+    };
+  }
+
+  if (perfWarnMs > 0 && entry.duration_ms > perfWarnMs) {
+    entry.perf_warning = {
+      warn_ms: perfWarnMs,
+      actual_ms: entry.duration_ms,
+    };
+  }
+
+  return entry;
+}
+
+function classifyStatus(code) {
+  if (code === 0) return "pass";
+  if (code === PVT_EXIT_SKIP || code === 2) return "skip";
+  return "fail";
+}
+
+function countEntry(entry, counters) {
+  if (entry.status === "pass") counters.passed += 1;
+  else if (entry.status === "skip") counters.skipped += 1;
+  else counters.failed += 1;
+}
+
+function runOne(entry, workerId) {
+  const args = makeArgs(entry.file);
   return new Promise((resolve) => {
     const t0 = performance.now();
     const child = spawn(process.execPath, args, {
@@ -518,32 +555,35 @@ function runOne(testFile, workerId) {
 
     let out = "";
     let err = "";
-
     child.stdout.on("data", (d) => { out += d.toString("utf8"); });
     child.stderr.on("data", (d) => { err += d.toString("utf8"); });
 
     child.on("close", (code) => {
-      resolve({ rel, file: norm(testFile), code: code ?? 1, out, err, durationMs: Math.max(0, Math.round(performance.now() - t0)), tags: tagsForPath(testFile) });
+      let result = {
+        rel: entry.rel,
+        file: entry.file,
+        module: entry.module,
+        tags: entry.tags,
+        status: classifyStatus(code ?? 1),
+        exit_code: code ?? 1,
+        duration_ms: Math.max(0, Math.round(performance.now() - t0)),
+        stdout: out,
+        stderr: err,
+      };
+      resolve(applyPerfBudgets(result));
     });
   });
 }
 
-// ---------------------------------------------------------------------------
-// Run
-// ---------------------------------------------------------------------------
-
-let passed = 0;
-let failed = 0;
-let skipped = 0;
+const counters = { passed: 0, failed: 0, skipped: 0 };
 const entries = [];
 
 if (jobs <= 1) {
-  for (const t of tests) {
-    const rel = norm(path.relative(repoRoot, t));
-    console.log(testHead(rel));
+  for (const entry of testEntries) {
+    console.log(testHead(entry.rel));
 
     const t0 = performance.now();
-    const r = spawnSync(process.execPath, makeArgs(t), {
+    const r = spawnSync(process.execPath, makeArgs(entry.file), {
       cwd: repoRoot,
       env: { ...process.env, TEST_WORKER_ID: "1", TESTKIT_ROOT: testkitRoot, TK_REPO_ROOT: repoRoot },
       encoding: "utf8",
@@ -555,34 +595,23 @@ if (jobs <= 1) {
     if (out) process.stdout.write(out);
     if (err) process.stderr.write(err);
 
-    const durationMs = Math.max(0, Math.round(performance.now() - t0));
-    const code = r.status ?? (r.signal ? 128 : 1);
-
-    let status = "fail";
-    if (code === 0) {
-      passed++;
-      status = "pass";
-    } else if (code === PVT_EXIT_SKIP || code === 2) {
-      skipped++;
-      status = "skip";
-    } else {
-      failed++;
-    }
-
-    entries.push({
-      rel,
-      file: norm(t),
-      module: moduleFromRel(rel),
-      tags: tagsForPath(t),
-      status,
-      exit_code: code,
-      duration_ms: durationMs,
+    let result = {
+      rel: entry.rel,
+      file: entry.file,
+      module: entry.module,
+      tags: entry.tags,
+      status: classifyStatus(r.status ?? (r.signal ? 128 : 1)),
+      exit_code: r.status ?? (r.signal ? 128 : 1),
+      duration_ms: Math.max(0, Math.round(performance.now() - t0)),
       stdout: out,
       stderr: err,
-    });
+    };
+    result = applyPerfBudgets(result);
+    countEntry(result, counters);
+    entries.push(result);
 
     console.log("");
-    if (status === "fail" && failFast) break;
+    if (result.status === "fail" && failFast) break;
   }
 } else {
   let next = 0;
@@ -592,38 +621,17 @@ if (jobs <= 1) {
     while (true) {
       if (stop) return;
       const idx = next++;
-      if (idx >= tests.length) return;
+      if (idx >= testEntries.length) return;
 
-      const res = await runOne(tests[idx], workerId);
+      const res = await runOne(testEntries[idx], workerId);
       console.log(testHead(res.rel));
-      if (res.out) process.stdout.write(res.out);
-      if (res.err) process.stderr.write(res.err);
+      if (res.stdout) process.stdout.write(res.stdout);
+      if (res.stderr) process.stderr.write(res.stderr);
       console.log("");
 
-      let status = "fail";
-      if (res.code === 0) {
-        passed++;
-        status = "pass";
-      } else if (res.code === PVT_EXIT_SKIP || res.code === 2) {
-        skipped++;
-        status = "skip";
-      } else {
-        failed++;
-      }
-
-      entries.push({
-        rel: res.rel,
-        file: res.file,
-        module: moduleFromRel(res.rel),
-        tags: res.tags,
-        status,
-        exit_code: res.code,
-        duration_ms: res.durationMs,
-        stdout: res.out,
-        stderr: res.err,
-      });
-
-      if (status === "fail" && failFast) {
+      countEntry(res, counters);
+      entries.push(res);
+      if (res.status === "fail" && failFast) {
         stop = true;
         return;
       }
@@ -631,31 +639,27 @@ if (jobs <= 1) {
   }
 
   await Promise.all(Array.from({ length: jobs }, (_, i) => worker(i + 1)));
-
   if (stop) {
     console.error(red("FAIL-FAST: abortando lanzamiento de nuevos tests (algunos pueden seguir ejecutandose)."));
   }
 }
 
-// ---------------------------------------------------------------------------
-// Final report
-// ---------------------------------------------------------------------------
+console.log(gray(`Summary JS: ${counts({ pass: counters.passed, fail: counters.failed, skip: counters.skipped })}`));
 
-console.log(gray(`Summary JS: ${counts({ pass: passed, fail: failed, skip: skipped })}`));
-
-const exitCode = failed > 0 ? PVT_EXIT_FAIL : (passed === 0 && skipped > 0 ? PVT_EXIT_SKIP : PVT_EXIT_PASS);
+const exitCode = counters.failed > 0 ? PVT_EXIT_FAIL : (counters.passed === 0 && counters.skipped > 0 ? PVT_EXIT_SKIP : PVT_EXIT_PASS);
 const report = buildReport({
   startedAt: suiteStartedAt,
   startedMs: suiteStartedMs,
   tests: entries,
-  passed,
-  failed,
-  skipped,
+  passed: counters.passed,
+  failed: counters.failed,
+  skipped: counters.skipped,
   exitCode,
   reportRoot: computedReportRoot,
   moduleScope: computedModuleScope,
   reportScopeRel: computedReportScopeRel,
   commonDir: computedCommonDir,
+  listMode: false,
 });
 writeReport(report, computedReportRoot);
 

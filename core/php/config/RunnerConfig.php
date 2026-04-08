@@ -40,6 +40,8 @@ final class RunnerConfig
         return [
             'suite_id' => $suiteId,
             'language' => $language,
+            'report_contract_version' => 2,
+            'runner_capabilities' => self::suiteCapabilities($suiteId, $language),
             'tests_dir' => Paths::normalize($testsDir),
             'scope' => $scope,
             'category' => $category,
@@ -63,6 +65,40 @@ final class RunnerConfig
             'critical_tags' => Env::csv('TEST_CRITICAL_TAGS', 'critical,contract'),
         ];
     }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public static function suiteCapabilities(string $suiteId, string $language): array
+    {
+        $language = strtolower(trim($language));
+        $suiteId = strtolower(trim($suiteId));
+
+        $nativeCoverageArtifacts = false;
+        $structuredCoverageDiagnostics = false;
+        $coverageFormats = [];
+
+        if ($language === 'php') {
+            $nativeCoverageArtifacts = true;
+            $structuredCoverageDiagnostics = true;
+            $coverageFormats = ['json', 'lcov'];
+        } elseif ($language === 'python') {
+            $nativeCoverageArtifacts = true;
+            $coverageFormats = ['trace'];
+        }
+
+        return [
+            'shared_discovery_contract' => true,
+            'perf_thresholds' => true,
+            'fragility_history' => true,
+            'module_scoped_reports' => true,
+            'native_coverage_artifacts' => $nativeCoverageArtifacts,
+            'structured_coverage_diagnostics' => $structuredCoverageDiagnostics,
+            'coverage_formats' => $coverageFormats,
+            'suite_engine' => $suiteId,
+        ];
+    }
+
 
     /**
      * @return array<string,mixed>

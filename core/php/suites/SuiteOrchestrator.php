@@ -37,19 +37,24 @@ final class SuiteOrchestrator
         $result = SuiteExecutor::execute($tests, $config, $buildCommand);
 
         $moduleScope = self::moduleScope($tests);
-        $result['report_root']           = $reportRoot;
-        $result['report_scope_rel']      = Paths::relativeToRepo($reportRoot);
-        $result['match']                 = (string)($config['match'] ?? '');
-        $result['selected_common_dir']   = self::commonDir($tests);
-        $result['selected_module_scope'] = $moduleScope;
-        $result['selected_test_count']   = count($tests);
-        $result['selected_test_files']   = array_map(fn(array $t): string => (string)($t['rel'] ?? ''), $tests);
-        $result['summary']               = [
+        $result['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
+        $result['runner_capabilities']     = $config['runner_capabilities'] ?? [];
+        $result['report_root']             = $reportRoot;
+        $result['report_scope_rel']        = Paths::relativeToRepo($reportRoot);
+        $result['match']                   = (string)($config['match'] ?? '');
+        $result['selected_common_dir']     = self::commonDir($tests);
+        $result['selected_module_scope']   = $moduleScope;
+        $result['selected_test_count']     = count($tests);
+        $result['selected_test_files']     = array_map(fn(array $t): string => (string)($t['rel'] ?? ''), $tests);
+        $result['suite_status']            = self::suiteStatus($result, $tests, $config);
+        $result['no_tests_reason']         = self::noTestsReason($result, $config);
+        $result['summary']                 = [
             'total'       => (int)$result['tests_total'],
             'passed'      => (int)$result['pass'],
             'failed'      => (int)$result['fail'],
             'skipped'     => (int)$result['skip'],
             'duration_ms' => (int)$result['duration_ms'],
+            'suite_status'=> (string)$result['suite_status'],
         ];
 
         $result['failures'] = ReportSummary::canonicalFailures($result);
@@ -153,6 +158,59 @@ final class SuiteOrchestrator
             $common[] = $seg;
         }
         return implode('/', $common);
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<int,array<string,mixed>> $tests
+     * @param array<string,mixed> $config
+     */
+    private static function suiteStatus(array $result, array $tests, array $config): string
+    {
+        if ((bool)($config['list_only'] ?? false)) {
+            return 'listed';
+        }
+
+        if ($tests === []) {
+            return 'no_tests';
+        }
+
+        $fail = (int)($result['fail'] ?? 0);
+        $pass = (int)($result['pass'] ?? 0);
+        $skip = (int)($result['skip'] ?? 0);
+
+        if ($fail > 0) {
+            return 'failed';
+        }
+
+        if ($pass === 0 && $skip > 0) {
+            return 'all_skipped';
+        }
+
+        return 'passed';
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $config
+     */
+    private static function noTestsReason(array $result, array $config): ?string
+    {
+        if ((string)($result['suite_status'] ?? '') !== 'no_tests') {
+            return null;
+        }
+
+        $scope = (string)($config['scope'] ?? 'all');
+        $category = (string)($config['category'] ?? 'all');
+        $match = trim((string)($config['match'] ?? ''));
+
+        $message = "no tests matched the current filters (scope={$scope}, category={$category}";
+        if ($match !== '') {
+            $message .= ", match={$match}";
+        }
+        $message .= ')';
+
+        return $message;
     }
 
     /**

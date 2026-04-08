@@ -34,7 +34,7 @@ testkit/
 
 - `common`: rutas y entorno base.
 - `config`: parametros de ejecucion y thresholds.
-- `discovery`: identifica tests y metadata (scope/tags/categoria).
+- `discovery`: identifica tests y metadata (scope/tags/categoria). `front_js` consume la selección precomputada por esta misma capa cuando corre vía `FrontJsSuite`.
 - `execution`: corre tests (secuencial/paralelo) y clasifica resultados.
 - `reporting`: reportes utiles para decidir acciones.
 - `coverage`: cobertura por archivo/modulo + zonas criticas sin cobertura.
@@ -67,9 +67,22 @@ testkit/
 
 - Artefactos (propiedad del proyecto anfitrión):
   - `test/reports/*.json`
+  - `test/<side>/<module>/report/*.json` cuando la selección pertenece a un único módulo funcional
   - `test/history/*.json`
   - `test/coverage/*`
   - `test/querylog.jsonl`
+
+
+## 5.1) Contrato de reporte por suite
+
+Además de los contadores históricos (`pass/fail/skip`), cada suite expone:
+
+- `report_contract_version`
+- `suite_status`
+- `no_tests_reason`
+- `runner_capabilities`
+
+El objetivo es que el consumidor no tenga que inferir estados semánticos solo desde `exit_code`.
 
 ## 6) Extensibilidad
 

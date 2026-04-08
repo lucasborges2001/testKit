@@ -267,6 +267,8 @@ final class SuiteExecutor
     {
         $result['finished_at'] = gmdate('Y-m-d\TH:i:s\Z');
         $result['module_summary'] = self::moduleSummary($result['tests']);
+        $result['suite_status'] = self::suiteStatus($result);
+        $result['no_tests_reason'] = self::noTestsReason($result);
 
         $tests = $result['tests'];
         usort($tests, static fn(array $a, array $b): int => ((int)$b['duration_ms']) <=> ((int)$a['duration_ms']));
@@ -285,6 +287,52 @@ final class SuiteExecutor
 
         $result['slow_tests'] = $slow;
         return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function suiteStatus(array $result): string
+    {
+        if ((bool)($result['list_only'] ?? false)) {
+            return 'listed';
+        }
+
+        if ((int)($result['tests_total'] ?? 0) === 0) {
+            return 'no_tests';
+        }
+
+        if ((int)($result['fail'] ?? 0) > 0) {
+            return 'failed';
+        }
+
+        if ((int)($result['skip'] ?? 0) > 0 && (int)($result['pass'] ?? 0) === 0) {
+            return 'skipped';
+        }
+
+        if ((int)($result['skip'] ?? 0) > 0) {
+            return 'partial';
+        }
+
+        return 'passed';
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function noTestsReason(array $result): ?string
+    {
+        if ((int)($result['tests_total'] ?? 0) !== 0) {
+            return null;
+        }
+
+        if ((bool)($result['list_only'] ?? false)) {
+            return null;
+        }
+
+        return (bool)($result['require_tests'] ?? false)
+            ? 'require_tests_enabled'
+            : 'discovery_empty';
     }
 
     /**

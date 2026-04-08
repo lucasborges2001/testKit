@@ -5,14 +5,29 @@ namespace Testkit\Core\Suites;
 
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ProcessRunner;
+use Testkit\Core\Reporting\HistoryRepository;
+use Testkit\Core\Reporting\ReportSummary;
+use Testkit\Core\Reporting\ResultWriter;
 
 final class FrontJsSuite
 {
     public static function run(): int
     {
         $repoRoot = Paths::repoRoot();
+        $testsRel = Env::string('TK_FRONT_JS_DIR', 'test/front');
+        $testsRoot = $repoRoot . '/' . $testsRel;
+        $testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+
+        $config = RunnerConfig::forSuite(
+            'front_js',
+            $testsDir,
+            $repoRoot . '/test/coverage/js_front',
+            'js'
+        );
+
         ContractWorldBootstrap::prepare('front_js', $repoRoot);
 
         $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
@@ -21,44 +36,46 @@ final class FrontJsSuite
             return 3;
         }
 
-        $node = Env::string('NODE_BINARY', 'node');
-        $nodePath = self::findBin($node);
+        $nodePath = self::findBin((string)$config['node_binary']);
         if ($nodePath === null) {
-            $requireNode = Env::bool('TEST_JS_REQUIRE_NODE', false);
-            fwrite(STDERR, ($requireNode ? 'FAIL' : 'SKIP') . ": no se encontro '{$node}' en PATH.\n");
+            $requireNode = (bool)$config['js_require_node'];
+            fwrite(STDERR, ($requireNode ? 'FAIL' : 'SKIP') . ': no se encontro \'' . (string)$config['node_binary'] . "' en PATH.\n");
             return $requireNode ? 1 : 2;
         }
 
-        $testsRel = Env::string('TK_FRONT_JS_DIR', 'test/front');
-        $testsDir = Paths::normalize($repoRoot . '/' . $testsRel);
-        $discoverConfig = [
-            'scope'              => strtolower(Env::string('TEST_SCOPE', 'all')),
-            'category'           => strtolower(Env::string('TEST_CATEGORY', 'all')),
-            'match'              => Env::string('TEST_MATCH', ''),
-            'metadata_lines'     => 10,
-            'tags_from_filename' => true,
-            'module_level'       => max(1, Env::int('TK_MODULE_LEVEL', 2)),
-            'tag_map'            => '',
-        ];
-        $discovered = TestDiscovery::discover($testsDir, ['.test.mjs'], $discoverConfig);
+        $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
         $reportRoot = Paths::resolveReportRoot($discovered);
-        $moduleScope = '';
-        if ($reportRoot !== Paths::reportsRoot() && !empty($discovered)) {
-            $moduleScope = Paths::extractFunctionalModule((string)($discovered[0]['rel'] ?? '')) ?? '';
-        }
+        $moduleScope = self::moduleScope($discovered);
 
         Paths::recordSuiteReportRoot($reportRoot, 'front_js');
 
+        $selectedFile = self::writeSelectedTestsFile($discovered);
         $env = self::baseEnv();
         $env['TESTKIT_ROOT'] = Paths::testkitRoot();
         $env['TK_REPO_ROOT'] = $repoRoot;
         $env['TESTKIT_REPORT_ROOT'] = $reportRoot;
         $env['TESTKIT_REPORT_SCOPE_REL'] = Paths::relativeToRepo($reportRoot);
         $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
-        $env['TESTKIT_REPORT_FILE'] = $reportRoot . '/front_js_latest.json';
+        $env['TESTKIT_SELECTED_TESTS_FILE'] = $selectedFile;
+        $env['TEST_SCOPE'] = (string)$config['scope'];
+        $env['TEST_CATEGORY'] = (string)$config['category'];
+        $env['TEST_MATCH'] = (string)$config['match'];
+        $env['TEST_LIST'] = (bool)$config['list_only'] ? '1' : '0';
+        $env['TEST_FAIL_FAST'] = (bool)$config['fail_fast'] ? '1' : '0';
+        $env['TEST_JOBS'] = (string)$config['jobs'];
+        $env['TEST_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
+        $env['TEST_JS_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
+        $env['TEST_SLOW_THRESHOLD_MS'] = (string)($config['thresholds']['slow_ms'] ?? 1500);
+        $env['TEST_SLOW_TOP'] = (string)($config['thresholds']['slow_top'] ?? 10);
+        $env['TEST_PERF_MAX_MS'] = (string)($config['thresholds']['perf_max_ms'] ?? 0);
+        $env['TEST_PERF_WARN_MS'] = (string)($config['thresholds']['perf_warn_ms'] ?? 0);
 
-        $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
-        $done = ProcessRunner::finish($job);
+        try {
+            $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
+            $done = ProcessRunner::finish($job);
+        } finally {
+            @unlink($selectedFile);
+        }
 
         $stdout = (string)($done['stdout'] ?? '');
         $stderr = (string)($done['stderr'] ?? '');
@@ -69,7 +86,130 @@ final class FrontJsSuite
             fwrite(STDERR, $stderr);
         }
 
+        self::enrichLatestReport($reportRoot, $config);
+
         return (int)($done['code'] ?? 1);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $tests
+     */
+    private static function writeSelectedTestsFile(array $tests): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'tk_front_js_');
+        if ($file === false) {
+            throw new \RuntimeException('No se pudo crear archivo temporal para seleccion JS.');
+        }
+
+        $json = json_encode(array_values($tests), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            throw new \RuntimeException('No se pudo serializar seleccion de tests JS.');
+        }
+
+        file_put_contents($file, $json);
+        return $file;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     */
+    private static function enrichLatestReport(string $reportRoot, array $config): void
+    {
+        $report = ReportSummary::loadLatestSuiteReport('front_js', [$reportRoot]);
+        if (!is_array($report)) {
+            return;
+        }
+
+        $report['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
+        $report['runner_capabilities'] = $config['runner_capabilities'] ?? [];
+        $report['suite_status'] = self::suiteStatus($report);
+        $report['no_tests_reason'] = self::noTestsReason($report);
+
+        $history = HistoryRepository::updateAndAnalyze(
+            $report,
+            (int)($config['thresholds']['flake_window'] ?? 20)
+        );
+        $report['history_file'] = $history['history_file'];
+        $report['fragility_hints'] = $history['fragility_hints'];
+
+        ResultWriter::writeSuite($report);
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function suiteStatus(array $report): string
+    {
+        if (!empty($report['suite_status']) && is_string($report['suite_status'])) {
+            return (string)$report['suite_status'];
+        }
+
+        if ((bool)($report['list_only'] ?? false)) {
+            return 'listed';
+        }
+
+        $total = (int)($report['selected_test_count'] ?? $report['tests_total'] ?? 0);
+        $pass = (int)($report['pass'] ?? 0);
+        $fail = (int)($report['fail'] ?? 0);
+        $skip = (int)($report['skip'] ?? 0);
+
+        if ($total === 0) {
+            return 'no_tests';
+        }
+        if ($fail > 0) {
+            return 'failed';
+        }
+        if ($pass === 0 && $skip > 0) {
+            return 'all_skipped';
+        }
+
+        return 'passed';
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function noTestsReason(array $report): ?string
+    {
+        if ((string)($report['suite_status'] ?? '') !== 'no_tests' && self::suiteStatus($report) !== 'no_tests') {
+            return null;
+        }
+
+        $reason = trim((string)($report['no_tests_reason'] ?? ''));
+        if ($reason !== '') {
+            return $reason;
+        }
+
+        $scope = (string)($report['scope'] ?? 'all');
+        $category = (string)($report['category'] ?? 'all');
+        $match = trim((string)($report['match'] ?? ''));
+        $msg = "no tests matched the current filters (scope={$scope}, category={$category}";
+        if ($match !== '') {
+            $msg .= ", match={$match}";
+        }
+        $msg .= ')';
+        return $msg;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $tests
+     */
+    private static function moduleScope(array $tests): string
+    {
+        if ($tests === []) {
+            return '';
+        }
+
+        $modules = [];
+        foreach ($tests as $test) {
+            $module = Paths::extractFunctionalModule((string)($test['rel'] ?? ''));
+            if ($module === null) {
+                return '';
+            }
+            $modules[$module] = true;
+        }
+
+        return count($modules) === 1 ? (string)array_key_first($modules) : '';
     }
 
     private static function findBin(string $bin): ?string

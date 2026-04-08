@@ -107,6 +107,7 @@ foreach ($reports as $report) {
         $scope = 'global';
     }
     $scope = str_pad($scope, 16);
+    $suiteStatus = str_pad((string)($report['suite_status'] ?? 'passed'), 12);
     $tests = str_pad((string)($report['selected_test_count'] ?? $report['tests_total'] ?? $summary['total'] ?? 0), 5, ' ', STR_PAD_LEFT);
     $pass = str_pad((string)($report['pass'] ?? $summary['passed'] ?? 0), 4, ' ', STR_PAD_LEFT);
     $fail = str_pad((string)($report['fail'] ?? $summary['failed'] ?? 0), 4, ' ', STR_PAD_LEFT);

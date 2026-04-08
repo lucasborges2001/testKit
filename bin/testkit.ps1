@@ -120,10 +120,38 @@ function Run-Doctor {
   if (-not $pubDir) { $pubDir = "public_html" }
 
   if (Test-Path (Join-Path $ProjectRoot $backDir)) { Write-Host "[OK] $backDir/ (TK_BACK_DIR)" }
-  else { Write-Host "[FAIL] falta $ProjectRoot\$backDir (set TK_BACK_DIR en env)"; $ok = $false }
+  else { Write-Host "[INFO] carpeta $backDir/ no detectada. Esto es normal si tu layout es distinto." }
 
   if (Test-Path (Join-Path $ProjectRoot $pubDir)) { Write-Host "[OK] $pubDir/ (TK_PUBLIC_DIR)" }
-  else { Write-Host "[FAIL] falta $ProjectRoot\$pubDir (set TK_PUBLIC_DIR en env)"; $ok = $false }
+  else { Write-Host "[INFO] carpeta $pubDir/ no detectada. (Opcional)" }
+
+  if (Test-Path (Join-Path $ProjectRoot 'test')) { Write-Host "[OK] test/ del proyecto" }
+  else { Write-Host "[FAIL] falta $($ProjectRoot.Path)\test"; $ok = $false }
+
+  $suiteRoots = @{
+    'TK_BACK_PHP_DIR' = (Get-OrDefault $env:TK_BACK_PHP_DIR 'test/back')
+    'TK_BACK_PYTHON_DIR' = (Get-OrDefault $env:TK_BACK_PYTHON_DIR 'test/back')
+    'TK_FRONT_PHP_DIR' = (Get-OrDefault $env:TK_FRONT_PHP_DIR 'test/front')
+    'TK_FRONT_JS_DIR' = (Get-OrDefault $env:TK_FRONT_JS_DIR 'test/front')
+  }
+  foreach ($entry in $suiteRoots.GetEnumerator()) {
+    $resolved = Join-Path $ProjectRoot $entry.Value
+    if (Test-Path $resolved) {
+      if ((Get-Item Env:$($entry.Key) -ErrorAction SilentlyContinue)) { Write-Host "[OK] $($entry.Key): $($entry.Value) (override)" }
+      else { Write-Host "[OK] $($entry.Key): $($entry.Value) (default)" }
+    } else {
+      Write-Host "[WARN] $($entry.Key): ruta no detectada: $($entry.Value). (Opcional)"
+    }
+  }
+
+  $targetOverrides = Get-ChildItem Env: | Where-Object { $_.Name -like 'TESTKIT_TARGET_*' }
+  if ($targetOverrides) {
+    $names = ($targetOverrides | Select-Object -ExpandProperty Name) -join ','
+    Write-Host "[INFO] targets personalizados detectados: $names"
+  }
+
+  if ($env:TK_MODULE_LEVEL) { Write-Host "[OK] TK_MODULE_LEVEL: $($env:TK_MODULE_LEVEL) (override)" }
+  if ($env:TK_TAG_MAP) { Write-Host "[OK] TK_TAG_MAP: $($env:TK_TAG_MAP) (override)" }
 
   $backAutoload = $env:TK_BACK_AUTOLOAD
   if (-not $backAutoload) { $backAutoload = ("{0}\vendor\autoload.php" -f $backDir) }
@@ -146,6 +174,21 @@ function Run-Doctor {
   } else {
     Write-Host "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
   }
+
+  Write-Host "[INFO] TEST_DB_STRATEGY=$(Get-OrDefault $env:TEST_DB_STRATEGY 'shared') TEST_JOBS=$(Get-OrDefault $env:TEST_JOBS '1')"
+
+  $testOutDir = Join-Path $ProjectRoot 'test'
+  New-Item -ItemType Directory -Force -Path $testOutDir | Out-Null
+  try {
+    $probe = Join-Path $testOutDir '.testkit_write_probe.tmp'
+    Set-Content -Path $probe -Value 'ok' -NoNewline
+    Remove-Item -Force $probe
+    Write-Host "[OK] $testOutDir writable"
+  } catch {
+    Write-Host "[FAIL] $testOutDir no es escribible"
+    $ok = $false
+  }
+
 
   $mysqlPort = [int](Get-OrDefault $env:TEST_MYSQL_PORT "33070")
   $pgPort = [int](Get-OrDefault $env:TEST_PG_PORT "54370")
@@ -179,6 +222,10 @@ function Run-Doctor {
       else { Write-Host "[WARN] docker compose v2 no disponible (ok si no usás flujo Docker)" }
     }
   }
+
+  try { php -r "echo PHP_VERSION;" | ForEach-Object { if ($_){ Write-Host "[INFO] php local: $_" } } } catch {}
+  try { node -v | ForEach-Object { if ($_){ Write-Host "[INFO] node local: $_" } } } catch {}
+
 
   if ($Dump -and $envFile) {
     $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
