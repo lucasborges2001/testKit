@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\Store;
 
 use PDO;
+use Testkit\Core\Common\Trace;
 
 final class MysqlStoreAdapter implements StoreAdapter
 {
@@ -39,6 +40,14 @@ final class MysqlStoreAdapter implements StoreAdapter
             ['DB_PASS', 'TEST_MYSQL_PASSWORD', 'MYSQL_PASSWORD'],
             'password MySQL'
         );
+
+        Trace::log('store.connect', [
+            'driver' => 'mysql',
+            'host' => $host,
+            'port' => $port,
+            'db' => $dbName,
+            'user' => $user,
+        ]);
 
         return new PDO(
             "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4",
@@ -83,18 +92,38 @@ final class MysqlStoreAdapter implements StoreAdapter
             ]
         );
 
+        $stmt = $pdo->prepare('SELECT SCHEMA_NAME FROM information_schema.schemata WHERE schema_name = ? LIMIT 1');
+        $stmt->execute([$dbName]);
+        $exists = $stmt->fetchColumn() !== false;
+        $stmt->closeCursor();
+
         $pdo->exec(
             'CREATE DATABASE IF NOT EXISTS ' . $this->quoteIdentifier($dbName)
             . ' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
         );
+
+        Trace::log('store.provision', [
+            'driver' => 'mysql',
+            'host' => $host,
+            'port' => $port,
+            'db' => $dbName,
+            'admin_user' => $adminUser,
+            'action' => $exists ? 'validated_existing_database' : 'created_database',
+        ]);
     }
 
     public function reset(PDO $pdo): void
     {
+        Trace::log('store.reset.start', [
+            'driver' => 'mysql',
+            'db' => $this->currentDatabaseName($pdo),
+            'action' => 'drop_all_objects',
+        ]);
+
         $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 
         try {
-            $this->dropObjects(
+            $views = $this->dropObjects(
                 $pdo,
                 "SELECT table_name AS name
                  FROM information_schema.views
@@ -103,7 +132,7 @@ final class MysqlStoreAdapter implements StoreAdapter
                 fn(string $name): string => 'DROP VIEW IF EXISTS ' . $this->quoteIdentifier($name)
             );
 
-            $this->dropObjects(
+            $tables = $this->dropObjects(
                 $pdo,
                 "SELECT table_name AS name
                  FROM information_schema.tables
@@ -113,7 +142,7 @@ final class MysqlStoreAdapter implements StoreAdapter
                 fn(string $name): string => 'DROP TABLE IF EXISTS ' . $this->quoteIdentifier($name)
             );
 
-            $this->dropObjects(
+            $procedures = $this->dropObjects(
                 $pdo,
                 "SELECT routine_name AS name
                  FROM information_schema.routines
@@ -123,7 +152,7 @@ final class MysqlStoreAdapter implements StoreAdapter
                 fn(string $name): string => 'DROP PROCEDURE IF EXISTS ' . $this->quoteIdentifier($name)
             );
 
-            $this->dropObjects(
+            $functions = $this->dropObjects(
                 $pdo,
                 "SELECT routine_name AS name
                  FROM information_schema.routines
@@ -133,7 +162,7 @@ final class MysqlStoreAdapter implements StoreAdapter
                 fn(string $name): string => 'DROP FUNCTION IF EXISTS ' . $this->quoteIdentifier($name)
             );
 
-            $this->dropObjects(
+            $events = $this->dropObjects(
                 $pdo,
                 "SELECT event_name AS name
                  FROM information_schema.events
@@ -141,6 +170,16 @@ final class MysqlStoreAdapter implements StoreAdapter
                  ORDER BY event_name",
                 fn(string $name): string => 'DROP EVENT IF EXISTS ' . $this->quoteIdentifier($name)
             );
+
+            Trace::log('store.reset.ok', [
+                'driver' => 'mysql',
+                'db' => $this->currentDatabaseName($pdo),
+                'views_dropped' => $views,
+                'tables_dropped' => $tables,
+                'procedures_dropped' => $procedures,
+                'functions_dropped' => $functions,
+                'events_dropped' => $events,
+            ]);
         } finally {
             $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
         }
@@ -148,6 +187,12 @@ final class MysqlStoreAdapter implements StoreAdapter
 
     public function clean(PDO $pdo): void
     {
+        Trace::log('store.clean.start', [
+            'driver' => 'mysql',
+            'db' => $this->currentDatabaseName($pdo),
+            'action' => 'truncate_all_tables',
+        ]);
+
         $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 
         try {
@@ -159,21 +204,30 @@ final class MysqlStoreAdapter implements StoreAdapter
                  ORDER BY table_name"
             )->fetchAll(PDO::FETCH_COLUMN);
 
+            $truncated = 0;
             foreach ($tables as $table) {
                 if (!is_string($table) || $table === '') {
                     continue;
                 }
 
                 $pdo->exec('TRUNCATE TABLE ' . $this->quoteIdentifier($table));
+                $truncated++;
             }
+
+            Trace::log('store.clean.ok', [
+                'driver' => 'mysql',
+                'db' => $this->currentDatabaseName($pdo),
+                'tables_truncated' => $truncated,
+            ]);
         } finally {
             $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
         }
     }
 
-    private function dropObjects(PDO $pdo, string $sql, callable $buildDropSql): void
+    private function dropObjects(PDO $pdo, string $sql, callable $buildDropSql): int
     {
         $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+        $dropped = 0;
         foreach ($rows as $row) {
             $name = trim((string)($row['name'] ?? ''));
             if ($name === '') {
@@ -181,7 +235,16 @@ final class MysqlStoreAdapter implements StoreAdapter
             }
 
             $pdo->exec((string)$buildDropSql($name));
+            $dropped++;
         }
+
+        return $dropped;
+    }
+
+    private function currentDatabaseName(PDO $pdo): string
+    {
+        $value = $pdo->query('SELECT DATABASE()')->fetchColumn();
+        return is_string($value) && $value !== '' ? $value : $this->resolveDatabaseName();
     }
 
     private function quoteIdentifier(string $name): string

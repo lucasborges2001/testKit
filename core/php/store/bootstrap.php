@@ -5,6 +5,7 @@ require_once __DIR__ . '/../common/Env.php';
 require_once __DIR__ . '/../common/Paths.php';
 require_once __DIR__ . '/../common/ProjectEnv.php';
 require_once __DIR__ . '/../common/Bootstrap.php';
+require_once __DIR__ . '/../common/Trace.php';
 
 require_once __DIR__ . '/StoreAdapter.php';
 require_once __DIR__ . '/MysqlStoreAdapter.php';
