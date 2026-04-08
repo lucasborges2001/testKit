@@ -127,7 +127,7 @@ final class FrontJsSuite
 
         $history = HistoryRepository::updateAndAnalyze(
             $report,
-            (int)($config['thresholds']['flake_window'] ?? 20)
+            (int)($config['thresholds']['flake_window'] ?? 10)
         );
         $report['history_file'] = $history['history_file'];
         $report['fragility_hints'] = $history['fragility_hints'];

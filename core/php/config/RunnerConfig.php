@@ -31,7 +31,7 @@ final class RunnerConfig
             'slow_top' => max(1, Env::int('TEST_SLOW_TOP', 10)),
             'perf_max_ms' => max(0, Env::int('TEST_PERF_MAX_MS', 0)),
             'perf_warn_ms' => max(0, Env::int('TEST_PERF_WARN_MS', 0)),
-            'flake_window' => max(5, Env::int('TEST_FLAKE_WINDOW', 20)),
+            'flake_window' => max(5, Env::int('TEST_FLAKE_WINDOW', 10)),
         ];
 
         $moduleLevel = max(1, Env::int('TK_MODULE_LEVEL', 2));

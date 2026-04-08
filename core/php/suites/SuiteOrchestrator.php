@@ -66,7 +66,7 @@ final class SuiteOrchestrator
 
         $history = HistoryRepository::updateAndAnalyze(
             $result,
-            (int)($config['thresholds']['flake_window'] ?? 20)
+            (int)($config['thresholds']['flake_window'] ?? 10)
         );
         $result['history_file'] = $history['history_file'];
         $result['fragility_hints'] = $history['fragility_hints'];

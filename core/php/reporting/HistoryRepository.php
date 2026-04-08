@@ -11,7 +11,7 @@ final class HistoryRepository
      * @param array<string,mixed> $result
      * @return array<string,mixed>
      */
-    public static function updateAndAnalyze(array $result, int $window = 20): array
+    public static function updateAndAnalyze(array $result, int $window = 10): array
     {
         $suiteId = (string)($result['suite_id'] ?? 'suite');
         $file = Paths::historyRoot() . '/' . preg_replace('/[^a-z0-9._-]+/i', '_', strtolower($suiteId)) . '.json';
