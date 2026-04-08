@@ -13,56 +13,10 @@ services:
     environment:
       APP_ENV: test
       APP_DEBUG: 1
-      # DB_ENV_PATH points to the env file INSIDE the mounted repo (/app).
+      # DB_ENV_PATH points to the env file INSIDE the mounted repo (/workspace/project).
       # It is set by bin/testkit based on whether the env file is in root/ or test/.
       DB_ENV_PATH: ${TESTKIT_DB_ENV_PATH:-/workspace/project/test/.env.test}
       TESTKIT_ROOT: /workspace/testkit
       TK_REPO_ROOT: /workspace/project
       # Node: por default es OK si está. Si querés que falte node => FAIL:
       # TEST_JS_REQUIRE_NODE: "1"
-    depends_on:
-      mysql_test:
-        condition: service_healthy
-      redis_test:
-        condition: service_healthy
-
-  mysql_test:
-    image: mysql:8.0
-    command:
-      - --log-bin-trust-function-creators=1
-      - --slow_query_log=ON
-      - --long_query_time=0.2
-      - --log_output=FILE
-      - --slow_query_log_file=/var/lib/mysql/slow.log
-      - --performance_schema=ON
-    environment:
-      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${TEST_MYSQL_DB}
-      MYSQL_USER: ${TEST_MYSQL_USER}
-      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD}
-    ports:
-      - "${TEST_MYSQL_PORT:-33070}:3306"
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p${TEST_MYSQL_ROOT_PASSWORD} || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    volumes:
-      - testkit_mysql:/var/lib/mysql
-
-  redis_test:
-    image: redis:7-alpine
-    command:
-      - redis-server
-      - --save
-      - ""
-      - --appendonly
-      - "no"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
-volumes:
-  testkit_mysql:

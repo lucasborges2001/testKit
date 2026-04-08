@@ -31,6 +31,9 @@ final class MetaRunner
             return 3;
         }
 
+        $runId = Env::string('TEST_RUN_ID', self::buildRunId());
+        putenv('TEST_RUN_ID=' . $runId);
+        putenv('TEST_META_RUN_ID=' . $runId);
         putenv('TEST_FAIL_FAST=' . ((bool)$config['child_fail_fast'] ? '1' : '0'));
 
         $metaStartedAt = gmdate('Y-m-d\TH:i:s\Z');
@@ -65,6 +68,10 @@ final class MetaRunner
                 $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
                 $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
                 $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
+                $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
+                $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
+                $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
+                $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
             }
 
             $suiteRows[] = $suiteRow;
@@ -89,6 +96,18 @@ final class MetaRunner
             max(0, self::nowMs() - $metaStart),
             $metaStartedAt
         );
+
+        $meta['run_id'] = $runId;
+        $meta['meta_run_id'] = $runId;
+        $meta['run_kind'] = 'meta';
+        $meta['report_keep'] = (int)($config['report_keep'] ?? 5);
+        $meta['runs_index_keep'] = (int)($config['runs_index_keep'] ?? $config['report_keep'] ?? 5);
+        $meta['filters'] = [
+            'target' => $target,
+            'scope' => Env::string('TEST_SCOPE', 'all'),
+            'category' => Env::string('TEST_CATEGORY', 'all'),
+            'match' => Env::string('TEST_MATCH', ''),
+        ];
 
         ConsoleReporter::printMeta($meta);
         ResultWriter::writeMeta($meta);
@@ -192,5 +211,16 @@ final class MetaRunner
     private static function nowMs(): int
     {
         return (int)round(microtime(true) * 1000);
+    }
+
+    private static function buildRunId(): string
+    {
+        try {
+            $suffix = bin2hex(random_bytes(3));
+        } catch (\Throwable) {
+            $suffix = substr((string)sha1(uniqid('', true)), 0, 6);
+        }
+
+        return gmdate('Ymd\THis\Z') . '_' . $suffix;
     }
 }

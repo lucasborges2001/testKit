@@ -3,6 +3,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${HERE}/compose.yaml"
+MYSQL="${HERE}/compose.mysql.yaml"
+REDIS="${HERE}/compose.redis.yaml"
 PG="${HERE}/compose.pg.yaml"
 
 PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-}"
@@ -33,25 +35,19 @@ pick_env_file() {
 }
 
 env_file_to_container_db_env_path() {
-  # maps host env file location -> path inside container (volume mounts ..:/app)
   local env_file="$1"
   if [[ "$env_file" == "${HERE}/.env.test" ]]; then
-    echo "/app/test/.env.test"; return 0
+    echo "/workspace/project/test/.env.test"; return 0
   fi
   if [[ "$env_file" == "${PROJECT_ROOT}/.env.test" ]]; then
-    echo "/app/.env.test"; return 0
+    echo "/workspace/project/.env.test"; return 0
   fi
-  # fallback: try to infer relative to repo root
   local rel
   rel="${env_file#"${PROJECT_ROOT}/"}"
   echo "/workspace/project/${rel}"; return 0
 }
 
 port_in_use() {
-  # best-effort:
-  # - returns 0 if in use
-  # - returns 1 if free
-  # - returns 2 if unknown (no checker)
   local port="$1"
   [[ -z "$port" ]] && return 2
   if command -v python3 >/dev/null 2>&1; then
@@ -62,11 +58,11 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
     s.bind(('127.0.0.1', port))
 except OSError:
-    sys.exit(0)  # in use
+    sys.exit(0)
 finally:
     try: s.close()
     except Exception: pass
-sys.exit(1)      # free
+sys.exit(1)
 PY
     return $?
   fi
@@ -74,18 +70,80 @@ PY
 }
 
 load_env_kv_safe() {
-  # Loads KEY=VALUE lines from the env file into the current shell.
-  # NOTE: we intentionally DO NOT execute arbitrary shell. We parse only KEY=VALUE.
   local f="$1"
   [[ ! -f "$f" ]] && return 1
   while IFS= read -r line; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
     if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-      # shellcheck disable=SC2163
       export "$line"
     fi
   done < "$f"
+}
+
+normalize_stack_csv() {
+  local raw="${1:-}"
+  local fallback="mysql,redis"
+  if [[ -z "${raw//[[:space:]]/}" ]]; then
+    raw="$fallback"
+  fi
+
+  local out=()
+  local seen=","
+  local IFS=','
+  read -r -a parts <<< "$raw"
+  for part in "${parts[@]}"; do
+    local token
+    token="$(echo "$part" | tr '[:upper:]' '[:lower:]' | xargs)"
+    [[ -z "$token" ]] && continue
+    case "$token" in
+      mysql|redis|pg|postgres|postgresql)
+        [[ "$token" == "postgres" || "$token" == "postgresql" ]] && token="pg"
+        if [[ "$seen" != *",$token,"* ]]; then
+          out+=("$token")
+          seen+="$token,"
+        fi
+        ;;
+      *)
+        echo "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg" >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ ${#out[@]} -eq 0 ]]; then
+    out=(mysql redis)
+  fi
+
+  local joined=""
+  local i
+  for i in "${!out[@]}"; do
+    [[ $i -gt 0 ]] && joined+=","
+    joined+="${out[$i]}"
+  done
+  echo "$joined"
+}
+
+stack_has() {
+  local csv="$1"
+  local token="$2"
+  [[ ",$csv," == *",$token,"* ]]
+}
+
+resolve_compose_files() {
+  local stack_csv="$1"
+  local -n out_ref=$2
+
+  out_ref=( -f "$BASE" )
+  if stack_has "$stack_csv" "mysql"; then
+    out_ref+=( -f "$MYSQL" )
+  fi
+  if stack_has "$stack_csv" "redis"; then
+    out_ref+=( -f "$REDIS" )
+  fi
+  if stack_has "$stack_csv" "pg"; then
+    out_ref+=( -f "$PG" )
+  fi
 }
 
 _dump_config() {
@@ -95,6 +153,8 @@ _dump_config() {
   echo "testkitRoot: ${HERE}"
   echo "envFile:  ${ENV_FILE}"
   echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
+  echo ""
+  echo "TESTKIT_STACK: ${TESTKIT_STACK_EFFECTIVE}"
   echo ""
   echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
   echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
@@ -112,8 +172,8 @@ _dump_config() {
   echo "TEST_USE_PUBLIC_LOADER: ${TEST_USE_PUBLIC_LOADER:-1}"
   echo ""
 
-  # Listar overrides de targets si existen
-  local targets=$(env | grep '^TESTKIT_TARGET_' || true)
+  local targets
+  targets="$(env | grep '^TESTKIT_TARGET_' || true)"
   if [[ -n "$targets" ]]; then
     echo "-- Target Overrides --"
     echo "$targets"
@@ -126,7 +186,6 @@ doctor() {
   echo ""
   echo -e "\033[1m== TESTKIT DOCTOR ==\033[0m"
 
-  # Env
   ENV_FILE="$(pick_env_file || true)"
   if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
     echo "[OK] env: ${ENV_FILE}"
@@ -136,10 +195,12 @@ doctor() {
     echo "       Copiá: test/.env.test.example -> test/.env.test"; ok=0
   fi
 
+  TESTKIT_STACK_EFFECTIVE="$(normalize_stack_csv "${TESTKIT_STACK:-}")"
+  echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE}"
+
   local back_dir="${TK_BACK_DIR:-back}"
   local public_dir="${TK_PUBLIC_DIR:-public_html}"
 
-  # Repo contract (configurable por env)
   if [[ -d "${PROJECT_ROOT}/${back_dir}" ]]; then
     echo "[OK] ${back_dir}/ (TK_BACK_DIR)"
   else
@@ -156,7 +217,6 @@ doctor() {
     echo "[FAIL] falta ${PROJECT_ROOT}/test"; ok=0
   fi
 
-  # Suite roots (validar si existen o avisar)
   local bp="${TK_BACK_PHP_DIR:-test/back}"
   local bpy="${TK_BACK_PYTHON_DIR:-test/back}"
   local fp="${TK_FRONT_PHP_DIR:-test/front}"
@@ -168,7 +228,6 @@ doctor() {
     if [[ ! -d "${PROJECT_ROOT}/$val" ]]; then
       echo "[WARN] $key: ruta no detectada: $val. (Opcional)"
     else
-      # Indicar si es override
       if env | grep -q "^$key="; then
         echo "[OK] $key: $val (override)"
       else
@@ -177,17 +236,15 @@ doctor() {
     fi
   done
 
-  # Target overrides info
-  local target_overrides=$(env | grep '^TESTKIT_TARGET_' || true)
+  local target_overrides
+  target_overrides="$(env | grep '^TESTKIT_TARGET_' || true)"
   if [[ -n "$target_overrides" ]]; then
      echo "[INFO] targets personalizados detectados: $(echo "$target_overrides" | cut -d= -f1 | xargs | tr ' ' ',')"
   fi
 
-  # Discovery info
   if [[ -n "${TK_MODULE_LEVEL:-}" ]]; then echo "[OK] TK_MODULE_LEVEL: $TK_MODULE_LEVEL (override)"; fi
   if [[ -n "${TK_TAG_MAP:-}" ]]; then echo "[OK] TK_TAG_MAP: $TK_TAG_MAP (override)"; fi
 
-  # Bootstrap hints (no hard-fail por defecto)
   local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"
   local pub_autoload="${TK_PUBLIC_AUTOLOAD:-${public_dir}/vendor/autoload.php}"
 
@@ -211,34 +268,35 @@ doctor() {
     fi
   fi
 
-  # DB strategy
   echo "[INFO] TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-shared} TEST_JOBS=${TEST_JOBS:-1}"
 
-  # Port checks (warning-only)
   local mysql_port="${TEST_MYSQL_PORT:-33070}"
   local pg_port="${TEST_PG_PORT:-54370}"
 
-  rc=0
-  port_in_use "$mysql_port" || rc=$?
-  if [[ $rc -eq 0 ]]; then
-    echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
-  elif [[ $rc -eq 1 ]]; then
-    echo "[OK] puerto MySQL libre: ${mysql_port}"
-  else
-    echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
+  if stack_has "$TESTKIT_STACK_EFFECTIVE" "mysql"; then
+    rc=0
+    port_in_use "$mysql_port" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
+    elif [[ $rc -eq 1 ]]; then
+      echo "[OK] puerto MySQL libre: ${mysql_port}"
+    else
+      echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
+    fi
   fi
 
-  rc=0
-  port_in_use "$pg_port" || rc=$?
-  if [[ $rc -eq 0 ]]; then
-    echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
-  elif [[ $rc -eq 1 ]]; then
-    echo "[OK] puerto Postgres libre: ${pg_port}"
-  else
-    echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
+  if stack_has "$TESTKIT_STACK_EFFECTIVE" "pg"; then
+    rc=0
+    port_in_use "$pg_port" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+      echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
+    elif [[ $rc -eq 1 ]]; then
+      echo "[OK] puerto Postgres libre: ${pg_port}"
+    else
+      echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
+    fi
   fi
 
-  # Out dir
   local test_out_dir="${PROJECT_ROOT}/test"
   mkdir -p "${test_out_dir}" >/dev/null 2>&1 || true
   if [[ -w "${test_out_dir}" ]]; then
@@ -247,7 +305,6 @@ doctor() {
     echo "[FAIL] ${test_out_dir} no es escribible"; ok=0
   fi
 
-  # Docker
   local docker_required=0
   if [[ "$DOCTOR_DOCKER_MODE" =~ ^(1|docker|required|strict)$ ]]; then
     docker_required=1
@@ -287,7 +344,6 @@ doctor() {
     fi
   fi
 
-  # Node/PHP local (solo info; en Docker viene incluido)
   if command -v php >/dev/null 2>&1; then
     echo "[INFO] php local: $(php -r 'echo PHP_VERSION;' 2>/dev/null || true)"
   fi
@@ -296,10 +352,9 @@ doctor() {
   fi
 
   if [[ "${2:-}" == "--dump" ]]; then
-    # ensure TESTKIT_DB_ENV_PATH is computed
     if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
       export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
-export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+      export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
     fi
     _dump_config
   fi
@@ -325,14 +380,23 @@ if [[ -z "${ENV_FILE}" || ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-# Ensures the container sees the correct DB_ENV_PATH regardless of whether env lives in root/ or test/.
+load_env_kv_safe "$ENV_FILE" || true
+
+legacy_pg_flag=0
+if [[ "${1:-}" == "--pg" ]]; then
+  legacy_pg_flag=1
+  shift
+fi
+
+TESTKIT_STACK_EFFECTIVE="$(normalize_stack_csv "${TESTKIT_STACK:-}")"
+if [[ "$legacy_pg_flag" -eq 1 ]] && ! stack_has "$TESTKIT_STACK_EFFECTIVE" "pg"; then
+  TESTKIT_STACK_EFFECTIVE="${TESTKIT_STACK_EFFECTIVE},pg"
+fi
+
 export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
 export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
 
-FILES=( -f "$BASE" )
-if [[ "${1:-}" == "--pg" ]]; then
-  FILES+=( -f "$PG" )
-  shift
-fi
+FILES=()
+resolve_compose_files "$TESTKIT_STACK_EFFECTIVE" FILES
 
 exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "$@"

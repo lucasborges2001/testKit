@@ -36,6 +36,8 @@ final class RunnerConfig
 
         $moduleLevel = max(1, Env::int('TK_MODULE_LEVEL', 2));
         $tagMap = Env::string('TK_TAG_MAP', '');
+        $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
+        $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
 
         return [
             'suite_id' => $suiteId,
@@ -63,6 +65,8 @@ final class RunnerConfig
             'module_level' => $moduleLevel,
             'tag_map' => $tagMap,
             'critical_tags' => Env::csv('TEST_CRITICAL_TAGS', 'critical,contract'),
+            'report_keep' => $reportKeep,
+            'runs_index_keep' => $runsIndexKeep,
         ];
     }
 
@@ -105,6 +109,9 @@ final class RunnerConfig
      */
     public static function meta(): array
     {
+        $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
+        $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
+
         return [
             'meta_fail_fast' => Env::bool('TEST_META_FAIL_FAST', false),
             'child_fail_fast' => Env::bool('TEST_CHILD_FAIL_FAST', false),
@@ -112,6 +119,8 @@ final class RunnerConfig
             'testkit_root' => Paths::testkitRoot(),
             'repo_root' => Paths::repoRoot(),
             'reports_root' => Paths::reportsRoot(),
+            'report_keep' => $reportKeep,
+            'runs_index_keep' => $runsIndexKeep,
         ];
     }
 }

@@ -6,10 +6,12 @@
  * - Consume una selección precomputada desde PHP cuando está disponible.
  * - Soporta loader ESM para redirigir imports test/front -> <TK_PUBLIC_DIR>.
  * - Soporta paralelismo por archivos (TEST_JOBS).
- * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx 5 por prefijo).
+ * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx configurable por TEST_REPORT_KEEP).
+ * - Mantiene `runs_latest.json` como índice compacto de corridas recientes.
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -40,6 +42,10 @@ const slowThresholdMs = Math.max(1, parseInt(process.env.TEST_SLOW_THRESHOLD_MS 
 const slowTop = Math.max(1, parseInt(process.env.TEST_SLOW_TOP || "10", 10) || 10);
 const perfMaxMs = Math.max(0, parseInt(process.env.TEST_PERF_MAX_MS || "0", 10) || 0);
 const perfWarnMs = Math.max(0, parseInt(process.env.TEST_PERF_WARN_MS || "0", 10) || 0);
+const reportKeep = Math.max(1, parseInt(process.env.TEST_REPORT_KEEP || "5", 10) || 5);
+const runsIndexKeep = Math.max(1, parseInt(process.env.TEST_RUNS_INDEX_KEEP || String(reportKeep), 10) || reportKeep);
+const envRunId = (process.env.TEST_RUN_ID || "").trim();
+const envMetaRunId = (process.env.TEST_META_RUN_ID || "").trim();
 
 const envReportRoot = process.env.TESTKIT_REPORT_ROOT || "";
 const envModuleScope = process.env.TESTKIT_SELECTED_MODULE_SCOPE || "";
@@ -70,6 +76,23 @@ function walk(dir, acc = []) {
 
 function norm(p) {
   return p.replaceAll("\\", "/");
+}
+
+function buildRunId() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(".000Z", "Z").replace(".","").replace("T", "T");
+  return `${stamp}_${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function loadJsonFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, "utf8");
+    if (!raw.trim()) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function extractFunctionalModule(rel) {
@@ -280,6 +303,154 @@ function noTestsReasonFor(tests) {
   return msg;
 }
 
+function failureKeys(report) {
+  const keys = new Set();
+  const suiteId = (report?.suite_id || "").trim();
+
+  if (Array.isArray(report?.failures)) {
+    for (const failure of report.failures) {
+      if (!failure || typeof failure !== "object") continue;
+      const testId = String(failure.test_id || failure.file || "").trim();
+      if (!testId) continue;
+      const errorType = String(failure.error_type || "").trim();
+      let key = `${suiteId ? `${suiteId}::` : ""}${testId}`;
+      if (errorType) key += `::${errorType}`;
+      keys.add(key);
+    }
+  }
+
+  if (!keys.size && Array.isArray(report?.failed_tests)) {
+    for (const failure of report.failed_tests) {
+      if (!failure || typeof failure !== "object") continue;
+      const testId = String(failure.rel || failure.file || "").trim();
+      if (testId) keys.add(`${suiteId ? `${suiteId}::` : ""}${testId}`);
+    }
+  }
+
+  if (!keys.size && Array.isArray(report?.failed_files)) {
+    for (const file of report.failed_files) {
+      const value = String(file || "").trim();
+      if (value) keys.add(value);
+    }
+  }
+
+  return [...keys].sort();
+}
+
+function failedFilesFromReport(report) {
+  const files = new Set();
+
+  if (Array.isArray(report?.failed_files)) {
+    for (const file of report.failed_files) {
+      const value = String(file || "").trim();
+      if (value) files.add(value);
+    }
+  }
+
+  if (Array.isArray(report?.failures)) {
+    for (const failure of report.failures) {
+      if (!failure || typeof failure !== "object") continue;
+      const value = String(failure.file || "").trim();
+      if (value) files.add(value);
+    }
+  }
+
+  if (Array.isArray(report?.failed_tests)) {
+    for (const failure of report.failed_tests) {
+      if (!failure || typeof failure !== "object") continue;
+      const value = String(failure.rel || failure.file || "").trim();
+      if (value) files.add(value);
+    }
+  }
+
+  return [...files].sort();
+}
+
+function topFailureMessagesFromReport(report, limit = 3) {
+  const messages = [];
+
+  if (Array.isArray(report?.top_failure_messages)) {
+    for (const row of report.top_failure_messages) {
+      if (!row || typeof row !== "object") continue;
+      const value = String(row.message || "").trim();
+      if (value) messages.push(value);
+    }
+  }
+
+  if (!messages.length && Array.isArray(report?.failures)) {
+    for (const failure of report.failures) {
+      if (!failure || typeof failure !== "object") continue;
+      const value = String(failure.message || "").trim();
+      if (value) messages.push(value);
+    }
+  }
+
+  return [...new Set(messages)].slice(0, Math.max(0, limit));
+}
+
+function diffFailures(previous, current) {
+  const previousFailures = new Set(failureKeys(previous));
+  const currentFailures = new Set(failureKeys(current));
+  const newFailures = [...currentFailures].filter((key) => !previousFailures.has(key)).sort();
+  const resolvedFailures = [...previousFailures].filter((key) => !currentFailures.has(key)).sort();
+  return { newFailures, resolvedFailures };
+}
+
+function buildRunsIndexEntry(report, latestPath, tsPath) {
+  const filters = report?.filters && typeof report.filters === "object" ? report.filters : {};
+  return {
+    record_id: `suite::${report.run_id || ""}::${report.suite_id || "front_js"}`,
+    kind: "suite",
+    run_id: report.run_id || "",
+    meta_run_id: report.meta_run_id || null,
+    previous_run_id: report.previous_run_id || null,
+    suite_id: report.suite_id || "front_js",
+    target: report.target || filters.target || null,
+    scope: report.scope || filters.scope || null,
+    category: report.category || filters.category || null,
+    match: report.match || filters.match || null,
+    suite_status: report.suite_status || null,
+    summary: report.summary || {},
+    started_at: report.started_at || null,
+    finished_at: report.finished_at || null,
+    duration_ms: Number(report.duration_ms || 0),
+    selected_module_scope: report.selected_module_scope || "",
+    report_scope_rel: report.report_scope_rel || "",
+    has_failures: Boolean(report.has_failures || Number(report.fail || 0) > 0),
+    failed_files: failedFilesFromReport(report),
+    top_failure_messages: topFailureMessagesFromReport(report, 3),
+    new_failures_count: Number(report.new_failures_count || 0),
+    resolved_failures_count: Number(report.resolved_failures_count || 0),
+    report_files: {
+      latest: path.basename(latestPath),
+      timestamped: path.basename(tsPath),
+    },
+  };
+}
+
+function updateRunsIndex(reportRoot, entry, keep) {
+  const indexPath = path.join(reportRoot, "runs_latest.json");
+  const existing = loadJsonFile(indexPath);
+  let rows = [];
+
+  if (Array.isArray(existing?.runs)) {
+    rows = existing.runs.filter((row) => row && typeof row === "object");
+  } else if (Array.isArray(existing)) {
+    rows = existing.filter((row) => row && typeof row === "object");
+  }
+
+  rows = rows.filter((row) => String(row.record_id || "") !== String(entry.record_id || ""));
+  rows.unshift(entry);
+  rows = rows.slice(0, Math.max(1, keep));
+
+  const payload = {
+    updated_at: new Date().toISOString(),
+    runs: rows,
+  };
+
+  fs.writeFileSync(indexPath, JSON.stringify(payload, null, 2), "utf8");
+}
+
 function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exitCode, reportRoot, moduleScope, reportScopeRel, commonDir, listMode }) {
   const finishedAt = new Date().toISOString();
   const durationMs = Math.max(0, Math.round(performance.now() - startedMs));
@@ -293,6 +464,7 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
   const groupedFailures = groupFailures(failures);
   const selectedTestFiles = tests.map((t) => t.rel);
   const suiteStatus = suiteStatusFor(tests, passed, failed, skipped, listMode);
+  const runId = envRunId || buildRunId();
 
   return {
     report_contract_version: 2,
@@ -347,6 +519,17 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
     finished_at: finishedAt,
     duration_ms: durationMs,
     exit_code: exitCode,
+    run_id: runId,
+    meta_run_id: envMetaRunId || envRunId || null,
+    run_kind: "suite",
+    report_keep: reportKeep,
+    runs_index_keep: runsIndexKeep,
+    filters: {
+      suite: "front_js",
+      scope,
+      category,
+      match,
+    },
   };
 }
 
@@ -358,11 +541,29 @@ function writeReport(report, reportRoot) {
     const suiteIdSafe = "front_js";
     const latestPath = path.join(reportRoot, `${suiteIdSafe}_latest.json`);
     const tsPath = path.join(reportRoot, `${suiteIdSafe}_${ts}.json`);
-    const json = JSON.stringify(report, null, 2);
+    const previous = loadJsonFile(latestPath);
+    const delta = diffFailures(previous, report);
+
+    const decorated = {
+      ...report,
+      previous_run_id: previous?.run_id || previous?.meta_run_id || null,
+      new_failures: delta.newFailures,
+      resolved_failures: delta.resolvedFailures,
+      new_failures_count: delta.newFailures.length,
+      resolved_failures_count: delta.resolvedFailures.length,
+      report_links: {
+        latest: path.basename(latestPath),
+        timestamped: path.basename(tsPath),
+        runs_index: "runs_latest.json",
+      },
+    };
+
+    const json = JSON.stringify(decorated, null, 2);
 
     fs.writeFileSync(latestPath, json, "utf8");
     fs.writeFileSync(tsPath, json, "utf8");
-    pruneOldRuns(reportRoot, suiteIdSafe);
+    pruneOldRuns(reportRoot, suiteIdSafe, reportKeep);
+    updateRunsIndex(reportRoot, buildRunsIndexEntry(decorated, latestPath, tsPath), runsIndexKeep);
 
     if (legacyReportFile && norm(legacyReportFile) !== norm(latestPath)) {
       try {

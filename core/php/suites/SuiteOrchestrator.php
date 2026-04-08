@@ -33,6 +33,14 @@ final class SuiteOrchestrator
             ConsoleReporter::printList($tests);
         }
 
+        $runId = self::envString('TEST_RUN_ID');
+        if ($runId === '') {
+            $runId = self::buildRunId();
+            putenv('TEST_RUN_ID=' . $runId);
+        }
+
+        $metaRunId = self::envString('TEST_META_RUN_ID', $runId);
+
         $config['repo_root'] = Paths::repoRoot();
         $result = SuiteExecutor::execute($tests, $config, $buildCommand);
 
@@ -48,6 +56,17 @@ final class SuiteOrchestrator
         $result['selected_test_files']     = array_map(fn(array $t): string => (string)($t['rel'] ?? ''), $tests);
         $result['suite_status']            = self::suiteStatus($result, $tests, $config);
         $result['no_tests_reason']         = self::noTestsReason($result, $config);
+        $result['run_id']                  = $runId;
+        $result['meta_run_id']             = $metaRunId;
+        $result['run_kind']                = 'suite';
+        $result['report_keep']             = (int)($config['report_keep'] ?? 5);
+        $result['runs_index_keep']         = (int)($config['runs_index_keep'] ?? $config['report_keep'] ?? 5);
+        $result['filters']                 = [
+            'suite' => (string)($config['suite_id'] ?? ''),
+            'scope' => (string)($config['scope'] ?? 'all'),
+            'category' => (string)($config['category'] ?? 'all'),
+            'match' => (string)($config['match'] ?? ''),
+        ];
         $result['summary']                 = [
             'total'       => (int)$result['tests_total'],
             'passed'      => (int)$result['pass'],
@@ -224,5 +243,26 @@ final class SuiteOrchestrator
             }
         }
         return false;
+    }
+
+    private static function envString(string $key, string $default = ''): string
+    {
+        $value = getenv($key);
+        if (!is_string($value) || trim($value) === '') {
+            return $default;
+        }
+
+        return trim($value);
+    }
+
+    private static function buildRunId(): string
+    {
+        try {
+            $suffix = bin2hex(random_bytes(3));
+        } catch (\Throwable) {
+            $suffix = substr((string)sha1(uniqid('', true)), 0, 6);
+        }
+
+        return gmdate('Ymd\THis\Z') . '_' . $suffix;
     }
 }
