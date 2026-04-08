@@ -218,7 +218,8 @@ doctor() {
   local mysql_port="${TEST_MYSQL_PORT:-33070}"
   local pg_port="${TEST_PG_PORT:-54370}"
 
-  port_in_use "$mysql_port"; rc=$?
+  rc=0
+  port_in_use "$mysql_port" || rc=$?
   if [[ $rc -eq 0 ]]; then
     echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
   elif [[ $rc -eq 1 ]]; then
@@ -227,7 +228,8 @@ doctor() {
     echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
   fi
 
-  port_in_use "$pg_port"; rc=$?
+  rc=0
+  port_in_use "$pg_port" || rc=$?
   if [[ $rc -eq 0 ]]; then
     echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
   elif [[ $rc -eq 1 ]]; then

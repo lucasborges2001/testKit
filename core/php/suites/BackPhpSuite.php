@@ -7,6 +7,8 @@ use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\RunnerConfig;
+use Testkit\Core\Discovery\TestDiscovery;
+use Testkit\Core\Discovery\TestSeedMetadata;
 
 final class BackPhpSuite
 {
@@ -25,6 +27,8 @@ final class BackPhpSuite
             $repoRoot . '/test/coverage/php_back',
             'php'
         );
+        $selectedTests = TestDiscovery::discover($testsDir, ['.test.php'], $config);
+        TestSeedMetadata::applySeedEnv($selectedTests, (int)($config['metadata_lines'] ?? 60));
 
         $resolved = ProjectEnv::resolveDbEnv($repoRoot);
         foreach ($resolved['warnings'] as $warning) {

@@ -10,6 +10,7 @@ require_once __DIR__ . '/common/Trace.php';
 require_once __DIR__ . '/config/RunnerConfig.php';
 require_once __DIR__ . '/discovery/TestTagger.php';
 require_once __DIR__ . '/discovery/TestDiscovery.php';
+require_once __DIR__ . '/discovery/TestSeedMetadata.php';
 
 require_once __DIR__ . '/execution/ProcessRunner.php';
 require_once __DIR__ . '/execution/SuiteExecutor.php';
