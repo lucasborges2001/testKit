@@ -288,20 +288,22 @@ final class ReportSummary
         $candidateRoots[Paths::reportsRoot()] = true;
 
         foreach (array_keys($candidateRoots) as $root) {
-            $file = rtrim($root, '/\\') . '/' . $safeSuite . '_latest.json';
-            if (!is_file($file)) {
-                continue;
+            $canonicalFile = rtrim($root, '/\\') . '/' . $safeSuite . '_latest.json';
+            $loaded = self::loadReportFile($canonicalFile);
+            if ($loaded !== null) {
+                return $loaded;
             }
-            $raw = file_get_contents($file);
-            if (!is_string($raw) || trim($raw) === '') {
-                continue;
+
+            $pattern = rtrim($root, '/\\') . '/' . $safeSuite . '__*_latest.json';
+            $matches = glob($pattern) ?: [];
+            usort($matches, static fn(string $a, string $b): int => @filemtime($b) <=> @filemtime($a));
+
+            foreach ($matches as $file) {
+                $loaded = self::loadReportFile($file);
+                if ($loaded !== null) {
+                    return $loaded;
+                }
             }
-            $json = json_decode($raw, true);
-            if (!is_array($json)) {
-                continue;
-            }
-            $json['_source_file'] = $file;
-            return $json;
         }
 
         return null;
@@ -375,5 +377,28 @@ final class ReportSummary
             return null;
         }
         return implode("\n", array_slice($lines, 0, $maxLines));
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function loadReportFile(string $file): ?array
+    {
+        if (!is_file($file)) {
+            return null;
+        }
+
+        $raw = file_get_contents($file);
+        if (!is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $json = json_decode($raw, true);
+        if (!is_array($json)) {
+            return null;
+        }
+
+        $json['_source_file'] = $file;
+        return $json;
     }
 }

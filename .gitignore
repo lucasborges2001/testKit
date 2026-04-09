@@ -1,5 +1,8 @@
+/.testkit/
 test/reports/
 test/history/
+test/**/report/
 test/coverage/
 test/querylog.jsonl
+test/_out/
 .env.test

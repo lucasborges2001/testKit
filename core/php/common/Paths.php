@@ -31,10 +31,20 @@ final class Paths
         return self::normalize(self::repoRoot() . '/test');
     }
 
+    public static function artifactsRoot(): string
+    {
+        $fromEnv = Env::string('TESTKIT_ARTIFACTS_ROOT');
+        if ($fromEnv !== '') {
+            return self::normalize($fromEnv);
+        }
+
+        return self::normalize(self::repoRoot() . '/.testkit');
+    }
+
     public static function outRoot(): string
     {
-        self::ensureDir(self::testRoot());
-        return self::testRoot();
+        self::ensureDir(self::artifactsRoot());
+        return self::artifactsRoot();
     }
 
     public static function reportsRoot(): string
@@ -73,36 +83,17 @@ final class Paths
     }
 
     /**
-     * Resolve the report directory from the set of discovered tests.
+     * Resolve the report directory for the current run.
      *
-     * If every test shares a single functional module under test/back/<module>
-     * or test/front/<module>, returns <repoRoot>/test/<side>/<module>/report.
-     * Otherwise falls back to <repoRoot>/test/reports.
+     * Report artifacts are centralized under a single ignored root so the host
+     * repository does not accumulate operational state under versioned test
+     * paths. Logical scope is preserved in report metadata and filenames.
      *
-     * @param array<int,array<string,mixed>> $tests  Each element must contain 'rel' (string)
+     * @param array<int,array<string,mixed>> $tests
      */
     public static function resolveReportRoot(array $tests): string
     {
-        if (empty($tests)) {
-            return self::reportsRoot();
-        }
-
-        $modules = [];
-        foreach ($tests as $test) {
-            $rel = self::normalize((string)($test['rel'] ?? ''));
-            $module = self::extractFunctionalModule($rel);
-            if ($module === null) {
-                return self::reportsRoot();
-            }
-            $modules[$module] = true;
-        }
-
-        if (count($modules) !== 1) {
-            return self::reportsRoot();
-        }
-
-        $module = (string)array_key_first($modules);
-        return self::normalize(self::repoRoot() . '/test/' . $module . '/report');
+        return self::reportsRoot();
     }
 
     /**

@@ -3,47 +3,21 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../core/php/bootstrap.php';
 
+use Testkit\Core\Common\Paths;
 use Testkit\Core\Reporting\FailureClassifier;
 use Testkit\Core\Reporting\ReportSummary;
 
-$testkitRoot = rtrim((string)(getenv('TESTKIT_ROOT') ?: dirname(__DIR__)), '/\\');
-$repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname($testkitRoot)), '/\\');
-$testRoot = $repoRoot . '/test';
+$repoRoot = Paths::repoRoot();
+$testRoot = Paths::testRoot();
+$reportsRoot = Paths::reportsRoot();
 
-if (!is_dir($testRoot)) {
-    fwrite(STDERR, "No existe directorio de tests: {$testRoot}\n");
-    exit(2);
+$latestFiles = currentLatestReportFiles($reportsRoot);
+if ($latestFiles === []) {
+    $latestFiles = legacyLatestReportFiles($testRoot);
 }
 
-$latestFiles = [];
-$iterator = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($testRoot, FilesystemIterator::SKIP_DOTS)
-);
-
-/** @var SplFileInfo $file */
-foreach ($iterator as $file) {
-    if (!$file->isFile()) {
-        continue;
-    }
-
-    $name = $file->getFilename();
-    if (!str_ends_with($name, '_latest.json')) {
-        continue;
-    }
-
-    $parent = basename((string)$file->getPath());
-    if (!in_array($parent, ['report', 'reports'], true)) {
-        continue;
-    }
-
-    $latestFiles[] = str_replace('\\', '/', $file->getPathname());
-}
-
-$latestFiles = array_values(array_unique($latestFiles));
-sort($latestFiles);
-
-if (!$latestFiles) {
-    fwrite(STDERR, "No hay reportes *_latest.json bajo {$testRoot}\n");
+if ($latestFiles === []) {
+    fwrite(STDERR, "No hay reportes latest en {$reportsRoot} ni bajo {$testRoot}\n");
     fwrite(STDERR, "Corré primero un runner para generar reportes.\n");
     exit(2);
 }
@@ -65,7 +39,7 @@ foreach ($latestFiles as $file) {
     $reports[] = $json;
 }
 
-if (!$reports) {
+if ($reports === []) {
     fwrite(STDERR, "No se pudieron parsear reportes latest con suite_id.\n");
     exit(2);
 }
@@ -313,3 +287,67 @@ if (!$printedCoverage) {
 }
 
 exit(0);
+
+/**
+ * @return array<int,string>
+ */
+function currentLatestReportFiles(string $reportsRoot): array
+{
+    if (!is_dir($reportsRoot)) {
+        return [];
+    }
+
+    $files = [];
+    foreach (glob(rtrim($reportsRoot, '/\\') . '/*_latest.json') ?: [] as $file) {
+        $name = basename($file);
+        if ($name === 'meta_latest.json') {
+            continue;
+        }
+        if (str_contains($name, '__')) {
+            continue;
+        }
+        $files[] = str_replace('\\', '/', $file);
+    }
+
+    sort($files);
+    return array_values(array_unique($files));
+}
+
+/**
+ * @return array<int,string>
+ */
+function legacyLatestReportFiles(string $testRoot): array
+{
+    if (!is_dir($testRoot)) {
+        return [];
+    }
+
+    $latestFiles = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($testRoot, FilesystemIterator::SKIP_DOTS)
+    );
+
+    /** @var SplFileInfo $file */
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+
+        $name = $file->getFilename();
+        if (!str_ends_with($name, '_latest.json')) {
+            continue;
+        }
+
+        $parent = basename((string)$file->getPath());
+        if (!in_array($parent, ['report', 'reports'], true)) {
+            continue;
+        }
+
+        $latestFiles[] = str_replace('\\', '/', $file->getPathname());
+    }
+
+    $latestFiles = array_values(array_unique($latestFiles));
+    sort($latestFiles);
+
+    return $latestFiles;
+}

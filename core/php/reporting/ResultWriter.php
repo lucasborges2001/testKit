@@ -19,11 +19,14 @@ final class ResultWriter
         }
         Paths::ensureDir($reportsRoot);
 
-        $safeSuite = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower($suiteId)) ?: 'suite';
+        $safeSuite = self::safeSlug($suiteId, 'suite');
+        $scopeKey = self::scopeKey((string)($result['selected_module_scope'] ?? ''));
+        $baseName = self::suiteBaseName($suiteId, (string)($result['selected_module_scope'] ?? ''));
         $timestamp = gmdate('Ymd_His');
 
-        $latestPath = $reportsRoot . '/' . $safeSuite . '_latest.json';
-        $tsPath     = $reportsRoot . '/' . $safeSuite . '_' . $timestamp . '.json';
+        $latestPath = $reportsRoot . '/' . $baseName . '_latest.json';
+        $tsPath = $reportsRoot . '/' . $baseName . '_' . $timestamp . '.json';
+        $canonicalLatestPath = $reportsRoot . '/' . $safeSuite . '_latest.json';
 
         $reportKeep = self::resolveKeep($result['report_keep'] ?? null, 5);
         $runsIndexKeep = self::resolveKeep($result['runs_index_keep'] ?? null, $reportKeep);
@@ -39,6 +42,10 @@ final class ResultWriter
             'suite'
         );
 
+        $report['report_scope_key'] = $scopeKey;
+        $report['report_key'] = $baseName;
+        $report['report_links']['canonical_latest'] = basename($canonicalLatestPath);
+
         $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
             return;
@@ -46,10 +53,14 @@ final class ResultWriter
 
         file_put_contents($latestPath, $json);
         file_put_contents($tsPath, $json);
-        self::pruneOldRuns($reportsRoot, $safeSuite, $reportKeep);
+        if ($canonicalLatestPath !== $latestPath) {
+            file_put_contents($canonicalLatestPath, $json);
+        }
+
+        self::pruneOldRuns($reportsRoot, $baseName, $reportKeep);
         self::updateRunsIndex(
             $reportsRoot,
-            self::buildRunsIndexEntry($report, 'suite', basename($latestPath), basename($tsPath)),
+            self::buildRunsIndexEntry($report, 'suite', basename($latestPath), basename($tsPath), basename($canonicalLatestPath)),
             $runsIndexKeep
         );
     }
@@ -65,9 +76,15 @@ final class ResultWriter
         }
         Paths::ensureDir($reportsRoot);
 
+        $target = (string)($meta['target'] ?? 'all');
+        $scope = (string)($meta['selected_module_scope'] ?? '');
+        $baseName = self::metaBaseName($target, $scope);
+        $scopeKey = self::scopeKey($scope);
         $timestamp = gmdate('Ymd_His');
-        $latestPath = $reportsRoot . '/meta_latest.json';
-        $tsPath     = $reportsRoot . '/meta_' . $timestamp . '.json';
+
+        $latestPath = $reportsRoot . '/' . $baseName . '_latest.json';
+        $tsPath = $reportsRoot . '/' . $baseName . '_' . $timestamp . '.json';
+        $canonicalLatestPath = $reportsRoot . '/meta_latest.json';
 
         $reportKeep = self::resolveKeep($meta['report_keep'] ?? null, 5);
         $runsIndexKeep = self::resolveKeep($meta['runs_index_keep'] ?? null, $reportKeep);
@@ -83,6 +100,10 @@ final class ResultWriter
             'meta'
         );
 
+        $report['report_scope_key'] = $scopeKey;
+        $report['report_key'] = $baseName;
+        $report['report_links']['canonical_latest'] = basename($canonicalLatestPath);
+
         $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
             return;
@@ -90,10 +111,14 @@ final class ResultWriter
 
         file_put_contents($latestPath, $json);
         file_put_contents($tsPath, $json);
-        self::pruneOldRuns($reportsRoot, 'meta', $reportKeep);
+        if ($canonicalLatestPath !== $latestPath) {
+            file_put_contents($canonicalLatestPath, $json);
+        }
+
+        self::pruneOldRuns($reportsRoot, $baseName, $reportKeep);
         self::updateRunsIndex(
             $reportsRoot,
-            self::buildRunsIndexEntry($report, 'meta', basename($latestPath), basename($tsPath)),
+            self::buildRunsIndexEntry($report, 'meta', basename($latestPath), basename($tsPath), basename($canonicalLatestPath)),
             $runsIndexKeep
         );
     }
@@ -105,8 +130,8 @@ final class ResultWriter
     {
         $safePfx = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower($prefix)) ?: 'run';
         $pattern = $dir . '/' . $safePfx . '_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].json';
-        $files   = glob($pattern) ?: [];
-        sort($files); // lexicographic order = chronological for Ymd_His format
+        $files = glob($pattern) ?: [];
+        sort($files);
 
         $excess = count($files) - $keep;
         for ($i = 0; $i < $excess; $i++) {
@@ -352,12 +377,14 @@ final class ResultWriter
      * @param array<string,mixed> $report
      * @return array<string,mixed>
      */
-    private static function buildRunsIndexEntry(array $report, string $kind, string $latestFile, string $timestampedFile): array
+    private static function buildRunsIndexEntry(array $report, string $kind, string $latestFile, string $timestampedFile, string $canonicalLatestFile): array
     {
         $recordId = $kind . '::'
             . trim((string)($report['run_id'] ?? ''))
             . '::'
-            . trim((string)($report['suite_id'] ?? $report['target'] ?? 'meta'));
+            . trim((string)($report['suite_id'] ?? $report['target'] ?? 'meta'))
+            . '::'
+            . trim((string)($report['report_key'] ?? 'default'));
 
         $filters = is_array($report['filters'] ?? null) ? $report['filters'] : [];
         $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
@@ -381,6 +408,8 @@ final class ResultWriter
             'duration_ms' => (int)($report['duration_ms'] ?? 0),
             'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
             'report_scope_rel' => (string)($report['report_scope_rel'] ?? ''),
+            'report_scope_key' => (string)($report['report_scope_key'] ?? ''),
+            'report_key' => (string)($report['report_key'] ?? ''),
             'has_failures' => (bool)($report['has_failures'] ?? ((int)($report['fail'] ?? 0) > 0)),
             'failed_files' => self::failedFilesFromReport($report),
             'top_failure_messages' => self::topFailureMessagesFromReport($report, 3),
@@ -390,6 +419,7 @@ final class ResultWriter
             'report_files' => [
                 'latest' => $latestFile,
                 'timestamped' => $timestampedFile,
+                'canonical_latest' => $canonicalLatestFile,
             ],
         ];
     }
@@ -463,6 +493,48 @@ final class ResultWriter
         }
 
         return max(1, $default);
+    }
+
+    private static function suiteBaseName(string $suiteId, string $selectedModuleScope): string
+    {
+        $safeSuite = self::safeSlug($suiteId, 'suite');
+        $scopeKey = self::scopeKey($selectedModuleScope);
+
+        if ($scopeKey === 'global') {
+            return $safeSuite;
+        }
+
+        return $safeSuite . '__' . $scopeKey;
+    }
+
+    private static function metaBaseName(string $target, string $selectedModuleScope): string
+    {
+        $safeTarget = self::safeSlug($target, 'all');
+        $scopeKey = self::scopeKey($selectedModuleScope);
+
+        if ($safeTarget === 'all' && $scopeKey === 'global') {
+            return 'meta';
+        }
+
+        return 'meta__' . $safeTarget . '__' . $scopeKey;
+    }
+
+    private static function scopeKey(string $selectedModuleScope): string
+    {
+        $selectedModuleScope = trim($selectedModuleScope);
+        if ($selectedModuleScope === '') {
+            return 'global';
+        }
+
+        return self::safeSlug($selectedModuleScope, 'global');
+    }
+
+    private static function safeSlug(string $value, string $fallback): string
+    {
+        $value = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower(trim($value))) ?: '';
+        $value = trim($value, '._-');
+
+        return $value !== '' ? $value : $fallback;
     }
 
     private static function buildRunId(): string
