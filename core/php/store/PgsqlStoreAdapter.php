@@ -100,6 +100,38 @@ final class PgsqlStoreAdapter implements StoreAdapter
         }
     }
 
+    public function databaseExists(string $database): bool
+    {
+        $this->assertSafeDatabaseName($database);
+        $pdo = $this->connect('postgres');
+        $stmt = $pdo->prepare('SELECT 1 FROM pg_database WHERE datname = ? LIMIT 1');
+        $stmt->execute([$database]);
+        $exists = $stmt->fetchColumn() !== false;
+        $stmt->closeCursor();
+        return $exists;
+    }
+
+    public function dropDatabase(string $database): void
+    {
+        $this->assertSafeDatabaseName($database);
+        $pdo = $this->connect('postgres');
+        $pdo->exec('DROP DATABASE IF EXISTS ' . $this->quoteIdentifier($database));
+    }
+
+    public function cloneDatabase(string $sourceDatabase, string $targetDatabase): void
+    {
+        throw new \RuntimeException(
+            'cloneDatabase para Postgres no esta implementado en esta primera pasada. Foco actual: MySQL.'
+        );
+    }
+
+    public function restoreSnapshot(string $artifactPath, ?string $database = null): void
+    {
+        throw new \RuntimeException(
+            'restoreSnapshot para Postgres no esta implementado en esta primera pasada. Foco actual: MySQL.'
+        );
+    }
+
     private function quoteIdentifier(string $name): string
     {
         return '"' . str_replace('"', '""', $name) . '"';

@@ -23,6 +23,8 @@ testkit/
 │  ├─ execution/     # procesos, pool, resultados
 │  ├─ reporting/     # consola, historial, json reports
 │  ├─ coverage/      # merge + diagnostico de coverage
+│  ├─ seeding/       # baseline planning + layered/snapshot orchestration
+│  ├─ store/         # adapters + maintenance + clone/restore ops
 │  └─ suites/        # back_php, back_python, front_php, meta
 ├─ runners/          # entrypoints finos
 ├─ scripts/          # utilidades operativas/reportes
@@ -38,13 +40,16 @@ testkit/
 - `execution`: corre tests (secuencial/paralelo) y clasifica resultados.
 - `reporting`: reportes utiles para decidir acciones.
 - `coverage`: cobertura por archivo/modulo + zonas criticas sin cobertura.
+- `seeding`: resuelve el baseline (`layered` o `snapshot`) y arma el pipeline estructural.
+- `store`: contratos por motor, provision, reset, clean, restore y clone.
 - `suites`: orquestacion por tecnologia/suite.
 - `scripts`: lifecycle operativo del entorno y de los stores.
 
 ## 3.1) Frontera con el proyecto
 
 - `testkit` decide entorno, workers, naming de DB/store y pipeline estructural de seeds.
-- `test/seeds` define solo `schema`, `base`, migraciones y validaciones estructurales.
+- `testkit` puede materializar una baseline desde `schema/base` o desde un snapshot restaurado.
+- `test/seeds` define `schema`, `base`, migraciones y validaciones estructurales; opcionalmente puede referenciar un artefacto snapshot si el proyecto quiere probar upgrades reales.
 - `test/_support` queda para builders, helpers, asserts y composición de escenarios del proyecto.
 - Los escenarios de negocio no entran por el lifecycle de `testkit`.
 
@@ -72,7 +77,6 @@ testkit/
   - `test/coverage/*`
   - `test/querylog.jsonl`
 
-
 ## 5.1) Contrato de reporte por suite
 
 Además de los contadores históricos (`pass/fail/skip`), cada suite expone:
@@ -98,6 +102,12 @@ Para agregar una categoria:
 1. Usar tag en nombre/ruta o metadata `TAGS:`.
 2. Ejecutar con `TEST_CATEGORY=<tag>` o target dedicado.
 
+Para agregar una estrategia de baseline:
+
+1. Extender `SeedPipeline` con un nuevo modo explícito.
+2. Mantener `layered` como comportamiento por defecto.
+3. Evitar meter lógica de negocio dentro de adapters o del bootstrap de suite.
+
 ## 7) Decisiones importantes
 
 - El meta-runner soporta PHP, Python y JS bajo convenciones de layout estándar.
@@ -106,3 +116,5 @@ Para agregar una categoria:
 - Fragilidad se detecta por historial local, no por una sola corrida.
 - Runners y scripts se mantienen finos; la logica vive en `core/php`.
 - El pipeline layered de seeds vive en `testkit`, no en `_support`.
+- La validación de migraciones contra estado realista no debe mezclar escenarios de negocio con bootstrap estructural.
+- El clone-per-worker desde una baseline es una optimización controlada; no reemplaza el aislamiento lógico de los tests.

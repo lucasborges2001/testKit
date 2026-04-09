@@ -81,37 +81,7 @@ final class MysqlStoreAdapter implements StoreAdapter
             return;
         }
 
-        $host = $this->requireEnv(
-            ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
-            'host MySQL',
-            'Definí DB_HOST o TEST_MYSQL_HOST en <project>/test/.env.test.'
-        );
-        $port = $this->requireEnv(
-            ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
-            'puerto MySQL',
-            'Definí DB_PORT o TEST_MYSQL_PORT en <project>/test/.env.test.'
-        );
-        $adminUser = $this->requireEnv(
-            ['TEST_MYSQL_ADMIN_USER', 'MYSQL_ROOT_USER'],
-            'usuario admin MySQL',
-            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ADMIN_USER. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
-        );
-        $adminPass = $this->requireEnv(
-            ['TEST_MYSQL_ROOT_PASSWORD', 'MYSQL_ROOT_PASSWORD'],
-            'password admin MySQL',
-            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ROOT_PASSWORD. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
-        );
-
-        $pdo = new PDO(
-            "mysql:host={$host};port={$port};charset=utf8mb4",
-            $adminUser,
-            $adminPass,
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            ]
-        );
-
+        $pdo = $this->adminConnectNoDatabase();
         $stmt = $pdo->prepare('SELECT SCHEMA_NAME FROM information_schema.schemata WHERE schema_name = ? LIMIT 1');
         $stmt->execute([$dbName]);
         $exists = $stmt->fetchColumn() !== false;
@@ -124,10 +94,10 @@ final class MysqlStoreAdapter implements StoreAdapter
 
         Trace::log('store.provision', [
             'driver' => 'mysql',
-            'host' => $host,
-            'port' => $port,
+            'host' => $this->mysqlHost(),
+            'port' => $this->mysqlPort(),
             'db' => $dbName,
-            'admin_user' => $adminUser,
+            'admin_user' => $this->adminUser(),
             'action' => $exists ? 'validated_existing_database' : 'created_database',
             'mode' => $mode,
         ]);
@@ -245,6 +215,132 @@ final class MysqlStoreAdapter implements StoreAdapter
         }
     }
 
+    public function databaseExists(string $database): bool
+    {
+        $this->assertSafeDatabaseName($database);
+        $pdo = $this->adminConnectNoDatabase();
+        $stmt = $pdo->prepare('SELECT SCHEMA_NAME FROM information_schema.schemata WHERE schema_name = ? LIMIT 1');
+        $stmt->execute([$database]);
+        $exists = $stmt->fetchColumn() !== false;
+        $stmt->closeCursor();
+        return $exists;
+    }
+
+    public function dropDatabase(string $database): void
+    {
+        $this->assertSafeDatabaseName($database);
+
+        if ($this->provisionMode() === 'external') {
+            throw new \RuntimeException(
+                'dropDatabase requiere privilegios de provision. Seteá TEST_STORE_PROVISION=managed o implementá un store externo con permisos equivalentes.'
+            );
+        }
+
+        $pdo = $this->adminConnectNoDatabase();
+        $pdo->exec('DROP DATABASE IF EXISTS ' . $this->quoteIdentifier($database));
+
+        Trace::log('store.drop_database', [
+            'driver' => 'mysql',
+            'db' => $database,
+        ]);
+    }
+
+    public function cloneDatabase(string $sourceDatabase, string $targetDatabase): void
+    {
+        $this->assertSafeDatabaseName($sourceDatabase);
+        $this->assertSafeDatabaseName($targetDatabase);
+
+        if (!$this->databaseExists($sourceDatabase)) {
+            throw new \RuntimeException('No existe DB fuente para clone: ' . $sourceDatabase);
+        }
+
+        $this->dropDatabase($targetDatabase);
+        $this->provision($targetDatabase);
+
+        $binDump = $this->requireBinary('mysqldump');
+        $binMysql = $this->requireBinary('mysql');
+        $env = $this->mysqlCliEnv(true);
+
+        $source = escapeshellarg($sourceDatabase);
+        $target = escapeshellarg($targetDatabase);
+        $host = escapeshellarg($this->mysqlHost());
+        $port = escapeshellarg($this->mysqlPort());
+        $user = escapeshellarg($this->adminUser());
+
+        $command = sprintf(
+            '%s --host=%s --port=%s --user=%s --single-transaction --skip-lock-tables --routines --triggers --events --no-tablespaces %s'
+            . ' | %s --host=%s --port=%s --user=%s %s',
+            escapeshellcmd($binDump),
+            $host,
+            $port,
+            $user,
+            $source,
+            escapeshellcmd($binMysql),
+            $host,
+            $port,
+            $user,
+            $target
+        );
+
+        $this->runShellCommand($command, $env, 'mysql clone database');
+
+        Trace::log('store.clone_database', [
+            'driver' => 'mysql',
+            'source_db' => $sourceDatabase,
+            'target_db' => $targetDatabase,
+        ]);
+    }
+
+    public function restoreSnapshot(string $artifactPath, ?string $database = null): void
+    {
+        $targetDatabase = $database ?? $this->resolveDatabaseName();
+        $this->assertSafeDatabaseName($targetDatabase);
+
+        if (!is_file($artifactPath)) {
+            throw new \RuntimeException('Snapshot no existe: ' . $artifactPath);
+        }
+
+        $binMysql = $this->requireBinary('mysql');
+        $env = $this->mysqlCliEnv(false);
+        $host = escapeshellarg($this->mysqlHost());
+        $port = escapeshellarg($this->mysqlPort());
+        $user = escapeshellarg($this->runtimeUser());
+        $target = escapeshellarg($targetDatabase);
+        $file = escapeshellarg($artifactPath);
+
+        if (str_ends_with(strtolower($artifactPath), '.gz')) {
+            $binGzip = $this->requireBinary('gzip');
+            $command = sprintf(
+                '%s -dc %s | %s --host=%s --port=%s --user=%s %s',
+                escapeshellcmd($binGzip),
+                $file,
+                escapeshellcmd($binMysql),
+                $host,
+                $port,
+                $user,
+                $target
+            );
+        } else {
+            $command = sprintf(
+                '%s --host=%s --port=%s --user=%s %s < %s',
+                escapeshellcmd($binMysql),
+                $host,
+                $port,
+                $user,
+                $target,
+                $file
+            );
+        }
+
+        $this->runShellCommand($command, $env, 'mysql restore snapshot');
+
+        Trace::log('store.restore_snapshot', [
+            'driver' => 'mysql',
+            'db' => $targetDatabase,
+            'artifact' => $artifactPath,
+        ]);
+    }
+
     private function dropObjects(PDO $pdo, string $sql, callable $buildDropSql): int
     {
         $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
@@ -288,6 +384,142 @@ final class MysqlStoreAdapter implements StoreAdapter
         }
 
         return $mode;
+    }
+
+    private function adminConnectNoDatabase(): PDO
+    {
+        $host = $this->mysqlHost();
+        $port = $this->mysqlPort();
+        $user = $this->adminUser();
+        $pass = $this->adminPassword();
+
+        return new PDO(
+            "mysql:host={$host};port={$port};charset=utf8mb4",
+            $user,
+            $pass,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]
+        );
+    }
+
+    private function mysqlCliEnv(bool $preferAdmin): array
+    {
+        $password = $preferAdmin ? $this->adminPassword() : $this->runtimePassword();
+        return [
+            'MYSQL_PWD' => $password,
+        ];
+    }
+
+    private function mysqlHost(): string
+    {
+        return $this->requireEnv(
+            ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
+            'host MySQL',
+            'Definí DB_HOST o TEST_MYSQL_HOST en <project>/test/.env.test.'
+        );
+    }
+
+    private function mysqlPort(): string
+    {
+        return $this->requireEnv(
+            ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
+            'puerto MySQL',
+            'Definí DB_PORT o TEST_MYSQL_PORT en <project>/test/.env.test.'
+        );
+    }
+
+    private function runtimeUser(): string
+    {
+        return $this->requireEnv(
+            ['DB_USER', 'TEST_MYSQL_USER', 'MYSQL_USER'],
+            'usuario MySQL',
+            'Definí DB_USER o TEST_MYSQL_USER en <project>/test/.env.test.'
+        );
+    }
+
+    private function runtimePassword(): string
+    {
+        return $this->requireEnv(
+            ['DB_PASS', 'TEST_MYSQL_PASSWORD', 'MYSQL_PASSWORD'],
+            'password MySQL',
+            'Definí DB_PASS o TEST_MYSQL_PASSWORD en <project>/test/.env.test.'
+        );
+    }
+
+    private function adminUser(): string
+    {
+        if ($this->provisionMode() === 'external') {
+            return $this->runtimeUser();
+        }
+
+        return $this->requireEnv(
+            ['TEST_MYSQL_ADMIN_USER', 'MYSQL_ROOT_USER'],
+            'usuario admin MySQL',
+            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ADMIN_USER. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
+        );
+    }
+
+    private function adminPassword(): string
+    {
+        if ($this->provisionMode() === 'external') {
+            return $this->runtimePassword();
+        }
+
+        return $this->requireEnv(
+            ['TEST_MYSQL_ROOT_PASSWORD', 'MYSQL_ROOT_PASSWORD'],
+            'password admin MySQL',
+            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ROOT_PASSWORD. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
+        );
+    }
+
+    private function requireBinary(string $binary): string
+    {
+        $path = trim((string)shell_exec('command -v ' . escapeshellarg($binary) . ' 2>/dev/null'));
+        if ($path === '') {
+            throw new \RuntimeException('No se encontró binario requerido para MySQL baseline flow: ' . $binary);
+        }
+
+        return $path;
+    }
+
+    private function runShellCommand(string $command, array $env, string $label): void
+    {
+        $process = proc_open(
+            ['bash', '-lc', $command],
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes,
+            null,
+            array_merge($_ENV, $env)
+        );
+
+        if (!is_resource($process)) {
+            throw new \RuntimeException('No se pudo iniciar proceso shell para ' . $label);
+        }
+
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException(
+                sprintf(
+                    'Fallo %s (exit=%d). stderr=%s stdout=%s',
+                    $label,
+                    $exitCode,
+                    trim((string)$stderr),
+                    trim((string)$stdout)
+                )
+            );
+        }
     }
 
     /**

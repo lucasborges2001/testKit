@@ -29,7 +29,9 @@ While it aims for reusability, it depends on specific layout conventions and sta
 - Store lifecycle:
   - env resolution
   - DB/store naming per worker
+  - baseline materialization (`layered` o `snapshot`)
   - structural seed orchestration (`schema -> base -> migrations -> validations`)
+  - optional clone-from-baseline per worker
   - operational entrypoints (`db_reset`, `seed`, `test`)
 - Coverage as diagnostics (not KPI only):
   - lcov/json output
@@ -99,7 +101,6 @@ DB profile report (if enabled):
 php scripts/query_report.php
 ```
 
-
 ## Reporting contract
 
 Each suite report now exposes, at minimum:
@@ -140,6 +141,7 @@ To adopt `testkit`, a project should align with the following expectations:
   - `TESTKIT_TARGET_ALL`, `TESTKIT_TARGET_BACK`, `TESTKIT_TARGET_FRONT`, etc.
   - Format: comma-separated suite names (`back_php,back_python,front_php,front_js`).
 - **Seed layout**: Database initialization follows a layered structure in `test/seeds/<driver>/`.
+- **Snapshot baseline**: Si el proyecto quiere validar migraciones contra una base restaurada, debe proveer un artefacto lógico `.sql` o `.sql.gz` accesible desde el contenedor y declarar `TEST_BASELINE_MODE=snapshot`.
 
 Ownership:
 `testkit` is an execution platform and environment manager. It does not own the results; all test outputs, history, and coverage data are stored within the host project's `test/` directory to ensure they belong to the project being tested.

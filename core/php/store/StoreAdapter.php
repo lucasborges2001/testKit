@@ -18,4 +18,12 @@ interface StoreAdapter
     public function reset(PDO $pdo): void;
 
     public function clean(PDO $pdo): void;
+
+    public function databaseExists(string $database): bool;
+
+    public function dropDatabase(string $database): void;
+
+    public function cloneDatabase(string $sourceDatabase, string $targetDatabase): void;
+
+    public function restoreSnapshot(string $artifactPath, ?string $database = null): void;
 }

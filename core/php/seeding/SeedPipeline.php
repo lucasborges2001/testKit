@@ -17,11 +17,16 @@ final class SeedPipeline
         $driver = StoreRegistry::normalizeDriver($driver);
         $projectRoot = rtrim($projectRoot, "/\\");
         $seedDir = $projectRoot . '/test/seeds/' . $driver;
+        $baselineMode = self::baselineMode();
 
-        self::traceBootstrapContext($driver, $projectRoot, $seedDir);
+        self::traceBootstrapContext($driver, $projectRoot, $seedDir, $baselineMode);
 
         if (!is_dir($seedDir)) {
             throw new RuntimeException("No existe directorio de seeds: {$seedDir}");
+        }
+
+        if ($baselineMode === 'snapshot') {
+            return self::runSnapshot($driver, $seedDir, $projectRoot);
         }
 
         if (self::hasLayeredLayout($seedDir)) {
@@ -29,6 +34,16 @@ final class SeedPipeline
         }
 
         return self::runFlat($driver, $seedDir);
+    }
+
+    private static function baselineMode(): string
+    {
+        $mode = strtolower(trim((string)(getenv('TEST_BASELINE_MODE') ?: 'layered')));
+        if (!in_array($mode, ['layered', 'snapshot'], true)) {
+            return 'layered';
+        }
+
+        return $mode;
     }
 
     private static function hasLayeredLayout(string $seedDir): bool
@@ -62,18 +77,16 @@ final class SeedPipeline
         $fixtures = self::parseCsvEnv('TEST_SEED_FIXTURES');
         if ($fixtures !== []) {
             throw new RuntimeException(
-                'TEST_SEED_FIXTURES no forma parte del lifecycle de testkit en modo layered. ' .
-                'La infraestructura solo aplica schema/base/migrations/validations; ' .
-                'los escenarios deben construirse desde test/_support con builders del proyecto.'
+                'TEST_SEED_FIXTURES no forma parte del lifecycle de testkit en modo layered. '
+                . 'La infraestructura solo aplica schema/base/migrations/validations; '
+                . 'los escenarios deben construirse desde test/_support con builders del proyecto.'
             );
         }
 
         $adapter = StoreRegistry::fromDriver($driver);
         $pdo = $adapter->connect();
 
-        $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
-        $migrations = self::parseCsvEnv('TEST_SEED_MIGRATIONS');
-        $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
+        [$migrations, $rawMigrations, $skipPostValidations] = self::migrationPlan();
 
         Trace::log('seed.layered.plan', [
             'driver' => $driver,
@@ -93,25 +106,85 @@ final class SeedPipeline
 
         self::applySqlDir($pdo, $seedDir . '/schema', 'schema');
         self::applySqlDir($pdo, $seedDir . '/base', 'base');
-
-        foreach ($migrations as $migration) {
-            $migrationDir = self::resolveMigrationDir($seedDir, $migration);
-            self::applySqlDir($pdo, $migrationDir, 'migration ' . $migration);
-        }
-
-        if (!($migrations !== [] && $skipPostValidations)) {
-            self::applySqlDirIfExists($pdo, $seedDir . '/validations', 'validations');
-        } else {
-            Trace::log('seed.validations.skipped', [
-                'reason' => 'TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS=1',
-                'migrations' => $migrations,
-            ]);
-        }
+        self::applyRequestedMigrations($pdo, $seedDir, $migrations);
+        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
 
         self::traceCheckoutTablesIfRelevant($pdo, $rawMigrations, $migrations);
 
         echo "Seed pipeline por capas aplicado correctamente\n";
         return 0;
+    }
+
+    private static function runSnapshot(string $driver, string $seedDir, string $projectRoot): int
+    {
+        $adapter = StoreRegistry::fromDriver($driver);
+        $pdo = $adapter->connect();
+        [$migrations, $rawMigrations, $skipPostValidations] = self::migrationPlan();
+        $snapshotFile = trim((string)(getenv('TEST_BASELINE_SNAPSHOT_FILE') ?: ''));
+
+        if ($snapshotFile === '') {
+            throw new RuntimeException(
+                'TEST_BASELINE_MODE=snapshot requiere TEST_BASELINE_SNAPSHOT_FILE apuntando a un .sql o .sql.gz.'
+            );
+        }
+
+        if (!is_file($snapshotFile)) {
+            throw new RuntimeException('Snapshot baseline no existe: ' . $snapshotFile);
+        }
+
+        Trace::log('seed.snapshot.plan', [
+            'driver' => $driver,
+            'project_root' => $projectRoot,
+            'seed_dir' => self::realPathOrOriginal($seedDir),
+            'snapshot_file' => self::realPathOrOriginal($snapshotFile),
+            'db' => self::dbConnectionSummary($driver),
+            'raw_TEST_SEED_MIGRATIONS' => $rawMigrations,
+            'parsed_TEST_SEED_MIGRATIONS' => $migrations,
+            'skip_validations_after_extras' => $skipPostValidations,
+        ]);
+
+        $adapter->reset($pdo);
+        $adapter->restoreSnapshot($snapshotFile);
+
+        self::applyRequestedMigrations($pdo, $seedDir, $migrations);
+        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
+
+        self::traceCheckoutTablesIfRelevant($pdo, $rawMigrations, $migrations);
+
+        echo "Seed pipeline snapshot aplicado correctamente\n";
+        return 0;
+    }
+
+    private static function applyPostValidations(PDO $pdo, string $seedDir, array $migrations, bool $skipPostValidations): void
+    {
+        if (!($migrations !== [] && $skipPostValidations)) {
+            self::applySqlDirIfExists($pdo, $seedDir . '/validations', 'validations');
+            return;
+        }
+
+        Trace::log('seed.validations.skipped', [
+            'reason' => 'TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS=1',
+            'migrations' => $migrations,
+        ]);
+    }
+
+    private static function applyRequestedMigrations(PDO $pdo, string $seedDir, array $migrations): void
+    {
+        foreach ($migrations as $migration) {
+            $migrationDir = self::resolveMigrationDir($seedDir, $migration);
+            self::applySqlDir($pdo, $migrationDir, 'migration ' . $migration);
+        }
+    }
+
+    /**
+     * @return array{0: array<int,string>, 1: string, 2: bool}
+     */
+    private static function migrationPlan(): array
+    {
+        $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
+        $migrations = self::parseCsvEnv('TEST_SEED_MIGRATIONS');
+        $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
+        return [$migrations, $rawMigrations, $skipPostValidations];
     }
 
     private static function applySqlDirIfExists(PDO $pdo, string $dir, string $label): void
@@ -328,10 +401,11 @@ final class SeedPipeline
         $pdo->exec($statement);
     }
 
-    private static function traceBootstrapContext(string $driver, string $projectRoot, string $seedDir): void
+    private static function traceBootstrapContext(string $driver, string $projectRoot, string $seedDir, string $baselineMode): void
     {
         Trace::log('seed.bootstrap.context', [
             'driver' => $driver,
+            'baseline_mode' => $baselineMode,
             'project_root' => self::realPathOrOriginal($projectRoot),
             'seed_dir' => self::realPathOrOriginal($seedDir),
             'DB_ENV_PATH' => (string)(getenv('DB_ENV_PATH') ?: ''),
@@ -435,9 +509,9 @@ final class SeedPipeline
 
         if ($missing !== []) {
             throw new RuntimeException(
-                'Checkout trace verification fallo: faltan tablas [' . implode(', ', $missing) . '] ' .
-                'despues del pipeline. TEST_SEED_MIGRATIONS(raw)=' . $rawMigrations .
-                ' parsed=' . json_encode($migrations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                'Checkout trace verification fallo: faltan tablas [' . implode(', ', $missing) . '] '
+                . 'despues del pipeline. TEST_SEED_MIGRATIONS(raw)=' . $rawMigrations
+                . ' parsed=' . json_encode($migrations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             );
         }
     }

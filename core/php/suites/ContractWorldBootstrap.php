@@ -35,6 +35,12 @@ final class ContractWorldBootstrap
         if ($strategy === 'per_worker') {
             $jobs = max(1, Env::int('TEST_JOBS', 1));
             $baseDb = self::resolveBaseDatabaseName($driver);
+
+            if (Env::bool('TEST_BASELINE_CLONE_PER_WORKER', false)) {
+                self::bootstrapWorkersFromBaseline($driver, $repoRoot, $baseDb, $jobs);
+                return;
+            }
+
             for ($workerId = 1; $workerId <= $jobs; $workerId++) {
                 $dbName = self::buildWorkerDatabaseName($baseDb, $workerId);
                 self::withDatabaseOverrides($driver, $dbName, static function () use ($driver, $repoRoot): void {
@@ -45,6 +51,34 @@ final class ContractWorldBootstrap
         }
 
         self::bootstrapStore($driver, $repoRoot);
+    }
+
+    private static function bootstrapWorkersFromBaseline(
+        string $driver,
+        string $repoRoot,
+        string $baseDb,
+        int $jobs
+    ): void {
+        $baselineDb = self::resolveBaselineDatabaseName($baseDb);
+
+        fwrite(
+            STDERR,
+            sprintf(
+                "[testkit] bootstrap baseline driver=%s baseline_db=%s jobs=%d\n",
+                $driver,
+                $baselineDb,
+                $jobs
+            )
+        );
+
+        self::withDatabaseOverrides($driver, $baselineDb, static function () use ($driver, $repoRoot): void {
+            self::bootstrapStore($driver, $repoRoot);
+        });
+
+        for ($workerId = 1; $workerId <= $jobs; $workerId++) {
+            $workerDb = self::buildWorkerDatabaseName($baseDb, $workerId);
+            StoreMaintenance::cloneDatabase($driver, $baselineDb, $workerDb);
+        }
     }
 
     private static function bootstrapStore(string $driver, string $repoRoot): void
@@ -90,6 +124,21 @@ final class ContractWorldBootstrap
         throw new RuntimeException(
             'Falta nombre de base para bootstrap per-worker (' . implode('/', $keys) . ').'
         );
+    }
+
+    private static function resolveBaselineDatabaseName(string $baseDb): string
+    {
+        $explicit = trim(Env::string('TEST_BASELINE_DB_NAME', ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        $suffix = trim(Env::string('TEST_BASELINE_DB_SUFFIX', '_baseline'));
+        if ($suffix === '' || preg_match('/^[A-Za-z0-9._-]+$/', $suffix) !== 1) {
+            $suffix = '_baseline';
+        }
+
+        return $baseDb . $suffix;
     }
 
     private static function buildWorkerDatabaseName(string $baseDb, int $workerId): string

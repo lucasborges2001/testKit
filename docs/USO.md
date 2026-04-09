@@ -191,18 +191,78 @@ TEST_DB_STRATEGY=per_worker
 TEST_DB_WORKER_SUFFIX_FORMAT=_w%02d
 ```
 
+### `TEST_BASELINE_CLONE_PER_WORKER`
+
+Primer paso nuevo: si activás esta opción, `testkit` prepara una DB baseline una sola vez y luego clona esa baseline a los workers en vez de repetir el pipeline completo por cada worker.
+
+```bash
+TEST_DB_STRATEGY=per_worker
+TEST_BASELINE_CLONE_PER_WORKER=1
+TEST_BASELINE_DB_SUFFIX=_baseline
+```
+
+Usalo cuando:
+
+- el bootstrap estructural es costoso
+- querés partir siempre del mismo estado validado
+- necesitás que los workers hereden el mismo baseline
+
+No lo uses como atajo para tests frágiles.  
+Si los tests comparten estado por fuera de la DB, seguirán rompiéndose igual.
+
 ---
 
-## 6) MySQL / store / seeds
+## 6) Baseline modes
 
-### 6.1) Bootstrapping por worker
+### `TEST_BASELINE_MODE`
+
+Valores:
+
+- `layered` (default)
+- `snapshot`
+
+#### `layered`
+Comportamiento clásico:
+
+- reset
+- `schema/`
+- `base/`
+- migraciones pedidas
+- `validations/`
+
+#### `snapshot`
+Nuevo primer paso para migraciones reales:
+
+- reset
+- restore de artefacto lógico `.sql` o `.sql.gz`
+- migraciones pedidas
+- `validations/`
+
+Variables asociadas:
+
+- `TEST_BASELINE_MODE=snapshot`
+- `TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz`
+
+Restricciones actuales de este primer cambio:
+
+- soporte operativo implementado para MySQL
+- el snapshot debe ser un dump lógico accesible desde el contenedor
+- si el dump incluye reglas muy específicas de restore, el proyecto debe validarlo explícitamente
+
+---
+
+## 7) MySQL / store / seeds
+
+### 7.1) Bootstrapping por worker
 
 `scripts/seed.sh` y `scripts/seed.ps1` ya provisionan/bootstrap por worker cuando:
 
 - `TEST_DB_STRATEGY=per_worker`
 - `TEST_JOBS>1`
 
-### 6.2) Anti-carreras de store
+A partir de este primer cambio, el bootstrap de suite también puede materializar una baseline y clonar workers cuando `TEST_BASELINE_CLONE_PER_WORKER=1`.
+
+### 7.2) Anti-carreras de store
 
 Las acciones de store (`provision`, `reset`, `clean`, `seed`, `bootstrap`) quedan serializadas por `driver + db`.
 
@@ -215,33 +275,38 @@ Eso evita:
 Importante: esto **no** vuelve seguro el modelo de varios runners top-level.  
 Solo elimina una clase de carrera en las operaciones de store.
 
-### 6.3) Recomendación operativa
+### 7.3) Recomendación operativa
 
 Para suites con MySQL real:
 
 - corré **un** runner top-level
 - si querés throughput, subí `TEST_JOBS`
 - usá `TEST_DB_STRATEGY=per_worker`
+- si el bootstrap es pesado, evaluá `TEST_BASELINE_CLONE_PER_WORKER=1`
 
 Ejemplo:
 
 ```bash
-TEST_JOBS=4 TEST_DB_STRATEGY=per_worker php runTest.php back-php
+TEST_JOBS=4 \
+TEST_DB_STRATEGY=per_worker \
+TEST_BASELINE_CLONE_PER_WORKER=1 \
+php runTest.php back-php
 ```
 
 ---
 
-## 7) Seeds y lifecycle
+## 8) Seeds y lifecycle
 
 - `scripts/seed.sh` / `scripts/seed.ps1` provisionan el store target y aplican el pipeline estructural.
-- En modo layered, `testkit` ejecuta `schema/`, luego `base/`, luego migraciones pedidas y al final `validations/`.
-- `TEST_SEED_MIGRATIONS=m1,m2` agrega migraciones estructurales sobre la base mínima.
+- En modo `layered`, `testkit` ejecuta `schema/`, luego `base/`, luego migraciones pedidas y al final `validations/`.
+- En modo `snapshot`, `testkit` restaura el artefacto declarado por `TEST_BASELINE_SNAPSHOT_FILE`, luego aplica migraciones y validaciones.
+- `TEST_SEED_MIGRATIONS=m1,m2` agrega migraciones estructurales sobre la base materializada.
 - `TEST_SEED_FIXTURES` deja de ser parte del lifecycle de infraestructura en modo layered.
 - Los escenarios de negocio deben construirse desde `test/_support` con builders del proyecto.
 
 ---
 
-## 8) Targets
+## 9) Targets
 
 ### Suites
 
@@ -276,7 +341,7 @@ TEST_CATEGORY=critical php runTest.php all
 
 ---
 
-## 9) Scope, tags y convenciones
+## 10) Scope, tags y convenciones
 
 `TEST_SCOPE` filtra por `unit|integration|e2e|all`.
 
@@ -308,7 +373,7 @@ Conviene:
 
 ---
 
-## 10) Coverage (diagnóstico)
+## 11) Coverage (diagnóstico)
 
 Activación:
 
@@ -332,9 +397,9 @@ Variables útiles:
 
 ---
 
-## 11) Reportes
+## 12) Reportes
 
-### 11.1) Root de reportes
+### 12.1) Root de reportes
 
 Los reportes operativos viven bajo `.testkit/reports`.
 
@@ -352,7 +417,7 @@ Eso evita colisiones entre:
 
 Además publica un manifiesto compartido con la **última corrida completada** para que `scripts/report.php` pueda resolver qué root leer.
 
-### 11.2) Qué leer
+### 12.2) Qué leer
 
 Reporte consolidado:
 
@@ -366,7 +431,7 @@ php scripts/report.php
 2. `latest_run.json`
 3. fallback legacy al root compartido
 
-### 11.3) Qué incluye
+### 12.3) Qué incluye
 
 - resumen por suite (`suite_status`, `no_tests_reason`)
 - resumen por módulo
@@ -379,7 +444,7 @@ php scripts/report.php
 
 ---
 
-## 12) Variables clave
+## 13) Variables clave
 
 - `TEST_SCOPE`
 - `TEST_CATEGORY`
@@ -391,6 +456,10 @@ php scripts/report.php
 - `TEST_DB_STRATEGY`
 - `TEST_DB_WORKER_SUFFIX_FORMAT`
 - `TEST_STORE_PROVISION`
+- `TEST_BASELINE_MODE`
+- `TEST_BASELINE_SNAPSHOT_FILE`
+- `TEST_BASELINE_CLONE_PER_WORKER`
+- `TEST_BASELINE_DB_SUFFIX`
 - `TEST_SEED_MIGRATIONS`
 - `TEST_PYTHON_BINARY`
 - `TEST_COVERAGE`
@@ -402,7 +471,7 @@ php scripts/report.php
 
 ---
 
-## 13) Ejemplos recomendados
+## 14) Ejemplos recomendados
 
 ### Secuencial seguro
 
@@ -416,10 +485,22 @@ TEST_JOBS=1 TEST_DB_STRATEGY=shared php runTest.php back-php
 TEST_JOBS=4 TEST_DB_STRATEGY=per_worker php runTest.php back-php
 ```
 
-### Filtro integration con paralelismo seguro
+### Paralelo intra-suite con clone desde baseline
 
 ```bash
-TEST_SCOPE=integration TEST_JOBS=3 TEST_DB_STRATEGY=per_worker php runTest.php back-php
+TEST_JOBS=4 \
+TEST_DB_STRATEGY=per_worker \
+TEST_BASELINE_CLONE_PER_WORKER=1 \
+php runTest.php back-php
+```
+
+### Migración sobre snapshot restaurado
+
+```bash
+TEST_BASELINE_MODE=snapshot \
+TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz \
+TEST_SEED_MIGRATIONS=021_add_checkout,022_fix_fk \
+php runTest.php back-php
 ```
 
 ### Lo que NO deberías hacer para throughput
@@ -431,10 +512,11 @@ php runTest.php back-php &
 
 ---
 
-## 14) Límites vigentes
+## 15) Límites vigentes
 
 - `per_worker` aísla workers dentro de una suite, **no** corridas top-level distintas.
 - Si un test depende de estado externo no modelado por `testkit`, sigue sin ser `parallel-safe`.
+- El soporte snapshot de esta primera pasada está pensado para MySQL.
 - El runner Python usa `trace` de stdlib para cobertura; no reemplaza herramientas dedicadas.
 - Los hints de fragilidad son heurísticas basadas en historial local.
 - Las familias de fallo de triage son heurísticas: sirven para priorizar, no para cerrar diagnóstico.
