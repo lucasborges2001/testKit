@@ -29,8 +29,17 @@ function Resolve-Testkit {
   throw "No se encontró TestKit. Seteá TESTKIT_BIN o agregá bin/testkit(.ps1)."
 }
 
+function Test-IsWindowsHost {
+  $isWindowsVar = Get-Variable -Name IsWindows -ErrorAction SilentlyContinue
+  if ($null -ne $isWindowsVar) {
+    return [bool]$isWindowsVar.Value
+  }
+
+  return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
+}
+
 $Testkit = Resolve-Testkit
-if ($IsWindows -and -not $Testkit.ToLower().EndsWith(".ps1")) {
+if ((Test-IsWindowsHost) -and -not $Testkit.ToLowerInvariant().EndsWith(".ps1")) {
   throw "En Windows se espera bin/testkit.ps1. Si solo tenés bin/testkit (bash), usá los .sh."
 }
 
