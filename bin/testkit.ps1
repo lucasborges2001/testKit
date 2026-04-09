@@ -11,6 +11,7 @@ $Redis = Join-Path $TestRoot "compose.redis.yaml"
 $Pg = Join-Path $TestRoot "compose.pg.yaml"
 
 $ProjectRoot = if ($env:TESTKIT_PROJECT_ROOT) { Resolve-Path $env:TESTKIT_PROJECT_ROOT } else { Resolve-Path (Join-Path $TestRoot "..") }
+$ResolvedTestkitRoot = if ($env:TESTKIT_ROOT) { Resolve-Path $env:TESTKIT_ROOT } else { $TestRoot }
 $DoctorDockerMode = if ($env:TESTKIT_DOCTOR_DOCKER_MODE) { $env:TESTKIT_DOCTOR_DOCKER_MODE } else { 'auto' }
 
 function Pick-EnvFile {
@@ -56,24 +57,6 @@ function Load-EnvKVSafe([string]$Path) {
       Set-Item -Path ("Env:{0}" -f $k) -Value $v
     }
   }
-}
-
-function Port-InUse([int]$Port) {
-  try {
-    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $Port)
-    $listener.Start()
-    $listener.Stop()
-    return $false
-  } catch {
-    return $true
-  }
-}
-
-function Get-OrDefault([string]$Value, [string]$DefaultValue) {
-  if ([string]::IsNullOrWhiteSpace($Value)) {
-    return $DefaultValue
-  }
-  return $Value
 }
 
 function Normalize-StackCsv([string]$Raw) {
@@ -150,8 +133,24 @@ function Rewrite-RunCommandArgs([string[]]$InputArgs) {
       continue
     }
 
-    if ($sawTestkit -and @('runTest.php', './runTest.php', '/workspace/project/runTest.php') -contains $rewritten[$i]) {
+    if ($sawTestkit -and @('runTest.php', './runTest.php', '/workspace/project/runTest.php', '/workspace/testkit/runTest.php') -contains $rewritten[$i]) {
       $rewritten[$i] = '/workspace/testkit/runTest.php'
+      continue
+    }
+
+    if ($sawTestkit -and @('scripts/report.php', './scripts/report.php', '/workspace/project/scripts/report.php', '/workspace/testkit/scripts/report.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/scripts/report.php'
+      continue
+    }
+
+    if ($sawTestkit -and @('scripts/query_report.php', './scripts/query_report.php', '/workspace/project/scripts/query_report.php', '/workspace/testkit/scripts/query_report.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/scripts/query_report.php'
+      continue
+    }
+
+    if ($sawTestkit -and @('runners/runTest.php', './runners/runTest.php', '/workspace/project/runners/runTest.php', '/workspace/testkit/runners/runTest.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/runners/runTest.php'
+      continue
     }
   }
 
@@ -159,27 +158,14 @@ function Rewrite-RunCommandArgs([string[]]$InputArgs) {
 }
 
 function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
-  $tkBackDir = Get-OrDefault $env:TK_BACK_DIR "back"
-  $tkPublicDir = Get-OrDefault $env:TK_PUBLIC_DIR "public_html"
-  $testJobs = Get-OrDefault $env:TEST_JOBS "1"
-  $testDbStrategy = Get-OrDefault $env:TEST_DB_STRATEGY "shared"
-  $testDbWorkerSuffixFormat = Get-OrDefault $env:TEST_DB_WORKER_SUFFIX_FORMAT "_w%02d"
-
   Write-Host ""
   Write-Host "-- Effective TestKit config --"
   Write-Host "projectRoot: $ProjectRoot"
-  Write-Host "testkitRoot: $TestRoot"
+  Write-Host "testkitRootHost: $ResolvedTestkitRoot"
   Write-Host "envFile:  $EnvFilePath"
   Write-Host "DB_ENV_PATH(in-container): $env:TESTKIT_DB_ENV_PATH"
   Write-Host ""
   Write-Host "TESTKIT_STACK: $StackCsv"
-  Write-Host ""
-  Write-Host ("TK_BACK_DIR:   {0}" -f $tkBackDir)
-  Write-Host ("TK_PUBLIC_DIR: {0}" -f $tkPublicDir)
-  Write-Host ""
-  Write-Host ("TEST_JOBS: {0}" -f $testJobs)
-  Write-Host ("TEST_DB_STRATEGY: {0}" -f $testDbStrategy)
-  Write-Host ("TEST_DB_WORKER_SUFFIX_FORMAT: {0}" -f $testDbWorkerSuffixFormat)
   Write-Host ""
 }
 
@@ -200,122 +186,22 @@ function Run-Doctor {
 
   $stackCsv = Normalize-StackCsv $env:TESTKIT_STACK
   Write-Host "[INFO] TESTKIT_STACK=$stackCsv"
+  Write-Host "[INFO] TESTKIT_ROOT(host)=$ResolvedTestkitRoot"
 
-  $backDir = Get-OrDefault $env:TK_BACK_DIR "back"
-  $pubDir = Get-OrDefault $env:TK_PUBLIC_DIR "public_html"
-
-  if (Test-Path (Join-Path $ProjectRoot $backDir)) { Write-Host "[OK] $backDir/ (TK_BACK_DIR)" }
-  else { Write-Host "[INFO] carpeta $backDir/ no detectada. Esto es normal si tu layout es distinto." }
-
-  if (Test-Path (Join-Path $ProjectRoot $pubDir)) { Write-Host "[OK] $pubDir/ (TK_PUBLIC_DIR)" }
-  else { Write-Host "[INFO] carpeta $pubDir/ no detectada. (Opcional)" }
-
-  if (Test-Path (Join-Path $ProjectRoot 'test')) { Write-Host "[OK] test/ del proyecto" }
-  else { Write-Host "[FAIL] falta $($ProjectRoot.Path)\test"; $ok = $false }
-
-  $suiteRoots = @{
-    'TK_BACK_PHP_DIR' = (Get-OrDefault $env:TK_BACK_PHP_DIR 'test/back')
-    'TK_BACK_PYTHON_DIR' = (Get-OrDefault $env:TK_BACK_PYTHON_DIR 'test/back')
-    'TK_FRONT_PHP_DIR' = (Get-OrDefault $env:TK_FRONT_PHP_DIR 'test/front')
-    'TK_FRONT_JS_DIR' = (Get-OrDefault $env:TK_FRONT_JS_DIR 'test/front')
-  }
-  foreach ($entry in $suiteRoots.GetEnumerator()) {
-    $resolved = Join-Path $ProjectRoot $entry.Value
-    if (Test-Path $resolved) {
-      if ((Get-Item Env:$($entry.Key) -ErrorAction SilentlyContinue)) { Write-Host "[OK] $($entry.Key): $($entry.Value) (override)" }
-      else { Write-Host "[OK] $($entry.Key): $($entry.Value) (default)" }
-    } else {
-      Write-Host "[WARN] $($entry.Key): ruta no detectada: $($entry.Value). (Opcional)"
-    }
-  }
-
-  $targetOverrides = Get-ChildItem Env: | Where-Object { $_.Name -like 'TESTKIT_TARGET_*' }
-  if ($targetOverrides) {
-    $names = ($targetOverrides | Select-Object -ExpandProperty Name) -join ','
-    Write-Host "[INFO] targets personalizados detectados: $names"
-  }
-
-  if ($env:TK_MODULE_LEVEL) { Write-Host "[OK] TK_MODULE_LEVEL: $($env:TK_MODULE_LEVEL) (override)" }
-  if ($env:TK_TAG_MAP) { Write-Host "[OK] TK_TAG_MAP: $($env:TK_TAG_MAP) (override)" }
-
-  $backAutoload = $env:TK_BACK_AUTOLOAD
-  if (-not $backAutoload) { $backAutoload = ("{0}\vendor\autoload.php" -f $backDir) }
-
-  if (Test-Path (Join-Path $ProjectRoot $backAutoload)) {
-    Write-Host "[OK] back autoload: $backAutoload"
-  } elseif ($env:TK_BACK_BOOTSTRAP -and (Test-Path (Join-Path $ProjectRoot $env:TK_BACK_BOOTSTRAP))) {
-    Write-Host "[OK] back bootstrap: $($env:TK_BACK_BOOTSTRAP)"
-  } else {
-    Write-Host "[WARN] no detecté bootstrap de BACK. Si tus tests necesitan cargar código del proyecto, seteá TK_BACK_AUTOLOAD o TK_BACK_BOOTSTRAP."
-  }
-
-  $pubAutoload = $env:TK_PUBLIC_AUTOLOAD
-  if (-not $pubAutoload) { $pubAutoload = ("{0}\vendor\autoload.php" -f $pubDir) }
-
-  if (Test-Path (Join-Path $ProjectRoot $pubAutoload)) {
-    Write-Host "[OK] public autoload: $pubAutoload"
-  } elseif ($env:TK_PUBLIC_BOOTSTRAP -and (Test-Path (Join-Path $ProjectRoot $env:TK_PUBLIC_BOOTSTRAP))) {
-    Write-Host "[OK] public bootstrap: $($env:TK_PUBLIC_BOOTSTRAP)"
-  } else {
-    Write-Host "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
-  }
-
-  Write-Host "[INFO] TEST_DB_STRATEGY=$(Get-OrDefault $env:TEST_DB_STRATEGY 'shared') TEST_JOBS=$(Get-OrDefault $env:TEST_JOBS '1')"
-
-  if (Stack-Has $stackCsv 'mysql') {
-    $mysqlPort = [int](Get-OrDefault $env:TEST_MYSQL_PORT "33070")
-    if (Port-InUse $mysqlPort) { Write-Host "[WARN] puerto MySQL ocupado: $mysqlPort (TEST_MYSQL_PORT)" }
-    else { Write-Host "[OK] puerto MySQL libre: $mysqlPort" }
-  }
-
-  if (Stack-Has $stackCsv 'pg') {
-    $pgPort = [int](Get-OrDefault $env:TEST_PG_PORT "54370")
-    if (Port-InUse $pgPort) { Write-Host "[WARN] puerto Postgres ocupado: $pgPort (TEST_PG_PORT)" }
-    else { Write-Host "[OK] puerto Postgres libre: $pgPort" }
-  }
-
-  $testOutDir = Join-Path $ProjectRoot 'test'
-  New-Item -ItemType Directory -Force -Path $testOutDir | Out-Null
-  try {
-    $probe = Join-Path $testOutDir '.testkit_write_probe.tmp'
-    Set-Content -Path $probe -Value 'ok' -NoNewline
-    Remove-Item -Force $probe
-    Write-Host "[OK] $testOutDir writable"
-  } catch {
-    Write-Host "[FAIL] $testOutDir no es escribible"
+  if (-not (Test-Path $ResolvedTestkitRoot)) {
+    Write-Host "[FAIL] TESTKIT_ROOT no existe o no es directorio: $ResolvedTestkitRoot"
     $ok = $false
+  } elseif (-not (Test-Path (Join-Path $ResolvedTestkitRoot 'runTest.php'))) {
+    Write-Host "[FAIL] TESTKIT_ROOT no parece repo completo: falta runTest.php en $ResolvedTestkitRoot"
+    $ok = $false
+  } else {
+    Write-Host "[OK] TESTKIT_ROOT: $ResolvedTestkitRoot"
   }
-
-  $dockerRequired = $false
-  if ($DoctorDockerMode -match '^(1|docker|required|strict)$') { $dockerRequired = $true }
-
-  $dockerCliOk = $false
-  try { docker --version | Out-Null; Write-Host "[OK] docker CLI"; $dockerCliOk = $true }
-  catch {
-    if ($dockerRequired) { Write-Host "[FAIL] docker no está disponible"; $ok = $false }
-    else { Write-Host "[WARN] docker no está disponible (ok en flujo local)" }
-  }
-
-  if ($dockerCliOk) {
-    try { docker info | Out-Null; Write-Host "[OK] docker daemon" }
-    catch {
-      if ($dockerRequired) { Write-Host "[FAIL] docker daemon no responde (¿Docker Desktop?)"; $ok = $false }
-      else { Write-Host "[WARN] docker daemon no responde (ok si vas a correr local)" }
-    }
-
-    try { docker compose version | Out-Null; Write-Host "[OK] docker compose v2" }
-    catch {
-      if ($dockerRequired) { Write-Host "[FAIL] docker compose v2 no disponible"; $ok = $false }
-      else { Write-Host "[WARN] docker compose v2 no disponible (ok si no usás flujo Docker)" }
-    }
-  }
-
-  try { php -r "echo PHP_VERSION;" | ForEach-Object { if ($_){ Write-Host "[INFO] php local: $_" } } } catch {}
-  try { node -v | ForEach-Object { if ($_){ Write-Host "[INFO] node local: $_" } } } catch {}
 
   if ($Dump -and $envFile) {
     $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
     $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
+    $env:TESTKIT_ROOT = $ResolvedTestkitRoot.Path
     Dump-Config $envFile.Path $stackCsv
   }
 
@@ -351,6 +237,7 @@ if ($legacyPgFlag -and -not (Stack-Has $stackCsv 'pg')) {
 
 $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
 $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
+$env:TESTKIT_ROOT = $ResolvedTestkitRoot.Path
 
 $files = Resolve-ComposeFiles $stackCsv
 $runArgs = Rewrite-RunCommandArgs $Args

@@ -12,12 +12,12 @@ if [[ -z "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd "${HERE}/.." && pwd)"
 fi
 PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
+
+TESTKIT_ROOT_HOST="${TESTKIT_ROOT:-$HERE}"
+TESTKIT_ROOT_HOST="$(cd "${TESTKIT_ROOT_HOST}" && pwd)"
+
 DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
 
-# Env contract:
-# - Preferred: <repo>/test/.env.test
-# - Supported:  <repo>/.env.test
-# - Override:   TESTKIT_ENV_FILE=/abs/path/to/.env.test
 pick_env_file() {
   local override="${TESTKIT_ENV_FILE:-}"
   if [[ -n "$override" ]]; then
@@ -36,9 +36,6 @@ pick_env_file() {
 
 env_file_to_container_db_env_path() {
   local env_file="$1"
-  if [[ "$env_file" == "${HERE}/.env.test" ]]; then
-    echo "/workspace/project/test/.env.test"; return 0
-  fi
   if [[ "$env_file" == "${PROJECT_ROOT}/.env.test" ]]; then
     echo "/workspace/project/.env.test"; return 0
   fi
@@ -147,35 +144,54 @@ resolve_compose_files() {
 }
 
 rewrite_run_command_args() {
-  local -n args_ref=$1
-
-  if [[ ${#args_ref[@]} -lt 1 || "${args_ref[0]}" != "run" ]]; then
+  local -a args=("$@")
+  if [[ ${#args[@]} -eq 0 || "${args[0]}" != "run" ]]; then
+    printf '%s\0' "${args[@]}"
     return 0
   fi
 
-  local i
+  local -a rewritten=()
   local saw_testkit=0
-  for i in "${!args_ref[@]}"; do
-    if [[ "${args_ref[$i]}" == "testkit" ]]; then
+
+  for arg in "${args[@]}"; do
+    if [[ "$arg" == "testkit" ]]; then
       saw_testkit=1
+      rewritten+=("$arg")
       continue
     fi
 
-    case "${args_ref[$i]}" in
-      runTest.php|./runTest.php|/workspace/project/runTest.php)
-        if [[ $saw_testkit -eq 1 ]]; then
-          args_ref[$i]="/workspace/testkit/runTest.php"
-        fi
-        ;;
-    esac
+    if [[ $saw_testkit -eq 1 ]]; then
+      case "$arg" in
+        runTest.php|./runTest.php|/workspace/project/runTest.php|/workspace/testkit/runTest.php)
+          rewritten+=("/workspace/testkit/runTest.php")
+          continue
+          ;;
+        scripts/report.php|./scripts/report.php|/workspace/project/scripts/report.php|/workspace/testkit/scripts/report.php)
+          rewritten+=("/workspace/testkit/scripts/report.php")
+          continue
+          ;;
+        scripts/query_report.php|./scripts/query_report.php|/workspace/project/scripts/query_report.php|/workspace/testkit/scripts/query_report.php)
+          rewritten+=("/workspace/testkit/scripts/query_report.php")
+          continue
+          ;;
+        runners/runTest.php|./runners/runTest.php|/workspace/project/runners/runTest.php|/workspace/testkit/runners/runTest.php)
+          rewritten+=("/workspace/testkit/runners/runTest.php")
+          continue
+          ;;
+      esac
+    fi
+
+    rewritten+=("$arg")
   done
+
+  printf '%s\0' "${rewritten[@]}"
 }
 
 _dump_config() {
   echo ""
   echo "-- Effective TestKit config --"
   echo "projectRoot: ${PROJECT_ROOT}"
-  echo "testkitRoot: ${HERE}"
+  echo "testkitRootHost: ${TESTKIT_ROOT_HOST}"
   echo "envFile:  ${ENV_FILE}"
   echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
   echo ""
@@ -184,26 +200,10 @@ _dump_config() {
   echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
   echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
   echo ""
-  echo "TK_BACK_PHP_DIR:    ${TK_BACK_PHP_DIR:-test/back}"
-  echo "TK_BACK_PYTHON_DIR: ${TK_BACK_PYTHON_DIR:-test/back}"
-  echo "TK_FRONT_PHP_DIR:   ${TK_FRONT_PHP_DIR:-test/front}"
-  echo "TK_FRONT_JS_DIR:    ${TK_FRONT_JS_DIR:-test/front}"
-  echo ""
   echo "TEST_JOBS: ${TEST_JOBS:-1}"
   echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
   echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
   echo ""
-  echo "TEST_COVERAGE: ${TEST_COVERAGE:-0}"
-  echo "TEST_USE_PUBLIC_LOADER: ${TEST_USE_PUBLIC_LOADER:-1}"
-  echo ""
-
-  local targets
-  targets="$(env | grep '^TESTKIT_TARGET_' || true)"
-  if [[ -n "$targets" ]]; then
-    echo "-- Target Overrides --"
-    echo "$targets"
-    echo ""
-  fi
 }
 
 doctor() {
@@ -217,109 +217,18 @@ doctor() {
     load_env_kv_safe "$ENV_FILE" || true
   else
     echo "[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root)."; ok=0
-    echo "       Copiá: test/.env.test.example -> test/.env.test"; ok=0
   fi
 
   TESTKIT_STACK_EFFECTIVE="$(normalize_stack_csv "${TESTKIT_STACK:-}")"
   echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE}"
+  echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
 
-  local back_dir="${TK_BACK_DIR:-back}"
-  local public_dir="${TK_PUBLIC_DIR:-public_html}"
-
-  if [[ -d "${PROJECT_ROOT}/${back_dir}" ]]; then
-    echo "[OK] ${back_dir}/ (TK_BACK_DIR)"
+  if [[ ! -d "$TESTKIT_ROOT_HOST" ]]; then
+    echo "[FAIL] TESTKIT_ROOT no existe o no es directorio: ${TESTKIT_ROOT_HOST}"; ok=0
+  elif [[ ! -f "$TESTKIT_ROOT_HOST/runTest.php" ]]; then
+    echo "[FAIL] TESTKIT_ROOT no parece repo completo: falta runTest.php en ${TESTKIT_ROOT_HOST}"; ok=0
   else
-    echo "[INFO] carpeta ${back_dir}/ no detectada. Esto es normal si tu layout es distinto."
-  fi
-  if [[ -d "${PROJECT_ROOT}/${public_dir}" ]]; then
-    echo "[OK] ${public_dir}/ (TK_PUBLIC_DIR)"
-  else
-    echo "[INFO] carpeta ${public_dir}/ no detectada. (Opcional)"
-  fi
-  if [[ -d "${PROJECT_ROOT}/test" ]]; then
-    echo "[OK] test/ del proyecto"
-  else
-    echo "[FAIL] falta ${PROJECT_ROOT}/test"; ok=0
-  fi
-
-  local bp="${TK_BACK_PHP_DIR:-test/back}"
-  local bpy="${TK_BACK_PYTHON_DIR:-test/back}"
-  local fp="${TK_FRONT_PHP_DIR:-test/front}"
-  local fjs="${TK_FRONT_JS_DIR:-test/front}"
-
-  for d in "TK_BACK_PHP_DIR:$bp" "TK_BACK_PYTHON_DIR:$bpy" "TK_FRONT_PHP_DIR:$fp" "TK_FRONT_JS_DIR:$fjs"; do
-    local key="${d%%:*}"
-    local val="${d#*:}"
-    if [[ ! -d "${PROJECT_ROOT}/$val" ]]; then
-      echo "[WARN] $key: ruta no detectada: $val. (Opcional)"
-    else
-      if env | grep -q "^$key="; then
-        echo "[OK] $key: $val (override)"
-      else
-        echo "[OK] $key: $val (default)"
-      fi
-    fi
-  done
-
-  local target_overrides
-  target_overrides="$(env | grep '^TESTKIT_TARGET_' || true)"
-  if [[ -n "$target_overrides" ]]; then
-     echo "[INFO] targets personalizados detectados: $(echo "$target_overrides" | cut -d= -f1 | xargs | tr ' ' ',')"
-  fi
-
-  if [[ -n "${TK_MODULE_LEVEL:-}" ]]; then echo "[OK] TK_MODULE_LEVEL: $TK_MODULE_LEVEL (override)"; fi
-  if [[ -n "${TK_TAG_MAP:-}" ]]; then echo "[OK] TK_TAG_MAP: $TK_TAG_MAP (override)"; fi
-
-  local back_autoload="${TK_BACK_AUTOLOAD:-${back_dir}/vendor/autoload.php}"
-  local pub_autoload="${TK_PUBLIC_AUTOLOAD:-${public_dir}/vendor/autoload.php}"
-
-  if [[ -f "${PROJECT_ROOT}/${back_autoload}" ]]; then
-    echo "[OK] back autoload: ${back_autoload}"
-  else
-    if [[ -n "${TK_BACK_BOOTSTRAP:-}" && -f "${PROJECT_ROOT}/${TK_BACK_BOOTSTRAP}" ]]; then
-      echo "[OK] back bootstrap: ${TK_BACK_BOOTSTRAP}"
-    else
-      echo "[WARN] no detecté bootstrap de BACK. Si tus tests necesitan cargar código del proyecto, seteá TK_BACK_AUTOLOAD o TK_BACK_BOOTSTRAP."
-    fi
-  fi
-
-  if [[ -f "${PROJECT_ROOT}/${pub_autoload}" ]]; then
-    echo "[OK] public autoload: ${pub_autoload}"
-  else
-    if [[ -n "${TK_PUBLIC_BOOTSTRAP:-}" && -f "${PROJECT_ROOT}/${TK_PUBLIC_BOOTSTRAP}" ]]; then
-      echo "[OK] public bootstrap: ${TK_PUBLIC_BOOTSTRAP}"
-    else
-      echo "[INFO] no detecté bootstrap de FRONT/PHP (ok si no tenés tests php-front o si son puros)."
-    fi
-  fi
-
-  echo "[INFO] TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-shared} TEST_JOBS=${TEST_JOBS:-1}"
-
-  local mysql_port="${TEST_MYSQL_PORT:-33070}"
-  local pg_port="${TEST_PG_PORT:-54370}"
-
-  if stack_has "$TESTKIT_STACK_EFFECTIVE" "mysql"; then
-    rc=0
-    port_in_use "$mysql_port" || rc=$?
-    if [[ $rc -eq 0 ]]; then
-      echo "[WARN] puerto MySQL ocupado: ${mysql_port} (configurable con TEST_MYSQL_PORT)"
-    elif [[ $rc -eq 1 ]]; then
-      echo "[OK] puerto MySQL libre: ${mysql_port}"
-    else
-      echo "[INFO] no pude chequear puerto MySQL (instalá python3 para el check). Puerto=${mysql_port}"
-    fi
-  fi
-
-  if stack_has "$TESTKIT_STACK_EFFECTIVE" "pg"; then
-    rc=0
-    port_in_use "$pg_port" || rc=$?
-    if [[ $rc -eq 0 ]]; then
-      echo "[WARN] puerto Postgres ocupado: ${pg_port} (configurable con TEST_PG_PORT)"
-    elif [[ $rc -eq 1 ]]; then
-      echo "[OK] puerto Postgres libre: ${pg_port}"
-    else
-      echo "[INFO] no pude chequear puerto Postgres (instalá python3 para el check). Puerto=${pg_port}"
-    fi
+    echo "[OK] TESTKIT_ROOT: ${TESTKIT_ROOT_HOST}"
   fi
 
   local test_out_dir="${PROJECT_ROOT}/test"
@@ -330,57 +239,10 @@ doctor() {
     echo "[FAIL] ${test_out_dir} no es escribible"; ok=0
   fi
 
-  local docker_required=0
-  if [[ "$DOCTOR_DOCKER_MODE" =~ ^(1|docker|required|strict)$ ]]; then
-    docker_required=1
-  fi
-
-  local docker_cli_ok=0
-  if command -v docker >/dev/null 2>&1; then
-    echo "[OK] docker CLI"
-    docker_cli_ok=1
-  else
-    if [[ $docker_required -eq 1 ]]; then
-      echo "[FAIL] docker no está instalado/en PATH"; ok=0
-    else
-      echo "[WARN] docker no está instalado/en PATH (ok en flujo local)"
-    fi
-  fi
-
-  if [[ $docker_cli_ok -eq 1 ]]; then
-    if docker info >/dev/null 2>&1; then
-      echo "[OK] docker daemon"
-    else
-      if [[ $docker_required -eq 1 ]]; then
-        echo "[FAIL] docker daemon no responde (¿Docker Desktop/servicio?)"; ok=0
-      else
-        echo "[WARN] docker daemon no responde (ok si vas a correr local)"
-      fi
-    fi
-
-    if docker compose version >/dev/null 2>&1; then
-      echo "[OK] docker compose v2"
-    else
-      if [[ $docker_required -eq 1 ]]; then
-        echo "[FAIL] docker compose v2 no disponible"; ok=0
-      else
-        echo "[WARN] docker compose v2 no disponible (ok si no usás flujo Docker)"
-      fi
-    fi
-  fi
-
-  if command -v php >/dev/null 2>&1; then
-    echo "[INFO] php local: $(php -r 'echo PHP_VERSION;' 2>/dev/null || true)"
-  fi
-  if command -v node >/dev/null 2>&1; then
-    echo "[INFO] node local: $(node -v 2>/dev/null || true)"
-  fi
-
   if [[ "${2:-}" == "--dump" ]]; then
-    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-      export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
-      export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
-    fi
+    export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
+    export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+    export TESTKIT_ROOT="$TESTKIT_ROOT_HOST"
     _dump_config
   fi
 
@@ -420,11 +282,11 @@ fi
 
 export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
 export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+export TESTKIT_ROOT="$TESTKIT_ROOT_HOST"
 
 FILES=()
 resolve_compose_files "$TESTKIT_STACK_EFFECTIVE" FILES
 
-ARGS=( "$@" )
-rewrite_run_command_args ARGS
+mapfile -d '' -t REWRITTEN_ARGS < <(rewrite_run_command_args "$@")
 
-exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "${ARGS[@]}"
+exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "${REWRITTEN_ARGS[@]}"

@@ -8,8 +8,12 @@ services:
         NODE_VERSION: ${TESTKIT_NODE_VERSION:-20}
     working_dir: /workspace/project
     volumes:
-      - ${TESTKIT_PROJECT_ROOT:-..}:/workspace/project
-      - .:/workspace/testkit
+      - type: bind
+        source: ${TESTKIT_PROJECT_ROOT}
+        target: /workspace/project
+      - type: bind
+        source: ${TESTKIT_ROOT}
+        target: /workspace/testkit
     environment:
       APP_ENV: test
       APP_DEBUG: 1
