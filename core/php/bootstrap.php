@@ -6,6 +6,7 @@ require_once __DIR__ . '/common/Paths.php';
 require_once __DIR__ . '/common/Bootstrap.php';
 require_once __DIR__ . '/common/ProjectEnv.php';
 require_once __DIR__ . '/common/Trace.php';
+require_once __DIR__ . '/common/Lock.php';
 
 require_once __DIR__ . '/config/RunnerConfig.php';
 require_once __DIR__ . '/discovery/TestTagger.php';
@@ -14,6 +15,7 @@ require_once __DIR__ . '/discovery/TestSeedMetadata.php';
 
 require_once __DIR__ . '/execution/ProcessRunner.php';
 require_once __DIR__ . '/execution/SuiteExecutor.php';
+require_once __DIR__ . '/execution/ParallelGuard.php';
 
 require_once __DIR__ . '/coverage/CoverageMerger.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';

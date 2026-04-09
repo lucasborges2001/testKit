@@ -32,8 +32,12 @@ final class MetaRunner
         }
 
         $runId = Env::string('TEST_RUN_ID', self::buildRunId());
+        $reportRunRoot = Paths::reportRunRoot($runId);
+        Paths::ensureDir($reportRunRoot);
+
         putenv('TEST_RUN_ID=' . $runId);
         putenv('TEST_META_RUN_ID=' . $runId);
+        putenv('TEST_REPORT_RUN_ROOT=' . $reportRunRoot);
         putenv('TEST_FAIL_FAST=' . ((bool)$config['child_fail_fast'] ? '1' : '0'));
 
         $metaStartedAt = gmdate('Y-m-d\TH:i:s\Z');

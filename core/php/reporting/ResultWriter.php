@@ -51,10 +51,10 @@ final class ResultWriter
             return;
         }
 
-        file_put_contents($latestPath, $json);
-        file_put_contents($tsPath, $json);
+        self::writeFileAtomic($latestPath, $json);
+        self::writeFileAtomic($tsPath, $json);
         if ($canonicalLatestPath !== $latestPath) {
-            file_put_contents($canonicalLatestPath, $json);
+            self::writeFileAtomic($canonicalLatestPath, $json);
         }
 
         self::pruneOldRuns($reportsRoot, $baseName, $reportKeep);
@@ -109,10 +109,10 @@ final class ResultWriter
             return;
         }
 
-        file_put_contents($latestPath, $json);
-        file_put_contents($tsPath, $json);
+        self::writeFileAtomic($latestPath, $json);
+        self::writeFileAtomic($tsPath, $json);
         if ($canonicalLatestPath !== $latestPath) {
-            file_put_contents($canonicalLatestPath, $json);
+            self::writeFileAtomic($canonicalLatestPath, $json);
         }
 
         self::pruneOldRuns($reportsRoot, $baseName, $reportKeep);
@@ -121,6 +121,10 @@ final class ResultWriter
             self::buildRunsIndexEntry($report, 'meta', basename($latestPath), basename($tsPath), basename($canonicalLatestPath)),
             $runsIndexKeep
         );
+
+        if (self::isRunScopedReportRoot($reportsRoot)) {
+            self::publishLatestRunManifest($reportsRoot, $report);
+        }
     }
 
     /**
@@ -458,7 +462,7 @@ final class ResultWriter
             return;
         }
 
-        file_put_contents($indexPath, $json);
+        self::writeFileAtomic($indexPath, $json);
     }
 
     /**
@@ -546,5 +550,54 @@ final class ResultWriter
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    private static function writeFileAtomic(string $path, string $contents): void
+    {
+        $dir = dirname($path);
+        Paths::ensureDir($dir);
+
+        $tmp = tempnam($dir, basename($path) . '.tmp.');
+        if (!is_string($tmp) || $tmp === '') {
+            file_put_contents($path, $contents, LOCK_EX);
+            return;
+        }
+
+        file_put_contents($tmp, $contents, LOCK_EX);
+
+        if (!@rename($tmp, $path)) {
+            @copy($tmp, $path);
+            @unlink($tmp);
+        }
+    }
+
+    private static function isRunScopedReportRoot(string $reportsRoot): bool
+    {
+        $reportsRoot = Paths::normalize($reportsRoot);
+        $runsPrefix = Paths::normalize(Paths::reportsRoot() . '/runs');
+
+        return $reportsRoot !== Paths::reportsRoot() && str_starts_with($reportsRoot, $runsPrefix . '/');
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function publishLatestRunManifest(string $reportsRoot, array $report): void
+    {
+        $manifest = [
+            'updated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'run_id' => (string)($report['run_id'] ?? ''),
+            'meta_run_id' => (string)($report['meta_run_id'] ?? ''),
+            'target' => (string)($report['target'] ?? ''),
+            'report_root' => Paths::normalize($reportsRoot),
+            'report_scope_rel' => (string)($report['report_scope_rel'] ?? Paths::relativeToRepo($reportsRoot)),
+        ];
+
+        $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            return;
+        }
+
+        self::writeFileAtomic(Paths::latestRunManifestPath(), $json);
     }
 }

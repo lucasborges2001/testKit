@@ -52,6 +52,21 @@ final class Paths
         return self::normalize(self::outRoot() . '/reports');
     }
 
+    public static function reportRunRoot(string $runId): string
+    {
+        $runId = preg_replace('/[^a-z0-9._-]+/i', '_', trim($runId)) ?: '';
+        if ($runId === '') {
+            $runId = 'adhoc';
+        }
+
+        return self::normalize(self::reportsRoot() . '/runs/' . $runId);
+    }
+
+    public static function latestRunManifestPath(): string
+    {
+        return self::normalize(self::reportsRoot() . '/latest_run.json');
+    }
+
     public static function historyRoot(): string
     {
         return self::normalize(self::outRoot() . '/history');
@@ -93,6 +108,16 @@ final class Paths
      */
     public static function resolveReportRoot(array $tests): string
     {
+        $runRoot = Env::string('TEST_REPORT_RUN_ROOT');
+        if ($runRoot !== '') {
+            return self::normalize($runRoot);
+        }
+
+        $explicit = Env::string('TEST_REPORT_ROOT');
+        if ($explicit !== '') {
+            return self::normalize($explicit);
+        }
+
         return self::reportsRoot();
     }
 
@@ -154,7 +179,7 @@ final class Paths
      */
     public static function aggregateMetaReportRoot(): string
     {
-        $fallback = self::reportsRoot();
+        $fallback = self::resolveReportRoot([]);
         $unique = self::suiteReportRoots();
         if ($unique === []) {
             return $fallback;

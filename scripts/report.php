@@ -9,7 +9,7 @@ use Testkit\Core\Reporting\ReportSummary;
 
 $repoRoot = Paths::repoRoot();
 $testRoot = Paths::testRoot();
-$reportsRoot = Paths::reportsRoot();
+$reportsRoot = resolveActiveReportsRoot();
 
 $latestFiles = currentLatestReportFiles($reportsRoot);
 if ($latestFiles === []) {
@@ -350,4 +350,29 @@ function legacyLatestReportFiles(string $testRoot): array
     sort($latestFiles);
 
     return $latestFiles;
+}
+
+function resolveActiveReportsRoot(): string
+{
+    $envRunId = trim((string)(getenv('TEST_RUN_ID') ?: ''));
+    if ($envRunId !== '') {
+        $candidate = Paths::reportRunRoot($envRunId);
+        if (is_dir($candidate)) {
+            return $candidate;
+        }
+    }
+
+    $manifestPath = Paths::latestRunManifestPath();
+    if (is_file($manifestPath)) {
+        $raw = file_get_contents($manifestPath);
+        $json = is_string($raw) ? json_decode($raw, true) : null;
+        if (is_array($json)) {
+            $candidate = trim((string)($json['report_root'] ?? ''));
+            if ($candidate !== '' && is_dir($candidate)) {
+                return Paths::normalize($candidate);
+            }
+        }
+    }
+
+    return Paths::reportsRoot();
 }
