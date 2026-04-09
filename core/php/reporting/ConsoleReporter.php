@@ -56,6 +56,7 @@ final class ConsoleReporter
 
         self::printModuleSummary($result);
         self::printFailures($result);
+        self::printTriage($result);
         self::printSlow($result);
         self::printFragility($result);
         self::printPerfViolations($result);
@@ -155,6 +156,58 @@ final class ConsoleReporter
             $suiteId = (string)($result['suite_id'] ?? '');
             $target = str_replace('_', '-', $suiteId);
             echo "\n" . UI::bold("Next step:") . " " . UI::info("TEST_MATCH='{$firstFile}' php runTest.php {$target}") . "\n";
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function printTriage(array $result): void
+    {
+        $failures = ReportSummary::canonicalFailures($result);
+        if ($failures === []) {
+            return;
+        }
+
+        $summary = $result['triage_summary'] ?? null;
+        if (!is_array($summary) || $summary === []) {
+            $summary = FailureClassifier::summarize($failures, 4);
+        }
+
+        if ($summary === []) {
+            return;
+        }
+
+        UI::section("Triage Summary");
+        foreach ($summary as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $label = (string)($row['label'] ?? $row['family'] ?? 'unknown');
+            $count = (int)($row['count'] ?? 0);
+            $next = trim((string)($row['next_step'] ?? ''));
+            echo "  - " . UI::warning($label) . " x{$count}\n";
+
+            $examples = is_array($row['examples'] ?? null) ? $row['examples'] : [];
+            foreach (array_slice($examples, 0, 2) as $example) {
+                if (!is_array($example)) {
+                    continue;
+                }
+                $file = trim((string)($example['file'] ?? ''));
+                $message = trim((string)($example['message'] ?? ''));
+                if ($file !== '') {
+                    echo "      * " . $file;
+                    if ($message !== '') {
+                        echo ' -> ' . $message;
+                    }
+                    echo "\n";
+                }
+            }
+
+            if ($next !== '') {
+                echo "      " . UI::gray("action: {$next}") . "\n";
+            }
         }
     }
 

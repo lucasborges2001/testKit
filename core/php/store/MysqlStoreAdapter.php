@@ -17,7 +17,8 @@ final class MysqlStoreAdapter implements StoreAdapter
     {
         return $this->requireEnv(
             ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE'],
-            'nombre de base MySQL'
+            'nombre de base MySQL',
+            'Definí DB_NAME o TEST_MYSQL_DB en <project>/test/.env.test.'
         );
     }
 
@@ -25,20 +26,24 @@ final class MysqlStoreAdapter implements StoreAdapter
     {
         $host = $this->requireEnv(
             ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
-            'host MySQL'
+            'host MySQL',
+            'Definí DB_HOST o TEST_MYSQL_HOST en <project>/test/.env.test.'
         );
         $port = $this->requireEnv(
             ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
-            'puerto MySQL'
+            'puerto MySQL',
+            'Definí DB_PORT o TEST_MYSQL_PORT en <project>/test/.env.test.'
         );
         $dbName = $database ?? $this->resolveDatabaseName();
         $user = $this->requireEnv(
             ['DB_USER', 'TEST_MYSQL_USER', 'MYSQL_USER'],
-            'usuario MySQL'
+            'usuario MySQL',
+            'Definí DB_USER o TEST_MYSQL_USER en <project>/test/.env.test.'
         );
         $pass = $this->requireEnv(
             ['DB_PASS', 'TEST_MYSQL_PASSWORD', 'MYSQL_PASSWORD'],
-            'password MySQL'
+            'password MySQL',
+            'Definí DB_PASS o TEST_MYSQL_PASSWORD en <project>/test/.env.test.'
         );
 
         Trace::log('store.connect', [
@@ -65,21 +70,36 @@ final class MysqlStoreAdapter implements StoreAdapter
         $dbName = $database ?? $this->resolveDatabaseName();
         $this->assertSafeDatabaseName($dbName);
 
+        $mode = $this->provisionMode();
+        if ($mode === 'external') {
+            Trace::log('store.provision.skipped', [
+                'driver' => 'mysql',
+                'db' => $dbName,
+                'mode' => $mode,
+                'reason' => 'external_store_declared_by_contract',
+            ]);
+            return;
+        }
+
         $host = $this->requireEnv(
             ['DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST'],
-            'host MySQL'
+            'host MySQL',
+            'Definí DB_HOST o TEST_MYSQL_HOST en <project>/test/.env.test.'
         );
         $port = $this->requireEnv(
             ['DB_PORT', 'TEST_MYSQL_PORT', 'MYSQL_PORT'],
-            'puerto MySQL'
+            'puerto MySQL',
+            'Definí DB_PORT o TEST_MYSQL_PORT en <project>/test/.env.test.'
         );
         $adminUser = $this->requireEnv(
             ['TEST_MYSQL_ADMIN_USER', 'MYSQL_ROOT_USER'],
-            'usuario admin MySQL'
+            'usuario admin MySQL',
+            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ADMIN_USER. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
         );
         $adminPass = $this->requireEnv(
             ['TEST_MYSQL_ROOT_PASSWORD', 'MYSQL_ROOT_PASSWORD'],
-            'password admin MySQL'
+            'password admin MySQL',
+            'Si querés que testkit provisione la DB, definí TEST_MYSQL_ROOT_PASSWORD. Si la DB ya existe y no querés credenciales admin, seteá TEST_STORE_PROVISION=external.'
         );
 
         $pdo = new PDO(
@@ -109,6 +129,7 @@ final class MysqlStoreAdapter implements StoreAdapter
             'db' => $dbName,
             'admin_user' => $adminUser,
             'action' => $exists ? 'validated_existing_database' : 'created_database',
+            'mode' => $mode,
         ]);
     }
 
@@ -259,10 +280,20 @@ final class MysqlStoreAdapter implements StoreAdapter
         }
     }
 
+    private function provisionMode(): string
+    {
+        $mode = strtolower(trim((string)(getenv('TEST_STORE_PROVISION') ?: 'managed')));
+        if (!in_array($mode, ['managed', 'external'], true)) {
+            return 'managed';
+        }
+
+        return $mode;
+    }
+
     /**
      * @param array<int,string> $keys
      */
-    private function requireEnv(array $keys, string $label): string
+    private function requireEnv(array $keys, string $label, string $help = ''): string
     {
         foreach ($keys as $key) {
             $value = getenv($key);
@@ -278,8 +309,11 @@ final class MysqlStoreAdapter implements StoreAdapter
             return $value;
         }
 
-        throw new \RuntimeException(
-            'Falta ' . $label . ' (' . implode('/', $keys) . ') en test/.env.test o DB_ENV_PATH.'
-        );
+        $message = 'Falta ' . $label . ' (' . implode('/', $keys) . ') en test/.env.test o DB_ENV_PATH.';
+        if ($help !== '') {
+            $message .= ' ' . $help;
+        }
+
+        throw new \RuntimeException($message);
     }
 }

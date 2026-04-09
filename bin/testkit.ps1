@@ -167,6 +167,66 @@ function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
   Write-Host ""
   Write-Host "TESTKIT_STACK: $StackCsv"
   Write-Host ""
+  $storeProvision = if ($env:TEST_STORE_PROVISION) { $env:TEST_STORE_PROVISION } else { 'managed' }
+  Write-Host "TEST_STORE_PROVISION: $storeProvision"
+  Write-Host ""
+}
+
+function Test-EnvPresentAny([string[]]$Names) {
+  foreach ($name in $Names) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      return $true
+    }
+  }
+  return $false
+}
+
+function Test-PathIsUnderRoot([string]$Root, [string]$Candidate) {
+  $rootResolved = (Resolve-Path $Root).Path
+  $candidateResolved = (Resolve-Path $Candidate).Path
+  return $candidateResolved.StartsWith($rootResolved, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath) {
+  $storeDriver = if ($env:TEST_STORE_DRIVER) { $env:TEST_STORE_DRIVER.ToLowerInvariant().Trim() } else { 'mysql' }
+  $provisionMode = if ($env:TEST_STORE_PROVISION) { $env:TEST_STORE_PROVISION.ToLowerInvariant().Trim() } else { 'managed' }
+
+  if ($provisionMode -notin @('managed','external')) {
+    Write-Host "[FAIL] TEST_STORE_PROVISION inválido: $($env:TEST_STORE_PROVISION). Valores válidos: managed|external"
+    $Ok.Value = $false
+    $provisionMode = 'managed'
+  } else {
+    Write-Host "[INFO] TEST_STORE_PROVISION=$provisionMode"
+  }
+
+  if (-not (Test-PathIsUnderRoot $ProjectRoot $EnvFilePath)) {
+    Write-Host "[FAIL] TESTKIT_ENV_FILE / env detectado fuera del repo montado: $EnvFilePath"
+    Write-Host "       Debe vivir dentro de $ProjectRoot para que DB_ENV_PATH sea válido dentro del contenedor."
+    $Ok.Value = $false
+  }
+
+  if ($storeDriver -eq 'mysql') {
+    if (Test-EnvPresentAny @('DB_HOST','TEST_MYSQL_HOST','MYSQL_HOST')) { Write-Host "[OK] MySQL host present" } else { Write-Host "[FAIL] falta host MySQL (DB_HOST / TEST_MYSQL_HOST / MYSQL_HOST)"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('DB_PORT','TEST_MYSQL_PORT','MYSQL_PORT')) { Write-Host "[OK] MySQL port present" } else { Write-Host "[FAIL] falta puerto MySQL (DB_PORT / TEST_MYSQL_PORT / MYSQL_PORT)"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('DB_NAME','TEST_MYSQL_DB','MYSQL_DATABASE')) { Write-Host "[OK] MySQL database name present" } else { Write-Host "[FAIL] falta nombre de DB MySQL (DB_NAME / TEST_MYSQL_DB / MYSQL_DATABASE)"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('DB_USER','TEST_MYSQL_USER','MYSQL_USER')) { Write-Host "[OK] MySQL runtime user present" } else { Write-Host "[FAIL] falta usuario runtime MySQL (DB_USER / TEST_MYSQL_USER / MYSQL_USER)"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('DB_PASS','TEST_MYSQL_PASSWORD','MYSQL_PASSWORD')) { Write-Host "[OK] MySQL runtime password present" } else { Write-Host "[FAIL] falta password runtime MySQL (DB_PASS / TEST_MYSQL_PASSWORD / MYSQL_PASSWORD)"; $Ok.Value = $false }
+
+    if ($provisionMode -eq 'managed') {
+      if (Test-EnvPresentAny @('TEST_MYSQL_ADMIN_USER','MYSQL_ROOT_USER')) { Write-Host "[OK] MySQL admin user present (managed provision)" } else { Write-Host "[FAIL] falta usuario admin MySQL (TEST_MYSQL_ADMIN_USER / MYSQL_ROOT_USER) para TEST_STORE_PROVISION=managed"; $Ok.Value = $false }
+      if (Test-EnvPresentAny @('TEST_MYSQL_ROOT_PASSWORD','MYSQL_ROOT_PASSWORD')) { Write-Host "[OK] MySQL admin password present (managed provision)" } else { Write-Host "[FAIL] falta password admin MySQL (TEST_MYSQL_ROOT_PASSWORD / MYSQL_ROOT_PASSWORD) para TEST_STORE_PROVISION=managed"; $Ok.Value = $false }
+    } else {
+      Write-Host "[INFO] TEST_STORE_PROVISION=external -> no se requieren credenciales admin MySQL"
+    }
+  }
+
+  if (Get-Command docker -ErrorAction SilentlyContinue) {
+    Write-Host "[OK] docker command found"
+  } else {
+    Write-Host "[FAIL] docker no está disponible en PATH"
+    $Ok.Value = $false
+  }
 }
 
 function Run-Doctor {
@@ -187,6 +247,7 @@ function Run-Doctor {
   $stackCsv = Normalize-StackCsv $env:TESTKIT_STACK
   Write-Host "[INFO] TESTKIT_STACK=$stackCsv"
   Write-Host "[INFO] TESTKIT_ROOT(host)=$ResolvedTestkitRoot"
+  Write-Host "[INFO] TESTKIT_PROJECT_ROOT(host)=$ProjectRoot"
 
   if (-not (Test-Path $ResolvedTestkitRoot)) {
     Write-Host "[FAIL] TESTKIT_ROOT no existe o no es directorio: $ResolvedTestkitRoot"
@@ -196,6 +257,26 @@ function Run-Doctor {
     $ok = $false
   } else {
     Write-Host "[OK] TESTKIT_ROOT: $ResolvedTestkitRoot"
+  }
+
+  if (-not (Test-Path $ProjectRoot)) {
+    Write-Host "[FAIL] TESTKIT_PROJECT_ROOT no existe o no es directorio: $ProjectRoot"
+    $ok = $false
+  } else {
+    Write-Host "[OK] TESTKIT_PROJECT_ROOT: $ProjectRoot"
+  }
+
+  $testOutDir = Join-Path $ProjectRoot 'test'
+  New-Item -ItemType Directory -Force -Path $testOutDir | Out-Null
+  if (Test-Path $testOutDir) {
+    Write-Host "[OK] $testOutDir writable"
+  } else {
+    Write-Host "[FAIL] $testOutDir no es escribible"
+    $ok = $false
+  }
+
+  if ($envFile) {
+    Invoke-DoctorContractChecks ([ref]$ok) $envFile.Path
   }
 
   if ($Dump -and $envFile) {
@@ -219,6 +300,11 @@ if ($Args.Count -gt 0 -and $Args[0] -eq "doctor") {
 $envFile = Pick-EnvFile
 if (-not $envFile) {
   Write-Error "Falta env de tests. Copiá test/.env.test.example -> test/.env.test (preferido) o bien creá .env.test en el root del repo."
+  exit 1
+}
+
+if (-not (Test-PathIsUnderRoot $ProjectRoot $envFile.Path)) {
+  Write-Error "El env de tests quedó fuera del repo montado: $($envFile.Path). Movelo a <project>/test/.env.test o <project>/.env.test."
   exit 1
 }
 

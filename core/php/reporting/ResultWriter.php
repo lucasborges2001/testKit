@@ -151,6 +151,11 @@ final class ResultWriter
         $report['new_failures_count'] = count($delta['new_failures']);
         $report['resolved_failures_count'] = count($delta['resolved_failures']);
 
+        $failures = ReportSummary::canonicalFailures($report);
+        $triageSummary = FailureClassifier::summarize($failures, 5);
+        $report['triage_summary'] = $triageSummary;
+        $report['dominant_failure_family'] = $triageSummary[0]['family'] ?? null;
+
         $report['report_keep'] = $reportKeep;
         $report['runs_index_keep'] = $runsIndexKeep;
         $report['report_links'] = [
@@ -381,6 +386,7 @@ final class ResultWriter
             'top_failure_messages' => self::topFailureMessagesFromReport($report, 3),
             'new_failures_count' => (int)($report['new_failures_count'] ?? 0),
             'resolved_failures_count' => (int)($report['resolved_failures_count'] ?? 0),
+            'dominant_failure_family' => $report['dominant_failure_family'] ?? null,
             'report_files' => [
                 'latest' => $latestFile,
                 'timestamped' => $timestampedFile,

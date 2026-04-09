@@ -203,7 +203,92 @@ _dump_config() {
   echo "TEST_JOBS: ${TEST_JOBS:-1}"
   echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
   echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
+  echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
   echo ""
+}
+
+env_any() {
+  local key
+  for key in "$@"; do
+    local value="${!key:-}"
+    if [[ -n "${value//[[:space:]]/}" ]]; then
+      echo "$value"
+      return 0
+    fi
+  done
+  return 1
+}
+
+env_present_any() {
+  env_any "$@" >/dev/null 2>&1
+}
+
+path_is_under_root() {
+  local root="$1"
+  local target="$2"
+  [[ "$target" == "$root" || "$target" == "$root/"* ]]
+}
+
+doctor_contract_checks() {
+  local ok_ref_name="$1"
+  local -n ok_ref="$ok_ref_name"
+
+  local store_driver
+  store_driver="$(echo "${TEST_STORE_DRIVER:-mysql}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  local provision_mode
+  provision_mode="$(echo "${TEST_STORE_PROVISION:-managed}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  if [[ "$provision_mode" != "managed" && "$provision_mode" != "external" ]]; then
+    echo "[FAIL] TEST_STORE_PROVISION inválido: ${TEST_STORE_PROVISION:-}. Valores válidos: managed|external"; ok_ref=0
+    provision_mode="managed"
+  else
+    echo "[INFO] TEST_STORE_PROVISION=${provision_mode}"
+  fi
+
+  if ! path_is_under_root "$PROJECT_ROOT" "$ENV_FILE"; then
+    echo "[FAIL] TESTKIT_ENV_FILE / env detectado fuera del repo montado: ${ENV_FILE}"
+    echo "       Debe vivir dentro de ${PROJECT_ROOT} para que DB_ENV_PATH sea válido dentro del contenedor."
+    ok_ref=0
+  fi
+
+  if [[ "$store_driver" == "mysql" ]]; then
+    env_present_any DB_HOST TEST_MYSQL_HOST MYSQL_HOST \
+      && echo "[OK] MySQL host present" \
+      || { echo "[FAIL] falta host MySQL (DB_HOST / TEST_MYSQL_HOST / MYSQL_HOST)"; ok_ref=0; }
+
+    env_present_any DB_PORT TEST_MYSQL_PORT MYSQL_PORT \
+      && echo "[OK] MySQL port present" \
+      || { echo "[FAIL] falta puerto MySQL (DB_PORT / TEST_MYSQL_PORT / MYSQL_PORT)"; ok_ref=0; }
+
+    env_present_any DB_NAME TEST_MYSQL_DB MYSQL_DATABASE \
+      && echo "[OK] MySQL database name present" \
+      || { echo "[FAIL] falta nombre de DB MySQL (DB_NAME / TEST_MYSQL_DB / MYSQL_DATABASE)"; ok_ref=0; }
+
+    env_present_any DB_USER TEST_MYSQL_USER MYSQL_USER \
+      && echo "[OK] MySQL runtime user present" \
+      || { echo "[FAIL] falta usuario runtime MySQL (DB_USER / TEST_MYSQL_USER / MYSQL_USER)"; ok_ref=0; }
+
+    env_present_any DB_PASS TEST_MYSQL_PASSWORD MYSQL_PASSWORD \
+      && echo "[OK] MySQL runtime password present" \
+      || { echo "[FAIL] falta password runtime MySQL (DB_PASS / TEST_MYSQL_PASSWORD / MYSQL_PASSWORD)"; ok_ref=0; }
+
+    if [[ "$provision_mode" == "managed" ]]; then
+      env_present_any TEST_MYSQL_ADMIN_USER MYSQL_ROOT_USER \
+        && echo "[OK] MySQL admin user present (managed provision)" \
+        || { echo "[FAIL] falta usuario admin MySQL (TEST_MYSQL_ADMIN_USER / MYSQL_ROOT_USER) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
+
+      env_present_any TEST_MYSQL_ROOT_PASSWORD MYSQL_ROOT_PASSWORD \
+        && echo "[OK] MySQL admin password present (managed provision)" \
+        || { echo "[FAIL] falta password admin MySQL (TEST_MYSQL_ROOT_PASSWORD / MYSQL_ROOT_PASSWORD) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
+    else
+      echo "[INFO] TEST_STORE_PROVISION=external -> no se requieren credenciales admin MySQL"
+    fi
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    echo "[OK] docker command found"
+  else
+    echo "[FAIL] docker no está disponible en PATH"; ok_ref=0
+  fi
 }
 
 doctor() {
@@ -213,6 +298,7 @@ doctor() {
 
   ENV_FILE="$(pick_env_file || true)"
   if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+    ENV_FILE="$(cd "$(dirname "$ENV_FILE")" && pwd)/$(basename "$ENV_FILE")"
     echo "[OK] env: ${ENV_FILE}"
     load_env_kv_safe "$ENV_FILE" || true
   else
@@ -222,6 +308,7 @@ doctor() {
   TESTKIT_STACK_EFFECTIVE="$(normalize_stack_csv "${TESTKIT_STACK:-}")"
   echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE}"
   echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
+  echo "[INFO] TESTKIT_PROJECT_ROOT(host)=${PROJECT_ROOT}"
 
   if [[ ! -d "$TESTKIT_ROOT_HOST" ]]; then
     echo "[FAIL] TESTKIT_ROOT no existe o no es directorio: ${TESTKIT_ROOT_HOST}"; ok=0
@@ -229,6 +316,12 @@ doctor() {
     echo "[FAIL] TESTKIT_ROOT no parece repo completo: falta runTest.php en ${TESTKIT_ROOT_HOST}"; ok=0
   else
     echo "[OK] TESTKIT_ROOT: ${TESTKIT_ROOT_HOST}"
+  fi
+
+  if [[ ! -d "$PROJECT_ROOT" ]]; then
+    echo "[FAIL] TESTKIT_PROJECT_ROOT no existe o no es directorio: ${PROJECT_ROOT}"; ok=0
+  else
+    echo "[OK] TESTKIT_PROJECT_ROOT: ${PROJECT_ROOT}"
   fi
 
   local test_out_dir="${PROJECT_ROOT}/test"
@@ -239,7 +332,11 @@ doctor() {
     echo "[FAIL] ${test_out_dir} no es escribible"; ok=0
   fi
 
-  if [[ "${2:-}" == "--dump" ]]; then
+  if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+    doctor_contract_checks ok
+  fi
+
+  if [[ "${2:-}" == "--dump" && -n "${ENV_FILE:-}" ]]; then
     export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
     export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
     export TESTKIT_ROOT="$TESTKIT_ROOT_HOST"
@@ -264,6 +361,13 @@ fi
 ENV_FILE="$(pick_env_file || true)"
 if [[ -z "${ENV_FILE}" || ! -f "${ENV_FILE}" ]]; then
   echo "Falta env de tests en el proyecto. Creá <project>/test/.env.test o <project>/.env.test." >&2
+  exit 1
+fi
+ENV_FILE="$(cd "$(dirname "$ENV_FILE")" && pwd)/$(basename "$ENV_FILE")"
+
+if ! path_is_under_root "$PROJECT_ROOT" "$ENV_FILE"; then
+  echo "El env de tests quedó fuera del repo montado: ${ENV_FILE}" >&2
+  echo "Movelo a <project>/test/.env.test o <project>/.env.test." >&2
   exit 1
 fi
 

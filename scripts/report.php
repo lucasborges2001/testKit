@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../core/php/bootstrap.php';
 
+use Testkit\Core\Reporting\FailureClassifier;
 use Testkit\Core\Reporting\ReportSummary;
 
 $testkitRoot = rtrim((string)(getenv('TESTKIT_ROOT') ?: dirname(__DIR__)), '/\\');
@@ -75,13 +76,26 @@ $totalPass = 0;
 $totalFail = 0;
 $totalSkip = 0;
 $totalTests = 0;
-foreach ($reports as $r) {
+$allFailures = [];
+
+foreach ($reports as &$r) {
     $summary = is_array($r['summary'] ?? null) ? $r['summary'] : [];
     $totalPass += (int)($r['pass'] ?? $summary['passed'] ?? 0);
     $totalFail += (int)($r['fail'] ?? $summary['failed'] ?? 0);
     $totalSkip += (int)($r['skip'] ?? $summary['skipped'] ?? 0);
     $totalTests += (int)($r['tests_total'] ?? $summary['total'] ?? 0);
+
+    $failures = ReportSummary::canonicalFailures($r);
+    $r['_canonical_failures'] = $failures;
+    $r['_triage_summary'] = is_array($r['triage_summary'] ?? null)
+        ? $r['triage_summary']
+        : FailureClassifier::summarize($failures, 4);
+
+    foreach ($failures as $failure) {
+        $allFailures[] = $failure;
+    }
 }
+unset($r);
 
 echo "== TestKit Executive Summary ==\n";
 echo "Status:    " . ($totalFail > 0 ? "FAIL" : "PASS") . "\n";
@@ -107,7 +121,6 @@ foreach ($reports as $report) {
         $scope = 'global';
     }
     $scope = str_pad($scope, 16);
-    $suiteStatus = str_pad((string)($report['suite_status'] ?? 'passed'), 12);
     $tests = str_pad((string)($report['selected_test_count'] ?? $report['tests_total'] ?? $summary['total'] ?? 0), 5, ' ', STR_PAD_LEFT);
     $pass = str_pad((string)($report['pass'] ?? $summary['passed'] ?? 0), 4, ' ', STR_PAD_LEFT);
     $fail = str_pad((string)($report['fail'] ?? $summary['failed'] ?? 0), 4, ' ', STR_PAD_LEFT);
@@ -116,6 +129,38 @@ foreach ($reports as $report) {
     $location = (string)($report['report_scope_rel'] ?? $report['report_root'] ?? '(default)');
 
     echo "{$suite} | {$scope} | {$tests} | {$pass} | {$fail} | {$skip} | {$duration} | {$location}\n";
+}
+
+echo "\nDominant blockers\n";
+$globalTriage = FailureClassifier::summarize($allFailures, 6);
+if ($globalTriage === []) {
+    echo "- none\n";
+} else {
+    foreach ($globalTriage as $row) {
+        $label = (string)($row['label'] ?? $row['family'] ?? 'unknown');
+        $count = (int)($row['count'] ?? 0);
+        $next = (string)($row['next_step'] ?? '');
+        echo "- {$label}: {$count} failure(s)\n";
+        $examples = is_array($row['examples'] ?? null) ? $row['examples'] : [];
+        foreach (array_slice($examples, 0, 2) as $example) {
+            if (!is_array($example)) {
+                continue;
+            }
+            $file = trim((string)($example['file'] ?? ''));
+            $message = trim((string)($example['message'] ?? ''));
+            if ($file === '') {
+                continue;
+            }
+            echo "    * {$file}";
+            if ($message !== '') {
+                echo " -> {$message}";
+            }
+            echo "\n";
+        }
+        if ($next !== '') {
+            echo "    action: {$next}\n";
+        }
+    }
 }
 
 echo "\nScope Details\n";
@@ -139,7 +184,7 @@ if (!$printedScope) {
 echo "\nFailures by Suite\n";
 $hasFailures = false;
 foreach ($reports as $report) {
-    $failures = ReportSummary::canonicalFailures($report);
+    $failures = is_array($report['_canonical_failures'] ?? null) ? $report['_canonical_failures'] : [];
     if ($failures === []) {
         continue;
     }
@@ -149,6 +194,17 @@ foreach ($reports as $report) {
 
     $failedFiles = ReportSummary::failedFiles($failures);
     echo '    files: ' . ($failedFiles ? implode(', ', $failedFiles) : 'none') . "\n";
+
+    $triage = is_array($report['_triage_summary'] ?? null) ? $report['_triage_summary'] : [];
+    if ($triage !== []) {
+        echo "    blockers:\n";
+        foreach (array_slice($triage, 0, 3) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            echo '      - ' . (string)($row['label'] ?? $row['family'] ?? 'unknown') . ': ' . (int)($row['count'] ?? 0) . "\n";
+        }
+    }
 
     $topMessages = ReportSummary::topFailureMessages($failures, 5);
     echo "    top messages:\n";
