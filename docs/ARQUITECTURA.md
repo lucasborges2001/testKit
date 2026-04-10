@@ -124,7 +124,8 @@ Para agregar una estrategia de baseline:
 ## 3.2) Baseline reutilizable
 
 - `testkit` puede materializar una baseline por `layered` o por `snapshot`.
-- La baseline activa puede persistirse con un `manifest.json` por driver+db.
+- La baseline activa puede persistirse como artefacto derivado en `.testkit/baselines/<driver>/<db>.manifest.json`.
+- Ese manifest sirve para reuse/diagnóstico; no redefine el catálogo estructural de migraciones.
 - En `per_worker` con `TEST_BASELINE_CLONE_PER_WORKER=1`, primero se prepara/reutiliza la baseline y luego se clona a cada worker.
 - La invalidación explícita (`TEST_BASELINE_INVALIDATE=1`) borra manifest y obliga a reconstruir.
 

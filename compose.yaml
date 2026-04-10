@@ -6,6 +6,7 @@ services:
       args:
         PHP_VERSION: ${TESTKIT_PHP_VERSION:-8.4}
         NODE_VERSION: ${TESTKIT_NODE_VERSION:-20}
+    user: "${TESTKIT_HOST_UID:-0}:${TESTKIT_HOST_GID:-0}"
     working_dir: /workspace/project
     volumes:
       - type: bind

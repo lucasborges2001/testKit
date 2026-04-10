@@ -691,11 +691,24 @@ Ejemplo de `state.json`:
 ```json
 {
   "markers": [
-    { "type": "table", "name": "Usuario" },
-    { "type": "column", "table": "Usuario", "column": "activo" }
+    { "type": "table", "name": "CheckoutCargaOrden" },
+    { "type": "column", "table": "CheckoutCargaOrden", "column": "id" },
+    { "type": "column", "table": "CheckoutCargaOrden", "column": "sesion_carga_id" }
   ]
 }
 ```
+
+`migration.json` es obligatorio por carpeta y hoy admite exactamente:
+
+- `id`
+- `kind=active_migration|optional_migration|historical_absorbed_change`
+
+`state.json` también es metadata canónica: el resolver incremental y las probes operativas deben derivar de esa definición mínima, no duplicarla en otra fuente paralela.
+
+El resolver incremental no usa el manifest como fuente estructural y solo considera
+las migraciones marcadas como ejecutables en `test/seeds/<driver>/migrations/<id>/migration.json`.
+Los cambios etiquetados como `historical_absorbed_change` quedan disponibles solo
+como metadata histórica y no contaminan `available/pending`.
 
 Variables clave:
 

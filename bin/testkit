@@ -15,6 +15,8 @@ PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 
 TESTKIT_ROOT_HOST="${TESTKIT_ROOT:-$HERE}"
 TESTKIT_ROOT_HOST="$(cd "${TESTKIT_ROOT_HOST}" && pwd)"
+TESTKIT_HOST_UID="${TESTKIT_HOST_UID:-$(id -u)}"
+TESTKIT_HOST_GID="${TESTKIT_HOST_GID:-$(id -g)}"
 
 DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
 
@@ -141,6 +143,41 @@ resolve_compose_files() {
   if stack_has "$stack_csv" "pg"; then
     out_ref+=( -f "$PG" )
   fi
+}
+
+artifact_paths_for_repair() {
+  printf '%s\n' \
+    "${PROJECT_ROOT}/.testkit" \
+    "${PROJECT_ROOT}/test/.testkit" \
+    "${PROJECT_ROOT}/test/history" \
+    "${PROJECT_ROOT}/test/reports"
+}
+
+artifact_ownership_needs_repair() {
+  local path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if [[ -e "$path" && ! -w "$path" ]]; then
+      return 0
+    fi
+  done < <(artifact_paths_for_repair)
+
+  return 1
+}
+
+repair_derived_artifact_ownership_if_needed() {
+  artifact_ownership_needs_repair || return 0
+
+  local repair_cmd="
+    mkdir -p /workspace/project/.testkit /workspace/project/test/.testkit /workspace/project/test/history /workspace/project/test/reports && \
+    chown -R ${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID} \
+      /workspace/project/.testkit \
+      /workspace/project/test/.testkit \
+      /workspace/project/test/history \
+      /workspace/project/test/reports
+  "
+
+  docker compose --env-file "$ENV_FILE" "${FILES[@]}" run --rm --user 0:0 testkit sh -lc "$repair_cmd" >/dev/null
 }
 
 rewrite_run_command_args() {
@@ -309,6 +346,7 @@ doctor() {
   echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE}"
   echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
   echo "[INFO] TESTKIT_PROJECT_ROOT(host)=${PROJECT_ROOT}"
+  echo "[INFO] TESTKIT_HOST_UID:GID=${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID}"
 
   if [[ ! -d "$TESTKIT_ROOT_HOST" ]]; then
     echo "[FAIL] TESTKIT_ROOT no existe o no es directorio: ${TESTKIT_ROOT_HOST}"; ok=0
@@ -387,9 +425,12 @@ fi
 export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
 export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
 export TESTKIT_ROOT="$TESTKIT_ROOT_HOST"
+export TESTKIT_HOST_UID
+export TESTKIT_HOST_GID
 
 FILES=()
 resolve_compose_files "$TESTKIT_STACK_EFFECTIVE" FILES
+repair_derived_artifact_ownership_if_needed
 
 mapfile -d '' -t REWRITTEN_ARGS < <(rewrite_run_command_args "$@")
 

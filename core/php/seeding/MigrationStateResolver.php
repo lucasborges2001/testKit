@@ -6,6 +6,9 @@ namespace Testkit\Core\Seeding;
 use PDO;
 use RuntimeException;
 
+require_once __DIR__ . '/MigrationCatalog.php';
+require_once __DIR__ . '/MigrationStateDefinition.php';
+
 final class MigrationStateResolver
 {
     /**
@@ -51,9 +54,15 @@ final class MigrationStateResolver
             return;
         }
 
-        $root = rtrim($seedDir, '/\\') . '/migrations';
-        foreach (glob($root . '/*/state.json') ?: [] as $stateFile) {
-            if (is_file($stateFile)) {
+        $catalog = MigrationCatalog::load($seedDir);
+        foreach ((array)($catalog['entries'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $kind = (string)($entry['kind'] ?? '');
+            $statePath = trim((string)($entry['state_path'] ?? ''));
+            if (MigrationCatalog::isExecutableKind($kind) && $statePath !== '') {
                 return;
             }
         }
@@ -83,7 +92,8 @@ final class MigrationStateResolver
      */
     public static function resolve(PDO $pdo, string $seedDir): array
     {
-        $available = self::listAvailableMigrations($seedDir);
+        $catalog = MigrationCatalog::load($seedDir);
+        $available = array_values((array)($catalog['executable'] ?? []));
         $mode = self::detectMode($seedDir);
         $target = self::resolveTarget($available);
 
@@ -98,7 +108,7 @@ final class MigrationStateResolver
         $applied = match ($mode) {
             'explicit' => self::parseCsv((string)(getenv('TEST_MIGRATION_APPLIED') ?: '')),
             'manifest_table' => self::resolveFromManifestTable($pdo),
-            default => self::resolveFromStateFiles($pdo, $seedDir, $available),
+            default => self::resolveFromStateFiles($pdo, $catalog),
         };
 
         $applied = array_values(array_intersect($available, array_values(array_unique($applied))));
@@ -110,29 +120,37 @@ final class MigrationStateResolver
             'applied' => $applied,
             'pending' => $pending,
             'target' => $target,
+            'historical_absorbed' => array_values((array)($catalog['historical_absorbed'] ?? [])),
         ];
     }
 
     /**
-     * @return array<int,string>
+     * Estado derivado del baseline que el runner materializa en modo layered.
+     *
+     * En layered la DB se resetea antes de aplicar schema/base/migrations, por lo
+     * que leer el estado previo desde la conexión actual no describe el baseline
+     * resultante. Este helper construye el estado directamente desde el catálogo
+     * ejecutable y las migraciones explícitamente pedidas para esta corrida.
+     *
+     * @param array<int,string> $requestedMigrations
+     * @return array<string,mixed>
      */
-    private static function listAvailableMigrations(string $seedDir): array
+    public static function resolveLayeredBaseline(string $seedDir, array $requestedMigrations): array
     {
-        $root = rtrim($seedDir, '/\\') . '/migrations';
-        if (!is_dir($root)) {
-            return [];
-        }
+        $catalog = MigrationCatalog::load($seedDir);
+        $available = array_values((array)($catalog['executable'] ?? []));
+        $applied = MigrationCatalog::normalizeSelectedExecutablesFromCatalog($catalog, $requestedMigrations);
+        $target = self::resolveTarget($available);
+        $pending = self::resolvePending($available, $applied, $target);
 
-        $dirs = glob($root . '/*', GLOB_ONLYDIR) ?: [];
-        $out = [];
-        foreach ($dirs as $dir) {
-            $id = basename($dir);
-            if ($id !== '' && $id !== '.' && $id !== '..') {
-                $out[] = $id;
-            }
-        }
-        natcasesort($out);
-        return array_values($out);
+        return [
+            'mode' => 'layered_baseline',
+            'available' => $available,
+            'applied' => $applied,
+            'pending' => $pending,
+            'target' => $target,
+            'historical_absorbed' => array_values((array)($catalog['historical_absorbed'] ?? [])),
+        ];
     }
 
     private static function detectMode(string $seedDir): string
@@ -151,9 +169,15 @@ final class MigrationStateResolver
             return 'manifest_table';
         }
 
-        $root = rtrim($seedDir, '/\\') . '/migrations';
-        foreach (glob($root . '/*/state.json') ?: [] as $stateFile) {
-            if (is_file($stateFile)) {
+        $catalog = MigrationCatalog::load($seedDir);
+        foreach ((array)($catalog['entries'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $kind = (string)($entry['kind'] ?? '');
+            $statePath = trim((string)($entry['state_path'] ?? ''));
+            if (MigrationCatalog::isExecutableKind($kind) && $statePath !== '') {
                 return 'state_files';
             }
         }
@@ -186,25 +210,25 @@ final class MigrationStateResolver
     }
 
     /**
-     * @param array<int,string> $available
      * @return array<int,string>
      */
-    private static function resolveFromStateFiles(PDO $pdo, string $seedDir, array $available): array
+    private static function resolveFromStateFiles(PDO $pdo, array $catalog): array
     {
         $applied = [];
-        foreach ($available as $migrationId) {
-            $stateFile = rtrim($seedDir, '/\\') . '/migrations/' . $migrationId . '/state.json';
-            if (!is_file($stateFile)) {
+        foreach ((array)($catalog['entries'] ?? []) as $entry) {
+            if (!is_array($entry)) {
                 continue;
             }
 
-            $raw = file_get_contents($stateFile);
-            $json = is_string($raw) ? json_decode($raw, true) : null;
-            if (!is_array($json)) {
+            $migrationId = trim((string)($entry['id'] ?? ''));
+            $kind = trim((string)($entry['kind'] ?? ''));
+            $stateFile = trim((string)($entry['state_path'] ?? ''));
+            if ($migrationId === '' || !MigrationCatalog::isExecutableKind($kind) || $stateFile === '') {
                 continue;
             }
 
-            $markers = is_array($json['markers'] ?? null) ? $json['markers'] : [];
+            $definition = MigrationStateDefinition::load($stateFile, $migrationId);
+            $markers = $definition['markers'] ?? [];
             if ($markers !== [] && self::allMarkersSatisfied($pdo, $markers)) {
                 $applied[] = $migrationId;
             }

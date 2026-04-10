@@ -15,11 +15,11 @@ Por suite:
 
 Archivo por suite:
 
-- `test/reports/<suite>_latest.json` o `test/<side>/<module>/report/<suite>_latest.json`
+- `.testkit/reports/<suite>_latest.json`
 
 Historial:
 
-- `test/history/<suite>.json`
+- `.testkit/history/<suite>.json`
 
 ## 2) Reporte consolidado
 

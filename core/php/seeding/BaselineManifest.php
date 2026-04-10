@@ -14,7 +14,7 @@ final class BaselineManifest
 
         $projectRoot = rtrim($projectRoot, "/\\");
         return self::normalizePath(
-            $projectRoot . '/test/.testkit/baselines/' . $driver . '/' . $database . '.manifest.json'
+            $projectRoot . '/.testkit/baselines/' . $driver . '/' . $database . '.manifest.json'
         );
     }
 

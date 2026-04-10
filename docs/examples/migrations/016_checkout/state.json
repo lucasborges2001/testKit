@@ -5,8 +5,48 @@
       "name": "CheckoutCargaOrden"
     },
     {
+      "type": "column",
+      "table": "CheckoutCargaOrden",
+      "column": "id"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaOrden",
+      "column": "sesion_carga_id"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaOrden",
+      "column": "estado"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaOrden",
+      "column": "created_at"
+    },
+    {
       "type": "table",
       "name": "CheckoutCargaEvento"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaEvento",
+      "column": "id"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaEvento",
+      "column": "orden_id"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaEvento",
+      "column": "tipo"
+    },
+    {
+      "type": "column",
+      "table": "CheckoutCargaEvento",
+      "column": "created_at"
     }
   ]
 }

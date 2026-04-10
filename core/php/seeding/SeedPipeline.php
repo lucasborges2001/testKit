@@ -12,6 +12,7 @@ use Testkit\Core\Store\StoreRegistry;
 require_once __DIR__ . '/../store/bootstrap.php';
 require_once __DIR__ . '/BaselineManifest.php';
 require_once __DIR__ . '/BackupkitArtifactResolver.php';
+require_once __DIR__ . '/MigrationCatalog.php';
 require_once __DIR__ . '/MigrationStateResolver.php';
 
 final class SeedPipeline
@@ -218,11 +219,29 @@ private static function applyPostValidations(PDO $pdo, string $seedDir, array $m
 private static function migrationPlan(PDO $pdo, string $seedDir, string $baselineMode): array
 {
     $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
-    $requested = self::parseCsvEnv('TEST_SEED_MIGRATIONS');
+    $requested = MigrationCatalog::normalizeSelectedExecutables($seedDir, self::parseCsvEnv('TEST_SEED_MIGRATIONS'));
     $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
-    $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
-
     $autoPending = self::envBool('TEST_MIGRATION_AUTO_PENDING', $baselineMode === 'snapshot');
+    if ($baselineMode === 'layered' && $autoPending) {
+        throw new RuntimeException(
+            'TEST_MIGRATION_AUTO_PENDING no aplica en TEST_BASELINE_MODE=layered. ' .
+            'La DB se resetea antes del seed y el baseline resultante debe derivarse ' .
+            'solo desde schema/base y TEST_SEED_MIGRATIONS explícitas.'
+        );
+    }
+
+    if ($baselineMode === 'layered') {
+        $migrationState = MigrationStateResolver::resolveLayeredBaseline($seedDir, $requested);
+        Trace::log('seed.migration.state', [
+            'baseline_mode' => $baselineMode,
+            'requested' => $requested,
+            'planned' => $requested,
+            'state' => $migrationState,
+        ]);
+        return [$requested, $rawMigrations, $skipPostValidations, $migrationState];
+    }
+
+    $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
     $planned = $requested;
 
     if ($planned === [] && $autoPending) {

@@ -88,8 +88,9 @@ TEST_CATEGORY=critical php runTest.php all
 
 ## Outputs
 
-- `test/reports/*_latest.json` or `test/<side>/<module>/report/*_latest.json`
-- `test/history/*.json`
+- `.testkit/reports/*_latest.json`
+- `.testkit/history/*.json`
+- `.testkit/baselines/<driver>/<db>.manifest.json`
 - `test/coverage/*`
 - `test/querylog.jsonl` (si el profiling de DB está activo)
 
