@@ -15,13 +15,27 @@ require_once __DIR__ . '/../seeding/BaselineManifest.php';
 
 final class ContractWorldBootstrap
 {
-    public static function prepare(string $suiteId, string $repoRoot): void
+    /**
+     * Punto de entrada canónico para el lifecycle de bootstrap.
+     * Owner de la política operativa: strategy, naming de DB, per-worker loop, baseline clone.
+     *
+     * @param string|null $driver          Si se pasa, se usa directamente; si no, se detecta del entorno.
+     * @param bool        $respectSkipEnv  Si es true (default, contexto suite), honora TESTKIT_SKIP_STORE_BOOTSTRAP.
+     *                                     Si es false (contexto CLI explícito), el bootstrap siempre corre sin importar
+     *                                     el valor de TESTKIT_SKIP_STORE_BOOTSTRAP.
+     *
+     * Contrato de TESTKIT_SKIP_STORE_BOOTSTRAP:
+     *   - Aplica SOLO cuando se llama desde suites (back-php, front-php, front-js, back-python, migration-contract).
+     *   - NO aplica cuando se invoca por CLI vía `store_router.php bootstrap` o `prepare-baseline`.
+     *   - Usar para iteración local cuando la DB ya está bootstrapeada y no querés re-correr seeds.
+     */
+    public static function prepare(string $suiteId, string $repoRoot, ?string $driver = null, bool $respectSkipEnv = true): void
     {
-        if (Env::bool('TESTKIT_SKIP_STORE_BOOTSTRAP', false)) {
+        if ($respectSkipEnv && Env::bool('TESTKIT_SKIP_STORE_BOOTSTRAP', false)) {
             return;
         }
 
-        $driver = StoreRegistry::detectDriver('mysql');
+        $driver = $driver ?? StoreRegistry::detectDriver('mysql');
         $strategy = self::normalizeStrategy(Env::string('TEST_DB_STRATEGY', 'shared'));
 
         fwrite(

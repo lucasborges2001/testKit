@@ -9,6 +9,69 @@ use RuntimeException;
 final class MigrationStateResolver
 {
     /**
+     * Falla de forma explícita si no existe ninguna fuente confiable de estado de migraciones.
+     *
+     * Debe llamarse antes de intentar auto-detectar pendientes en modo snapshot.
+     * En snapshot la DB ya viene restaurada: asumir "todo pendiente" cuando no hay
+     * fuente es peligroso porque aplicaría migraciones sobre una DB ya migrada.
+     *
+     * Fuentes aceptadas:
+     * - TEST_MIGRATION_APPLIED        — lista explícita de migraciones ya aplicadas
+     * - TEST_MIGRATION_STATE_TABLE    — tabla de control en la DB restaurada
+     * - TEST_MIGRATION_STATE_MODE     — modo declarado explícitamente
+     * - state.json en algún directorio de migración
+     *
+     * Si ninguna fuente está disponible lanza RuntimeException con opciones claras.
+     */
+    public static function assertHasReliableStateSource(string $seedDir): void
+    {
+        $explicitMode = strtolower(trim((string)(getenv('TEST_MIGRATION_STATE_MODE') ?: '')));
+
+        if ($explicitMode === 'explicit') {
+            if (trim((string)(getenv('TEST_MIGRATION_APPLIED') ?: '')) === '') {
+                throw new RuntimeException(
+                    'TEST_MIGRATION_STATE_MODE=explicit declarado pero TEST_MIGRATION_APPLIED está vacío. '
+                    . 'El modo explicit requiere una lista de migraciones ya aplicadas en el snapshot '
+                    . '(ej: TEST_MIGRATION_APPLIED=id1,id2,...). Sin esa lista testkit no puede determinar '
+                    . 'qué pendientes quedan y fallaría aplicando migraciones ya presentes en la DB restaurada.'
+                );
+            }
+            return;
+        }
+
+        if (in_array($explicitMode, ['manifest_table', 'state_files'], true)) {
+            return;
+        }
+
+        if (trim((string)(getenv('TEST_MIGRATION_APPLIED') ?: '')) !== '') {
+            return;
+        }
+
+        if (trim((string)(getenv('TEST_MIGRATION_STATE_TABLE') ?: '')) !== '') {
+            return;
+        }
+
+        $root = rtrim($seedDir, '/\\') . '/migrations';
+        foreach (glob($root . '/*/state.json') ?: [] as $stateFile) {
+            if (is_file($stateFile)) {
+                return;
+            }
+        }
+
+        throw new RuntimeException(
+            'snapshot + TEST_MIGRATION_AUTO_PENDING: no hay fuente confiable de estado de migraciones. '
+            . 'En modo snapshot la DB ya viene restaurada desde un dump; testkit no puede inferir '
+            . 'que todas las migraciones están pendientes sin una fuente explícita, porque eso '
+            . 'aplicaría upgrades incorrectos sobre una DB que ya los tiene. '
+            . 'Opciones válidas: '
+            . '(1) TEST_MIGRATION_APPLIED=id1,id2,... — declará las migraciones ya aplicadas en el snapshot; '
+            . '(2) TEST_MIGRATION_STATE_TABLE=nombre_tabla — usá una tabla de control en la DB restaurada; '
+            . '(3) state.json con markers en cada directorio de migración (TEST_MIGRATION_STATE_MODE=state_files); '
+            . '(4) TEST_SEED_MIGRATIONS=id1,id2 — declaración directa sin auto-detección.'
+        );
+    }
+
+    /**
      * Resuelve el estado de migraciones disponibles/aplicadas/pendientes.
      *
      * Modos:
@@ -23,6 +86,14 @@ final class MigrationStateResolver
         $available = self::listAvailableMigrations($seedDir);
         $mode = self::detectMode($seedDir);
         $target = self::resolveTarget($available);
+
+        if ($mode === 'explicit' && trim((string)(getenv('TEST_MIGRATION_APPLIED') ?: '')) === '') {
+            throw new RuntimeException(
+                'TEST_MIGRATION_STATE_MODE=explicit declarado pero TEST_MIGRATION_APPLIED está vacío. '
+                . 'El modo explicit requiere una lista de migraciones ya aplicadas '
+                . '(ej: TEST_MIGRATION_APPLIED=id1,id2,...).'
+            );
+        }
 
         $applied = match ($mode) {
             'explicit' => self::parseCsv((string)(getenv('TEST_MIGRATION_APPLIED') ?: '')),

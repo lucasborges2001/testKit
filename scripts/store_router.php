@@ -5,12 +5,14 @@ require_once __DIR__ . '/../core/php/store/bootstrap.php';
 require_once __DIR__ . '/../core/php/common/Lock.php';
 require_once __DIR__ . '/../core/php/seeding/SeedPipeline.php';
 require_once __DIR__ . '/../core/php/seeding/BaselineManifest.php';
+require_once __DIR__ . '/../core/php/suites/ContractWorldBootstrap.php';
 
 use Testkit\Core\Common\Lock;
 use Testkit\Core\Seeding\BaselineManifest;
 use Testkit\Core\Seeding\SeedPipeline;
 use Testkit\Core\Store\StoreMaintenance;
 use Testkit\Core\Store\StoreRegistry;
+use Testkit\Core\Suites\ContractWorldBootstrap;
 
 $action = strtolower(trim((string)($argv[1] ?? 'seed')));
 $driverArg = (string)($argv[2] ?? '');
@@ -50,8 +52,10 @@ try {
 
         case 'bootstrap':
         case 'prepare-baseline':
-            StoreMaintenance::provision($driver);
-            exit(SeedPipeline::run($driver, $projectRoot));
+            // Delega al owner canónico de la política operativa (strategy, naming, per-worker, baseline clone).
+            // $respectSkipEnv=false: el CLI bootstrap es un comando explícito; TESTKIT_SKIP_STORE_BOOTSTRAP no aplica.
+            ContractWorldBootstrap::prepare('cli', $projectRoot, $driver, false);
+            exit(0);
 
         case 'drop-database':
             $targetDb = trim((string)($argv[3] ?? ''));

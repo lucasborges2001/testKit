@@ -43,16 +43,8 @@ load_env_kv_safe "$ENV_FILE" || true
 
 STRATEGY="${TEST_DB_STRATEGY:-shared}"
 JOBS="${TEST_JOBS:-1}"
-BASE_MYSQL_DB="${TEST_MYSQL_DB:-app_test}"
-BASE_PG_DB="${TEST_PG_DB:-app_test}"
 SUFFIX_FMT="${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
 SERVICES="$("$TK" ps --services 2>/dev/null || true)"
-
-mk_db_name() {
-  local base="$1"
-  local w="$2"
-  printf "%s" "${base}$(printf "$SUFFIX_FMT" "$w")"
-}
 
 normalize_driver() {
   local driver="${1,,}"
@@ -68,54 +60,17 @@ has_service() {
   grep -q "^${name}$" <<<"$SERVICES"
 }
 
-driver_base_db() {
-  local driver="$1"
-  if [[ "$driver" == "pgsql" ]]; then
-    printf '%s\n' "${TEST_PG_DB:-${PG_DB:-$BASE_PG_DB}}"
-    return 0
-  fi
-  printf '%s\n' "${DB_NAME:-$BASE_MYSQL_DB}"
-}
-
-store_env_args() {
-  local driver="$1"
-  local db="$2"
-  if [[ "$driver" == "pgsql" ]]; then
-    printf '%s\0' -e "PG_DB=$db" -e "TEST_PG_DB=$db"
-    return 0
-  fi
-  printf '%s\0' -e "DB_NAME=$db" -e "TEST_MYSQL_DB=$db"
-}
-
-bootstrap_store_shared() {
-  local driver="$1"
-  echo "==> Bootstrapping store: $driver (shared)"
-  "$TK" run --rm testkit php /workspace/testkit/scripts/store_router.php bootstrap "$driver"
-}
-
-bootstrap_store_db() {
-  local driver="$1"
-  local db="$2"
-  local env_args=()
-  echo "==> Bootstrapping store: $driver / db=$db"
-  while IFS= read -r -d '' item; do
-    env_args+=("$item")
-  done < <(store_env_args "$driver" "$db")
-  "$TK" run --rm "${env_args[@]}" testkit php /workspace/testkit/scripts/store_router.php bootstrap "$driver"
-}
-
+# La política de lifecycle (strategy, naming de DB, per-worker loop, baseline clone)
+# vive en ContractWorldBootstrap. store_router.php bootstrap delega a él.
+# seed.sh solo detecta el driver y lanza una única invocación.
 bootstrap_driver() {
   local driver="$1"
-  local base_db
-  base_db="$(driver_base_db "$driver")"
-  if [[ "$STRATEGY" == "per_worker" ]]; then
-    [[ "$JOBS" -lt 1 ]] && JOBS=1
-    for ((i=1;i<=JOBS;i++)); do
-      bootstrap_store_db "$driver" "$(mk_db_name "$base_db" "$i")"
-    done
-  else
-    bootstrap_store_shared "$driver"
-  fi
+  echo "==> Bootstrapping store: $driver (strategy=$STRATEGY, jobs=$JOBS)"
+  "$TK" run --rm \
+    -e "TEST_DB_STRATEGY=$STRATEGY" \
+    -e "TEST_JOBS=$JOBS" \
+    -e "TEST_DB_WORKER_SUFFIX_FORMAT=$SUFFIX_FMT" \
+    testkit php /workspace/testkit/scripts/store_router.php bootstrap "$driver"
 }
 
 configured_driver="$(normalize_driver "${TEST_DB_DRIVER:-${DB_DRIVER:-}}")"

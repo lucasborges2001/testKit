@@ -277,7 +277,24 @@ Eso evita:
 Importante: esto **no** vuelve seguro el modelo de varios runners top-level.  
 Solo elimina una clase de carrera en las operaciones de store.
 
-### 7.3) Recomendación operativa
+### 7.3) `TESTKIT_SKIP_STORE_BOOTSTRAP`
+
+Variable de optimización para iteración local.
+
+```bash
+TESTKIT_SKIP_STORE_BOOTSTRAP=1 php runTest.php back-php
+```
+
+Cuando está activa, `ContractWorldBootstrap::prepare()` retorna inmediatamente sin provisionar ni seedear.
+
+**Contrato:**
+
+- Aplica **solo** en contexto suite (back-php, front-php, front-js, back-python, migration-contract).
+- **No aplica** cuando se invoca por CLI: `php scripts/store_router.php bootstrap` siempre corre, independientemente del valor de esta variable.
+- Usar cuando la DB ya está bootstrapeada y querés saltearte el seed para una corrida rápida.
+- No usar en CI: el CI siempre debe arrancar con bootstrap real.
+
+### 7.4) Recomendación operativa
 
 Para suites con MySQL real:
 

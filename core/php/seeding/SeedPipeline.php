@@ -226,6 +226,9 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
     $planned = $requested;
 
     if ($planned === [] && $autoPending) {
+        if ($baselineMode === 'snapshot') {
+            MigrationStateResolver::assertHasReliableStateSource($seedDir);
+        }
         $planned = array_values((array)($migrationState['pending'] ?? []));
         $rawMigrations = implode(',', $planned);
     }
@@ -257,7 +260,10 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
             $adapter = StoreRegistry::fromDriver($driver);
             $pdo = $adapter->connect();
             [$migrations, , $skipPostValidations, $migrationState] = self::migrationPlan($pdo, $seedDir, $baselineMode);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            if ($baselineMode === 'snapshot' && $e instanceof RuntimeException) {
+                throw $e;
+            }
             $migrations = self::parseCsvEnv('TEST_SEED_MIGRATIONS');
             $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
         }
@@ -376,6 +382,9 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         return true;
     }
 
+    /**
+     * @param array<string,mixed>|null $resolvedSnapshot
+     */
     private static function writeManifest(
         string $manifestPath,
         array $manifestPlan,
@@ -383,7 +392,8 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         string $databaseName,
         string $baselineMode,
         string $projectRoot,
-        string $seedDir
+        string $seedDir,
+        ?array $resolvedSnapshot
     ): void {
         $payload = [
             'status' => 'ready',
@@ -683,13 +693,17 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         $pdo->exec($statement);
     }
 
+    /**
+     * @param array<string,mixed>|null $resolvedSnapshot
+     */
     private static function traceBootstrapContext(
         string $driver,
         string $projectRoot,
         string $seedDir,
         string $baselineMode,
         string $databaseName,
-        string $manifestPath
+        string $manifestPath,
+        ?array $resolvedSnapshot
     ): void {
         Trace::log('seed.bootstrap.context', [
             'driver' => $driver,
@@ -700,6 +714,7 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
             'baseline_reuse' => self::baselineReuseEnabled(),
             'baseline_invalidate' => self::baselineInvalidateRequested(),
             'baseline_manifest_path' => self::realPathOrOriginal($manifestPath),
+            'resolved_snapshot' => $resolvedSnapshot,
             'DB_ENV_PATH' => (string)(getenv('DB_ENV_PATH') ?: ''),
             'TESTKIT_PROJECT_ROOT' => (string)(getenv('TESTKIT_PROJECT_ROOT') ?: ''),
             'TK_REPO_ROOT' => (string)(getenv('TK_REPO_ROOT') ?: ''),
