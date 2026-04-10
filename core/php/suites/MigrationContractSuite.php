@@ -7,6 +7,8 @@ use RuntimeException;
 use Throwable;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Seeding\BaselineManifest;
 use Testkit\Core\Seeding\BackupkitArtifactResolver;
 use Testkit\Core\Store\StoreRegistry;
@@ -55,7 +57,19 @@ final class MigrationContractSuite
             self::writeReport($reportRoot, $report);
             return 0;
         } catch (Throwable $e) {
-            $failure = self::failureFromThrowable($e);
+            $failure = ReportSummary::buildThrowableFailure($e, [
+                'test_id' => 'migration_contract.bootstrap',
+                'test_name' => 'migration_contract.bootstrap',
+                'case' => 'migration_contract.bootstrap',
+                'suite_id' => 'migration_contract',
+                'suite' => 'migration_contract',
+                'scope' => 'integration',
+                'category' => 'contract',
+                'file' => 'migration_contract',
+                'kind' => 'setup_failure',
+                'artifact_path' => Paths::relativeToRepo($reportRoot),
+            ]);
+
             $report = self::buildReport(
                 suiteStatus: 'failed',
                 reportRoot: $reportRoot,
@@ -135,12 +149,14 @@ final class MigrationContractSuite
             ],
             'run_kind' => 'suite',
             'run_id' => Env::string('TEST_RUN_ID', ''),
+            'meta_run_id' => Env::string('TEST_META_RUN_ID', Env::string('TEST_RUN_ID', '')),
             'started_at' => $startedAt,
             'duration_ms' => $durationMs,
             'report_root' => $reportRoot,
             'report_scope_rel' => Paths::relativeToRepo($reportRoot),
             'selected_module_scope' => '',
             'selected_test_count' => 1,
+            'selected_test_files' => ['migration_contract'],
             'tests_total' => 1,
             'pass' => $passed,
             'fail' => $failed,
@@ -166,34 +182,19 @@ final class MigrationContractSuite
             'migration_target' => Env::string('TEST_MIGRATION_TARGET', 'latest'),
             'migration_auto_pending' => Env::bool('TEST_MIGRATION_AUTO_PENDING', true),
             'db_strategy' => Env::string('TEST_DB_STRATEGY', 'shared'),
+            'filters' => [
+                'suite' => 'migration_contract',
+                'scope' => 'integration',
+                'category' => 'contract',
+                'match' => '',
+            ],
+            'report_keep' => max(1, Env::int('TEST_REPORT_KEEP', 5)),
+            'runs_index_keep' => max(1, Env::int('TEST_RUNS_INDEX_KEEP', Env::int('TEST_REPORT_KEEP', 5))),
             'failures' => $failures,
+            'first_failure' => $failures !== [] ? ReportSummary::summarizeFailure($failures[0]) : null,
+            'evidence_valid' => $suiteStatus === 'passed',
+            'evidence_invalid_reason' => $suiteStatus === 'passed' ? null : 'bootstrap_failed',
             'has_failures' => $failures !== [],
-        ];
-    }
-
-    /**
-     * @return array<string,mixed>
-     */
-    private static function failureFromThrowable(Throwable $e): array
-    {
-        return [
-            'test_id' => 'migration_contract.bootstrap',
-            'test_name' => 'migration_contract.bootstrap',
-            'suite_id' => 'migration_contract',
-            'suite' => 'migration_contract',
-            'scope' => 'integration',
-            'file' => 'migration_contract',
-            'line' => null,
-            'category' => 'contract',
-            'status' => 'fail',
-            'duration_ms' => 0,
-            'error_type' => 'runtime_exception',
-            'message' => $e->getMessage(),
-            'assertion' => null,
-            'diff_excerpt' => null,
-            'trace_excerpt' => self::trimTrace($e),
-            'stdout_excerpt' => null,
-            'stderr_excerpt' => $e->getMessage(),
         ];
     }
 
@@ -213,24 +214,9 @@ final class MigrationContractSuite
      */
     private static function writeReport(string $reportRoot, array $report): void
     {
-        $path = rtrim($reportRoot, '/\\') . '/migration_contract_latest.json';
-        $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if (!is_string($json) || $json === '') {
-            throw new RuntimeException('No se pudo serializar migration_contract report.');
-        }
-
-        file_put_contents($path, $json . PHP_EOL);
-    }
-
-    private static function trimTrace(Throwable $e): ?string
-    {
-        $trace = trim($e->getTraceAsString());
-        if ($trace === '') {
-            return null;
-        }
-
-        $lines = preg_split('/\R/', $trace) ?: [];
-        return implode("\n", array_slice($lines, 0, 10));
+        $report['report_root'] = $reportRoot;
+        $report['report_scope_rel'] = Paths::relativeToRepo($reportRoot);
+        ResultWriter::writeSuite($report);
     }
 
     private static function nowMs(): int

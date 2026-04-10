@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+use Throwable;
 use Testkit\Core\Common\Paths;
 
 final class ReportSummary
@@ -20,6 +21,7 @@ final class ReportSummary
         $traceExcerpt  = self::extractTrace($stderr !== '' ? $stderr : $stdout, 10);
         $stdoutExcerpt = self::textExcerpt($stdout, 15);
         $stderrExcerpt = self::textExcerpt($stderr, 15);
+        $testName      = self::inferTestName($entry);
 
         $tags        = array_values((array)($entry['tags'] ?? []));
         $scopeTokens = array_values(array_filter($tags, fn(string $t): bool => in_array($t, ['unit', 'integration', 'e2e'], true)));
@@ -27,7 +29,9 @@ final class ReportSummary
 
         return [
             'test_id'        => (string)($entry['rel'] ?? $entry['file'] ?? ''),
-            'test_name'      => self::inferTestName($entry),
+            'test_name'      => $testName,
+            'case'           => $testName,
+            'suite_id'       => (string)($entry['suite_id'] ?? $entry['suite'] ?? $entry['module'] ?? ''),
             'suite'          => (string)($entry['module'] ?? $entry['suite'] ?? ''),
             'scope'          => implode(',', $scopeTokens),
             'file'           => (string)($entry['rel'] ?? $entry['file'] ?? ''),
@@ -36,12 +40,53 @@ final class ReportSummary
             'status'         => (string)($entry['status'] ?? 'fail'),
             'duration_ms'    => (int)($entry['duration_ms'] ?? 0),
             'error_type'     => self::inferErrorType($entry),
+            'exception_class'=> null,
+            'kind'           => 'test_failure',
             'message'        => $message,
             'assertion'      => null,
             'diff_excerpt'   => null,
             'trace_excerpt'  => $traceExcerpt,
             'stdout_excerpt' => $stdoutExcerpt,
             'stderr_excerpt' => $stderrExcerpt,
+            'artifact_path'  => null,
+        ];
+    }
+
+    /**
+     * @param Throwable $e
+     * @param array<string,mixed> $context
+     * @return array<string,mixed>
+     */
+    public static function buildThrowableFailure(Throwable $e, array $context = []): array
+    {
+        $suiteId = trim((string)($context['suite_id'] ?? $context['suite'] ?? 'suite'));
+        $testName = trim((string)($context['test_name'] ?? $context['case'] ?? ($suiteId . '.bootstrap')));
+        $traceLines = preg_split('/\R/', trim($e->getTraceAsString())) ?: [];
+        $traceLines = array_values(array_filter(array_map('trim', $traceLines), static fn(string $line): bool => $line !== ''));
+        $traceExcerpt = $traceLines === [] ? null : implode("\n", array_slice($traceLines, 0, 10));
+
+        return [
+            'test_id' => (string)($context['test_id'] ?? $testName),
+            'test_name' => $testName,
+            'case' => (string)($context['case'] ?? $testName),
+            'suite_id' => $suiteId,
+            'suite' => (string)($context['suite'] ?? $suiteId),
+            'scope' => (string)($context['scope'] ?? ''),
+            'file' => (string)($context['file'] ?? ''),
+            'line' => $e->getLine() > 0 ? $e->getLine() : null,
+            'category' => (string)($context['category'] ?? ''),
+            'status' => 'fail',
+            'duration_ms' => (int)($context['duration_ms'] ?? 0),
+            'error_type' => (string)($context['error_type'] ?? self::throwableClass($e)),
+            'exception_class' => self::throwableClass($e),
+            'kind' => (string)($context['kind'] ?? 'setup_failure'),
+            'message' => trim($e->getMessage()) !== '' ? trim($e->getMessage()) : self::throwableClass($e),
+            'assertion' => null,
+            'diff_excerpt' => null,
+            'trace_excerpt' => $traceExcerpt,
+            'stdout_excerpt' => null,
+            'stderr_excerpt' => trim($e->getMessage()) !== '' ? trim($e->getMessage()) : null,
+            'artifact_path' => $context['artifact_path'] ?? null,
         ];
     }
 
@@ -65,6 +110,55 @@ final class ReportSummary
             static fn(array $entry): array => self::buildFailureEntry($entry),
             array_values(array_filter($legacy, 'is_array'))
         ));
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>|null
+     */
+    public static function firstFailure(array $report): ?array
+    {
+        $failures = self::canonicalFailures($report);
+        if ($failures === []) {
+            return null;
+        }
+
+        return self::summarizeFailure($failures[0]);
+    }
+
+    /**
+     * @param array<string,mixed> $failure
+     * @return array<string,mixed>
+     */
+    public static function summarizeFailure(array $failure): array
+    {
+        $stack = self::traceToLines((string)($failure['trace_excerpt'] ?? ''), 5);
+        $kind = trim((string)($failure['kind'] ?? ''));
+        if ($kind === '') {
+            $kind = self::inferFailureKind($failure);
+        }
+
+        $exceptionClass = trim((string)($failure['exception_class'] ?? ''));
+        if ($exceptionClass === '') {
+            $exceptionClass = trim((string)($failure['error_type'] ?? ''));
+        }
+
+        $artifactPath = $failure['artifact_path'] ?? null;
+        if (is_string($artifactPath) && $artifactPath !== '') {
+            $artifactPath = str_replace('\\', '/', $artifactPath);
+        } elseif (!is_string($artifactPath)) {
+            $artifactPath = null;
+        }
+
+        return [
+            'file' => (string)($failure['file'] ?? $failure['test_id'] ?? ''),
+            'case' => (string)($failure['case'] ?? $failure['test_name'] ?? ''),
+            'kind' => $kind,
+            'exception_class' => $exceptionClass !== '' ? $exceptionClass : null,
+            'message' => (string)($failure['message'] ?? ''),
+            'stack_excerpt' => $stack,
+            'artifact_path' => $artifactPath,
+        ];
     }
 
     /**
@@ -206,6 +300,8 @@ final class ReportSummary
         $moduleScopeValues = [];
         $canonicalFailures = [];
         $suiteStatusCounts = [];
+        $evidenceValid = true;
+        $evidenceInvalidReason = null;
 
         foreach ($suiteReports as $report) {
             $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
@@ -228,6 +324,14 @@ final class ReportSummary
             $suiteStatus = (string)($report['suite_status'] ?? 'passed');
             if ($suiteStatus !== '') {
                 $suiteStatusCounts[$suiteStatus] = (int)($suiteStatusCounts[$suiteStatus] ?? 0) + 1;
+            }
+
+            if ((bool)($report['evidence_valid'] ?? true) === false) {
+                $evidenceValid = false;
+                if ($evidenceInvalidReason === null) {
+                    $reason = trim((string)($report['evidence_invalid_reason'] ?? ''));
+                    $evidenceInvalidReason = $reason !== '' ? $reason : 'child_invalid_evidence';
+                }
             }
 
             foreach (self::canonicalFailures($report) as $failure) {
@@ -255,6 +359,14 @@ final class ReportSummary
             'selected_test_count'   => $selectedTestCount,
             'suite_status_counts'   => $suiteStatusCounts,
             'summary'               => $summary,
+            'failures'              => $canonicalFailures,
+            'failure_contract'      => [
+                'canonical' => 'failures',
+                'legacy_fallback' => 'suites[].has_failures',
+            ],
+            'first_failure'         => $canonicalFailures !== [] ? self::summarizeFailure($canonicalFailures[0]) : null,
+            'evidence_valid'        => $evidenceValid,
+            'evidence_invalid_reason' => $evidenceInvalidReason,
             'failed_files'          => self::failedFiles($canonicalFailures),
             'top_failure_messages'  => self::topFailureMessages($canonicalFailures, 5),
             'suite_ids'             => array_values(array_map(static fn(array $row): string => (string)($row['suite_id'] ?? ''), $suiteRows)),
@@ -329,6 +441,44 @@ final class ReportSummary
             return $errorType;
         }
         return 'exit_code_' . (int)($entry['exit_code'] ?? 1);
+    }
+
+    /**
+     * @param array<string,mixed> $failure
+     */
+    private static function inferFailureKind(array $failure): string
+    {
+        $errorType = strtolower(trim((string)($failure['error_type'] ?? '')));
+        $file = trim((string)($failure['file'] ?? ''));
+
+        if ($file === '' || $file === 'migration_contract' || $errorType === 'runtime_exception' || $errorType === 'error') {
+            return 'setup_failure';
+        }
+
+        if ($errorType === 'environment_conflict' || $errorType === 'shared_store_locked') {
+            return 'environment_conflict';
+        }
+
+        return 'test_failure';
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function traceToLines(string $text, int $maxLines): array
+    {
+        if (trim($text) === '') {
+            return [];
+        }
+
+        $lines = preg_split('/\R/', $text) ?: [];
+        $lines = array_values(array_filter(array_map('trim', $lines), static fn(string $line): bool => $line !== ''));
+        return array_slice($lines, 0, $maxLines);
+    }
+
+    private static function throwableClass(Throwable $e): string
+    {
+        return ltrim(get_class($e), '\\');
     }
 
     private static function extractFirstMessage(string $text): ?string

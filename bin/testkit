@@ -211,6 +211,14 @@ rewrite_run_command_args() {
           rewritten+=("/workspace/testkit/scripts/query_report.php")
           continue
           ;;
+        scripts/inspect.php|./scripts/inspect.php|/workspace/project/scripts/inspect.php|/workspace/testkit/scripts/inspect.php)
+          rewritten+=("/workspace/testkit/scripts/inspect.php")
+          continue
+          ;;
+        scripts/agent-run.php|./scripts/agent-run.php|/workspace/project/scripts/agent-run.php|/workspace/testkit/scripts/agent-run.php)
+          rewritten+=("/workspace/testkit/scripts/agent-run.php")
+          continue
+          ;;
         runners/runTest.php|./runners/runTest.php|/workspace/project/runners/runTest.php|/workspace/testkit/runners/runTest.php)
           rewritten+=("/workspace/testkit/runners/runTest.php")
           continue
@@ -431,6 +439,11 @@ export TESTKIT_HOST_GID
 FILES=()
 resolve_compose_files "$TESTKIT_STACK_EFFECTIVE" FILES
 repair_derived_artifact_ownership_if_needed
+
+if [[ "${1:-}" == "inspect" ]]; then
+  shift
+  exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" run --rm testkit php /workspace/testkit/scripts/inspect.php "$@"
+fi
 
 mapfile -d '' -t REWRITTEN_ARGS < <(rewrite_run_command_args "$@")
 

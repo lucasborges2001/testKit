@@ -148,6 +148,16 @@ function Rewrite-RunCommandArgs([string[]]$InputArgs) {
       continue
     }
 
+    if ($sawTestkit -and @('scripts/inspect.php', './scripts/inspect.php', '/workspace/project/scripts/inspect.php', '/workspace/testkit/scripts/inspect.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/scripts/inspect.php'
+      continue
+    }
+
+    if ($sawTestkit -and @('scripts/agent-run.php', './scripts/agent-run.php', '/workspace/project/scripts/agent-run.php', '/workspace/testkit/scripts/agent-run.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/scripts/agent-run.php'
+      continue
+    }
+
     if ($sawTestkit -and @('runners/runTest.php', './runners/runTest.php', '/workspace/project/runners/runTest.php', '/workspace/testkit/runners/runTest.php') -contains $rewritten[$i]) {
       $rewritten[$i] = '/workspace/testkit/runners/runTest.php'
       continue
@@ -326,6 +336,15 @@ $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
 $env:TESTKIT_ROOT = $ResolvedTestkitRoot.Path
 
 $files = Resolve-ComposeFiles $stackCsv
+
+if ($Args.Count -gt 0 -and $Args[0] -eq "inspect") {
+  $inspectArgs = if ($Args.Count -gt 1) { $Args[1..($Args.Count-1)] } else { @() }
+  $cmd = @("compose", "--env-file", $envFile) + $files + @("run", "--rm", "testkit", "php", "/workspace/testkit/scripts/inspect.php") + $inspectArgs
+  & docker @cmd
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  exit 0
+}
+
 $runArgs = Rewrite-RunCommandArgs $Args
 
 $cmd = @("compose", "--env-file", $envFile) + $files + $runArgs

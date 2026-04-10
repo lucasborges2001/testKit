@@ -52,11 +52,7 @@ final class Lock
         ?int $timeoutMs = null,
         int $pollMs = 200
     ): ?LockLease {
-        $safeName = self::safeSlug($name);
-        $root = Paths::outRoot() . '/locks';
-        Paths::ensureDir($root);
-
-        $lockPath = $root . '/' . $safeName;
+        $lockPath = self::pathFor($name);
         $timeoutMs = $timeoutMs ?? max(0, Env::int('TEST_LOCK_TIMEOUT_SEC', 120) * 1000);
         $deadline = self::nowMs() + $timeoutMs;
 
@@ -74,6 +70,34 @@ final class Lock
         } while (self::nowMs() <= $deadline);
 
         return null;
+    }
+
+    public static function pathFor(string $name): string
+    {
+        $safeName = self::safeSlug($name);
+        $root = Paths::outRoot() . '/locks';
+        Paths::ensureDir($root);
+
+        return $root . '/' . $safeName;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public static function readOwner(string $name): ?array
+    {
+        $ownerFile = self::pathFor($name) . '/owner.json';
+        if (!is_file($ownerFile)) {
+            return null;
+        }
+
+        $raw = @file_get_contents($ownerFile);
+        if (!is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $json = json_decode($raw, true);
+        return is_array($json) ? $json : null;
     }
 
     private static function writeOwnerFile(string $lockPath, string $name): void

@@ -110,6 +110,62 @@ final class ParallelGuard
     }
 
     /**
+     * @param array<string,mixed> $policy
+     * @return array<string,mixed>
+     */
+    public static function admissionState(array $policy): array
+    {
+        return [
+            'store_mode' => (string)($policy['db_strategy'] ?? 'shared'),
+            'concurrency_policy' => self::concurrencyPolicy($policy),
+            'run_admitted' => true,
+            'reason' => null,
+            'resource' => self::resourceLabel($policy),
+            'lock_key' => trim((string)($policy['suite_lock_key'] ?? '')),
+            'lock_owner_run_id' => null,
+            'lock_owner_meta_run_id' => null,
+            'lock_owner_hostname' => null,
+            'lock_acquired_at' => null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $policy
+     * @return array<string,mixed>
+     */
+    public static function rejectedByPolicyState(array $policy): array
+    {
+        $state = self::admissionState($policy);
+        $state['run_admitted'] = false;
+        $state['reason'] = 'unsafe_parallel_db_configuration';
+        $state['message'] = implode(' ', array_map('strval', (array)($policy['errors'] ?? [])));
+
+        return $state;
+    }
+
+    /**
+     * @param array<string,mixed> $policy
+     * @return array<string,mixed>
+     */
+    public static function rejectedByLockState(array $policy): array
+    {
+        $state = self::admissionState($policy);
+        $state['run_admitted'] = false;
+        $state['reason'] = 'shared_store_locked';
+
+        $lockKey = trim((string)($policy['suite_lock_key'] ?? ''));
+        $owner = $lockKey !== '' ? Lock::readOwner($lockKey) : null;
+        if (is_array($owner)) {
+            $state['lock_owner_run_id'] = trim((string)($owner['run_id'] ?? '')) ?: null;
+            $state['lock_owner_meta_run_id'] = trim((string)($owner['meta_run_id'] ?? '')) ?: null;
+            $state['lock_owner_hostname'] = trim((string)($owner['hostname'] ?? '')) ?: null;
+            $state['lock_acquired_at'] = trim((string)($owner['acquired_at'] ?? '')) ?: null;
+        }
+
+        return $state;
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $tests
      */
     private static function hasDbSensitiveTests(array $tests): bool
@@ -199,5 +255,37 @@ final class ParallelGuard
         $value = trim($value, '._-');
 
         return $value !== '' ? $value : 'default';
+    }
+
+    /**
+     * @param array<string,mixed> $policy
+     */
+    private static function concurrencyPolicy(array $policy): string
+    {
+        if ((bool)($policy['has_db_sensitive_tests'] ?? false) && (bool)($policy['has_db_runtime'] ?? false)) {
+            return 'exclusive';
+        }
+
+        $strategy = (string)($policy['db_strategy'] ?? 'shared');
+        if ($strategy === 'per_worker') {
+            return 'per_worker';
+        }
+
+        return 'not_applicable';
+    }
+
+    /**
+     * @param array<string,mixed> $policy
+     */
+    private static function resourceLabel(array $policy): string
+    {
+        $driver = trim((string)($policy['base_db_driver'] ?? ''));
+        $dbName = trim((string)($policy['base_db_name'] ?? ''));
+
+        if ($driver === '' && $dbName === '') {
+            return '';
+        }
+
+        return ($driver !== '' ? $driver : 'db') . '/' . ($dbName !== '' ? $dbName : 'default');
     }
 }

@@ -54,6 +54,25 @@ final class ConsoleReporter
 
         echo "\n" . UI::bold("Summary:") . " {$p} {$f} {$s} " . UI::gray("time_ms={$duration}") . "\n";
 
+        if (array_key_exists('evidence_valid', $result) && (bool)($result['evidence_valid'] ?? true) === false) {
+            $reason = trim((string)($result['evidence_invalid_reason'] ?? 'runner_exception'));
+            echo UI::failure('Evidence invalid') . ' ' . UI::gray('reason=' . $reason) . "\n";
+        }
+
+        $firstFailure = $result['first_failure'] ?? null;
+        if (is_array($firstFailure)) {
+            $kind = trim((string)($firstFailure['kind'] ?? ''));
+            $message = trim((string)($firstFailure['message'] ?? ''));
+            $file = trim((string)($firstFailure['file'] ?? ''));
+            $case = trim((string)($firstFailure['case'] ?? ''));
+            $where = $file !== '' ? $file : ($case !== '' ? $case : 'n/a');
+            echo UI::bold('First failure:') . ' ' . ($kind !== '' ? UI::warning($kind) . ' ' : '') . $where;
+            if ($message !== '') {
+                echo ' -> ' . $message;
+            }
+            echo "\n";
+        }
+
         self::printModuleSummary($result);
         self::printFailures($result);
         self::printTriage($result);

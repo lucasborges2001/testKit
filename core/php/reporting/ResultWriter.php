@@ -184,6 +184,7 @@ final class ResultWriter
         $triageSummary = FailureClassifier::summarize($failures, 5);
         $report['triage_summary'] = $triageSummary;
         $report['dominant_failure_family'] = $triageSummary[0]['family'] ?? null;
+        $report['first_failure'] = ReportSummary::firstFailure($report);
 
         $report['report_keep'] = $reportKeep;
         $report['runs_index_keep'] = $runsIndexKeep;
@@ -193,7 +194,7 @@ final class ResultWriter
             'runs_index' => 'runs_latest.json',
         ];
 
-        return $report;
+        return CanonicalReport::enrich($report);
     }
 
     /**
@@ -379,6 +380,29 @@ final class ResultWriter
 
     /**
      * @param array<string,mixed> $report
+     * @return array<string,mixed>|null
+     */
+    private static function compactFirstFailureFromReport(array $report): ?array
+    {
+        $first = $report['first_failure'] ?? null;
+        if (!is_array($first)) {
+            $first = ReportSummary::firstFailure($report);
+        }
+
+        if (!is_array($first)) {
+            return null;
+        }
+
+        return [
+            'file' => (string)($first['file'] ?? ''),
+            'case' => (string)($first['case'] ?? ''),
+            'kind' => (string)($first['kind'] ?? ''),
+            'message' => (string)($first['message'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
      * @return array<string,mixed>
      */
     private static function buildRunsIndexEntry(array $report, string $kind, string $latestFile, string $timestampedFile, string $canonicalLatestFile): array
@@ -415,8 +439,11 @@ final class ResultWriter
             'report_scope_key' => (string)($report['report_scope_key'] ?? ''),
             'report_key' => (string)($report['report_key'] ?? ''),
             'has_failures' => (bool)($report['has_failures'] ?? ((int)($report['fail'] ?? 0) > 0)),
+            'evidence_valid' => (bool)($report['evidence_valid'] ?? true),
+            'evidence_invalid_reason' => $report['evidence_invalid_reason'] ?? null,
             'failed_files' => self::failedFilesFromReport($report),
             'top_failure_messages' => self::topFailureMessagesFromReport($report, 3),
+            'first_failure' => self::compactFirstFailureFromReport($report),
             'new_failures_count' => (int)($report['new_failures_count'] ?? 0),
             'resolved_failures_count' => (int)($report['resolved_failures_count'] ?? 0),
             'dominant_failure_family' => $report['dominant_failure_family'] ?? null,

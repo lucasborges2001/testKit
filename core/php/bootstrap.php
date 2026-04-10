@@ -22,10 +22,15 @@ require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
 require_once __DIR__ . '/reporting/UI.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
+require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';
 require_once __DIR__ . '/reporting/ConsoleReporter.php';
 require_once __DIR__ . '/reporting/HistoryRepository.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';
+require_once __DIR__ . '/reporting/AgentRunArtifact.php';
+require_once __DIR__ . '/reporting/Inspector.php';
+require_once __DIR__ . '/reporting/AgentRunExecute.php';
+require_once __DIR__ . '/reporting/AgentRun.php';
 
 require_once __DIR__ . '/suites/SuiteOrchestrator.php';
 require_once __DIR__ . '/suites/ContractWorldBootstrap.php';

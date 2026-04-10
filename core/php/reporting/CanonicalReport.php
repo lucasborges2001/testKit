@@ -1,0 +1,147 @@
+<?php
+declare(strict_types=1);
+
+namespace Testkit\Core\Reporting;
+
+final class CanonicalReport
+{
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    public static function enrich(array $report): array
+    {
+        $kind = strtolower(trim((string)($report['run_kind'] ?? 'suite')));
+        if ($kind === '') {
+            $kind = 'suite';
+        }
+
+        $report['canonical_report'] = [
+            'report_version' => 1,
+            'report_kind' => $kind,
+            'final_status' => self::finalStatus($report),
+            'selection' => self::selection($report, $kind),
+            'summary' => is_array($report['summary'] ?? null) ? $report['summary'] : [],
+            'evidence' => self::evidence($report),
+            'artifacts' => self::artifacts($report),
+            'seed_state' => self::seedState($report),
+            'warnings' => self::warnings($report),
+        ];
+
+        return $report;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function finalStatus(array $report): string
+    {
+        $status = strtolower(trim((string)($report['suite_status'] ?? '')));
+        if ($status === '') {
+            $status = strtolower(trim((string)($report['final_status'] ?? '')));
+        }
+
+        return match ($status) {
+            'passed' => 'PASS',
+            'failed' => 'FAIL',
+            'partial' => 'PARTIAL',
+            'skipped', 'all_skipped' => 'SKIP',
+            'no_tests' => 'NO_TESTS',
+            'listed' => 'LISTED',
+            default => ((int)($report['exit_code'] ?? 0) === 0 ? 'PASS' : 'FAIL'),
+        };
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function selection(array $report, string $kind): array
+    {
+        return [
+            'suite_id' => $kind === 'suite' ? ((string)($report['suite_id'] ?? '')) : null,
+            'target' => $kind === 'meta' ? ((string)($report['target'] ?? '')) : null,
+            'scope' => (string)($report['scope'] ?? ($report['filters']['scope'] ?? '')),
+            'category' => (string)($report['category'] ?? ($report['filters']['category'] ?? '')),
+            'match' => (string)($report['match'] ?? ($report['filters']['match'] ?? '')),
+            'selected_test_count' => (int)($report['selected_test_count'] ?? $report['tests_total'] ?? 0),
+            'selected_test_files' => array_values((array)($report['selected_test_files'] ?? [])),
+            'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function evidence(array $report): array
+    {
+        $firstFailure = $report['first_failure'] ?? null;
+        if (!is_array($firstFailure)) {
+            $firstFailure = ReportSummary::firstFailure($report);
+        }
+
+        return [
+            'valid' => (bool)($report['evidence_valid'] ?? true),
+            'invalid_reason' => $report['evidence_invalid_reason'] ?? null,
+            'first_failure' => $firstFailure,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function artifacts(array $report): array
+    {
+        return [
+            'report_root' => (string)($report['report_root'] ?? ''),
+            'report_scope_rel' => (string)($report['report_scope_rel'] ?? ''),
+            'report_links' => is_array($report['report_links'] ?? null) ? $report['report_links'] : [],
+            'history_file' => $report['history_file'] ?? null,
+            'manifest_path' => $report['manifest_path'] ?? null,
+            'snapshot_file' => $report['snapshot_file'] ?? null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>|null
+     */
+    private static function seedState(array $report): ?array
+    {
+        $migrationState = $report['migration_state'] ?? null;
+        $hasExplicitSeedState = is_array($migrationState)
+            || array_key_exists('baseline_mode', $report)
+            || array_key_exists('snapshot_file', $report)
+            || array_key_exists('manifest_path', $report);
+
+        if (!$hasExplicitSeedState) {
+            return null;
+        }
+
+        return [
+            'baseline_mode' => (string)($report['baseline_mode'] ?? ''),
+            'snapshot_file' => (string)($report['snapshot_file'] ?? ''),
+            'manifest_path' => (string)($report['manifest_path'] ?? ''),
+            'migration_state' => is_array($migrationState) ? $migrationState : null,
+            'applied_migrations' => array_values((array)($report['applied_migrations'] ?? [])),
+            'pending_migrations' => array_values((array)($report['pending_migrations'] ?? [])),
+            'resolved_snapshot' => is_array($report['resolved_snapshot'] ?? null) ? $report['resolved_snapshot'] : null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<int,mixed>
+     */
+    private static function warnings(array $report): array
+    {
+        $parallel = $report['parallel_policy'] ?? null;
+        if (is_array($parallel) && is_array($parallel['warnings'] ?? null)) {
+            return array_values($parallel['warnings']);
+        }
+
+        return [];
+    }
+}
