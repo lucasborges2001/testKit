@@ -5,11 +5,13 @@ namespace Testkit\Core\Suites;
 
 use RuntimeException;
 use Testkit\Core\Common\Env;
+use Testkit\Core\Seeding\BaselineManifest;
 use Testkit\Core\Seeding\SeedPipeline;
 use Testkit\Core\Store\StoreMaintenance;
 use Testkit\Core\Store\StoreRegistry;
 
 require_once __DIR__ . '/../seeding/SeedPipeline.php';
+require_once __DIR__ . '/../seeding/BaselineManifest.php';
 
 final class ContractWorldBootstrap
 {
@@ -60,16 +62,22 @@ final class ContractWorldBootstrap
         int $jobs
     ): void {
         $baselineDb = self::resolveBaselineDatabaseName($baseDb);
+        $manifestPath = BaselineManifest::pathFor($repoRoot, $driver, $baselineDb);
 
         fwrite(
             STDERR,
             sprintf(
-                "[testkit] bootstrap baseline driver=%s baseline_db=%s jobs=%d\n",
+                "[testkit] bootstrap baseline driver=%s baseline_db=%s jobs=%d reuse=%s\n",
                 $driver,
                 $baselineDb,
-                $jobs
+                $jobs,
+                Env::bool('TEST_BASELINE_REUSE', false) ? 'true' : 'false'
             )
         );
+
+        if (Env::bool('TEST_BASELINE_INVALIDATE', false)) {
+            self::invalidateBaselineArtifacts($driver, $baselineDb, $manifestPath);
+        }
 
         self::withDatabaseOverrides($driver, $baselineDb, static function () use ($driver, $repoRoot): void {
             self::bootstrapStore($driver, $repoRoot);
@@ -79,6 +87,25 @@ final class ContractWorldBootstrap
             $workerDb = self::buildWorkerDatabaseName($baseDb, $workerId);
             StoreMaintenance::cloneDatabase($driver, $baselineDb, $workerDb);
         }
+    }
+
+    private static function invalidateBaselineArtifacts(string $driver, string $baselineDb, string $manifestPath): void
+    {
+        if (StoreMaintenance::databaseExists($driver, $baselineDb)) {
+            StoreMaintenance::dropDatabase($driver, $baselineDb);
+        }
+
+        BaselineManifest::delete($manifestPath);
+
+        fwrite(
+            STDERR,
+            sprintf(
+                "[testkit] baseline invalidated driver=%s baseline_db=%s manifest=%s\n",
+                $driver,
+                $baselineDb,
+                $manifestPath
+            )
+        );
     }
 
     private static function bootstrapStore(string $driver, string $repoRoot): void

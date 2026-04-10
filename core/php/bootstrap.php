@@ -33,6 +33,7 @@ require_once __DIR__ . '/suites/BackPhpSuite.php';
 require_once __DIR__ . '/suites/FrontPhpSuite.php';
 require_once __DIR__ . '/suites/FrontJsSuite.php';
 require_once __DIR__ . '/suites/BackPythonSuite.php';
+require_once __DIR__ . '/suites/MigrationContractSuite.php';
 require_once __DIR__ . '/suites/MetaRunner.php';
 
 \Testkit\Core\Common\Bootstrap::init();

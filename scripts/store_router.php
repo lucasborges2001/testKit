@@ -4,8 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../core/php/store/bootstrap.php';
 require_once __DIR__ . '/../core/php/common/Lock.php';
 require_once __DIR__ . '/../core/php/seeding/SeedPipeline.php';
+require_once __DIR__ . '/../core/php/seeding/BaselineManifest.php';
 
 use Testkit\Core\Common\Lock;
+use Testkit\Core\Seeding\BaselineManifest;
 use Testkit\Core\Seeding\SeedPipeline;
 use Testkit\Core\Store\StoreMaintenance;
 use Testkit\Core\Store\StoreRegistry;
@@ -47,11 +49,40 @@ try {
             exit(SeedPipeline::run($driver, $projectRoot));
 
         case 'bootstrap':
+        case 'prepare-baseline':
             StoreMaintenance::provision($driver);
             exit(SeedPipeline::run($driver, $projectRoot));
 
+        case 'drop-database':
+            $targetDb = trim((string)($argv[3] ?? ''));
+            if ($targetDb === '') {
+                throw new RuntimeException('drop-database requiere nombre de DB en argv[3].');
+            }
+            StoreMaintenance::dropDatabase($driver, $targetDb);
+            exit(0);
+
+        case 'clone-database':
+            $sourceDb = trim((string)($argv[3] ?? ''));
+            $targetDb = trim((string)($argv[4] ?? ''));
+            if ($sourceDb === '' || $targetDb === '') {
+                throw new RuntimeException('clone-database requiere source_db y target_db.');
+            }
+            StoreMaintenance::cloneDatabase($driver, $sourceDb, $targetDb);
+            exit(0);
+
+        case 'invalidate-baseline':
+            $targetDb = trim((string)($argv[3] ?? $dbName));
+            $manifestPath = BaselineManifest::pathFor($projectRoot, $driver, $targetDb);
+            if (StoreMaintenance::databaseExists($driver, $targetDb)) {
+                StoreMaintenance::dropDatabase($driver, $targetDb);
+            }
+            BaselineManifest::delete($manifestPath);
+            exit(0);
+
         default:
-            throw new RuntimeException('Accion invalida. Usa provision|reset|clean|seed|bootstrap.');
+            throw new RuntimeException(
+                'Accion invalida. Usa provision|reset|clean|seed|bootstrap|prepare-baseline|drop-database|clone-database|invalidate-baseline.'
+            );
     }
 } catch (Throwable $e) {
     fwrite(STDERR, '[store_router] ' . $e->getMessage() . "\n");

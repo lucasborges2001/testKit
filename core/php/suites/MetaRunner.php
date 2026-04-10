@@ -27,7 +27,8 @@ final class MetaRunner
 
         $selected = self::resolveTarget($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow\n");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract
+");
             return 3;
         }
 
@@ -126,34 +127,6 @@ final class MetaRunner
     }
 
     /**
-     * @param array<int,string> $suites
-     */
-    private static function printStartupSummary(string $target, array $suites): void
-    {
-        $category = Env::string('TEST_CATEGORY', 'all');
-        $scope = Env::string('TEST_SCOPE', 'all');
-        $match = Env::string('TEST_MATCH', '');
-
-        UI::header("TESTKIT STARTUP");
-        UI::label("Target", $target . (Env::string('TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target)), '') !== '' ? " (override)" : ""));
-        UI::label("Suites", implode(', ', $suites));
-        UI::label("Filters", "scope={$scope}, category={$category}" . ($match !== '' ? ", match={$match}" : ""));
-
-        $overrides = [];
-        foreach (['TK_BACK_PHP_DIR', 'TK_BACK_PYTHON_DIR', 'TK_FRONT_PHP_DIR', 'TK_FRONT_JS_DIR', 'TK_MODULE_LEVEL', 'TK_TAG_MAP'] as $key) {
-            $val = Env::string($key, '');
-            if ($val !== '') {
-                $overrides[] = "{$key}={$val}";
-            }
-        }
-
-        if ($overrides !== []) {
-            UI::label("Context", implode(', ', $overrides));
-        }
-        UI::separator();
-    }
-
-    /**
      * @return array<int,string>
      */
     private static function resolveTarget(string $target): array
@@ -178,6 +151,9 @@ final class MetaRunner
             'contract' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'critical' => ['back_php', 'back_python', 'front_php', 'front_js'],
             'slow' => ['back_php', 'back_python', 'front_php', 'front_js'],
+            'migration-contract' => ['migration_contract'],
+            'migration' => ['migration_contract'],
+            'migrations' => ['migration_contract'],
         ];
 
         $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
@@ -186,7 +162,7 @@ final class MetaRunner
         if ($envVal !== '') {
             $parts = array_filter(array_map('trim', explode(',', $envVal)));
             $suites = [];
-            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js'];
+            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'migration_contract'];
 
             foreach ($parts as $suite) {
                 if (!in_array($suite, $validSuites, true)) {
@@ -208,6 +184,7 @@ final class MetaRunner
             'back_python' => BackPythonSuite::run(),
             'front_php' => FrontPhpSuite::run(),
             'front_js' => FrontJsSuite::run(),
+            'migration_contract' => MigrationContractSuite::run(),
             default => 3,
         };
     }

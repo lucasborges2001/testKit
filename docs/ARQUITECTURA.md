@@ -25,7 +25,7 @@ testkit/
 │  ├─ coverage/      # merge + diagnostico de coverage
 │  ├─ seeding/       # baseline planning + layered/snapshot orchestration
 │  ├─ store/         # adapters + maintenance + clone/restore ops
-│  └─ suites/        # back_php, back_python, front_php, meta
+│  └─ suites/        # back_php, back_python, front_php, front_js, migration_contract, meta
 ├─ runners/          # entrypoints finos
 ├─ scripts/          # utilidades operativas/reportes
 ├─ templates/        # esqueletos genericos
@@ -61,6 +61,7 @@ testkit/
 - `runners/runTestBackPython.php` -> suite `back_python`
 - `runners/runFrontTest.php` -> suite `front_php`
 - `runners/runFrontTest.mjs` -> suite `front_js`
+- `php runTest.php migration-contract` -> suite `migration_contract`
 
 ## 5) Contratos de salida
 
@@ -118,3 +119,54 @@ Para agregar una estrategia de baseline:
 - El pipeline layered de seeds vive en `testkit`, no en `_support`.
 - La validación de migraciones contra estado realista no debe mezclar escenarios de negocio con bootstrap estructural.
 - El clone-per-worker desde una baseline es una optimización controlada; no reemplaza el aislamiento lógico de los tests.
+
+
+## 3.2) Baseline reutilizable
+
+- `testkit` puede materializar una baseline por `layered` o por `snapshot`.
+- La baseline activa puede persistirse con un `manifest.json` por driver+db.
+- En `per_worker` con `TEST_BASELINE_CLONE_PER_WORKER=1`, primero se prepara/reutiliza la baseline y luego se clona a cada worker.
+- La invalidación explícita (`TEST_BASELINE_INVALIDATE=1`) borra manifest y obliga a reconstruir.
+
+
+## 3.3) Suite de contrato de migración
+
+- `migration_contract` no descubre tests de dominio.
+- Usa `ContractWorldBootstrap` como chequeo técnico del baseline restaurado.
+- Su salida principal es un reporte suite-level con estado del bootstrap, snapshot usado y manifest resultante.
+- Está pensada como gate de infraestructura antes de correr suites funcionales sobre un baseline recién restaurado.
+
+
+## 3.2) Integración explícita con backupkit
+
+Cuando `TEST_BASELINE_MODE=snapshot`, `testkit` ya no depende únicamente de un path hardcodeado al dump. Puede resolver el baseline desde tres fuentes ordenadas por precedencia:
+
+1. snapshot explícito (`TEST_BASELINE_SNAPSHOT_FILE`)
+2. metadata sidecar de `backupkit`
+3. reporte JSON de `backupkit`
+
+La resolución vive en `core/php/seeding/BackupkitArtifactResolver.php`.
+
+El objetivo no es duplicar a `backupkit`, sino consumir sus artefactos verificados como input del lifecycle de testing. `backupkit` sigue siendo dueño de:
+
+- generación del dump
+- hash/metadata del artefacto
+- verify-artifact
+- restore-test declarativo
+
+`testkit` consume ese resultado para construir la baseline de pruebas y escribir un manifest local con el origen resuelto.
+
+
+## Estado de migración
+
+Para baseline `snapshot`, `testkit` incorpora una capa explícita de resolución de estado:
+
+- `MigrationStateResolver` detecta migraciones `available/applied/pending`
+- `SeedPipeline` decide si usa cálculo incremental o una lista explícita
+- `MigrationContractSuite` reporta el estado observado y las pendientes aplicadas
+
+La idea es separar:
+- origen del baseline
+- detección del punto de partida
+- selección de migraciones pendientes
+- validación estructural posterior

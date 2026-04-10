@@ -143,6 +143,8 @@ Valores admitidos:
 - `clean`
 - `per_worker`
 
+`migration-contract` exige `shared`. Si querés validar una base restaurada, primero cerrá el contrato de migración sobre una DB única y recién después pensá en clonar workers.
+
 ### `shared`
 
 Todos los tests usan la misma DB.
@@ -319,6 +321,7 @@ php runTest.php back-php
 - `front-js`
 - `php`
 - `js`
+- `migration-contract`
 
 ### Categorías
 
@@ -338,6 +341,38 @@ php runTest.php smoke
 TEST_SCOPE=integration TEST_MATCH=ocpp php runTest.php back
 TEST_CATEGORY=critical php runTest.php all
 ```
+
+## 8.1) Target `migration-contract`
+
+Este target no intenta correr tests funcionales del proyecto. Su trabajo es más chico y más duro: comprobar que una baseline restaurada puede bootstrapearse, migrarse y dejar un `manifest` consistente.
+
+Contrato:
+
+- requiere `TEST_BASELINE_MODE=snapshot`
+- requiere `TEST_BASELINE_SNAPSHOT_FILE`
+- requiere `TEST_DB_STRATEGY=shared`
+- escribe `migration_contract_latest.json` en el report root de la corrida
+
+Ejemplo:
+
+```bash
+TEST_BASELINE_MODE=snapshot \
+TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz \
+TEST_DB_STRATEGY=shared \
+php runTest.php migration-contract
+```
+
+Cuándo usarlo:
+
+- cuando querés validar upgrades contra un dump lógico conocido
+- antes de habilitar clone-per-worker desde baseline
+- como gate técnico previo a suites funcionales más caras
+
+Cuándo no usarlo:
+
+- para throughput normal
+- para reemplazar tests del dominio
+- para esconder problemas de seeds frágiles detrás de un snapshot
 
 ---
 
@@ -521,3 +556,149 @@ php runTest.php back-php &
 - Los hints de fragilidad son heurísticas basadas en historial local.
 - Las familias de fallo de triage son heurísticas: sirven para priorizar, no para cerrar diagnóstico.
 - `testkit` no decide reglas de negocio: solo infraestructura de testing.
+
+## 7.1) Baselines reutilizables
+
+Variables nuevas:
+
+- `TEST_BASELINE_MODE=layered|snapshot`
+- `TEST_BASELINE_SNAPSHOT_FILE=/ruta/backup.sql.gz`
+- `TEST_BASELINE_REUSE=1`
+- `TEST_BASELINE_CLONE_PER_WORKER=1`
+- `TEST_BASELINE_INVALIDATE=1`
+- `TEST_BASELINE_DB_NAME` o `TEST_BASELINE_DB_SUFFIX`
+- `TEST_BASELINE_MANIFEST_PATH` (opcional)
+
+Comportamiento:
+
+- si `TEST_BASELINE_REUSE=1` y el manifest coincide con el fingerprint actual, `testkit` reutiliza la baseline existente
+- si `TEST_BASELINE_INVALIDATE=1`, descarta la baseline y la reconstruye
+- en `per_worker` con clone habilitado, se prepara una baseline y se clona a `w01`, `w02`, etc.
+
+Ejemplo:
+
+```bash
+TEST_DB_STRATEGY=per_worker \
+TEST_BASELINE_CLONE_PER_WORKER=1 \
+TEST_BASELINE_REUSE=1 \
+TEST_BASELINE_MODE=layered \
+php runTest.php back-php
+```
+
+Snapshot + reuse:
+
+```bash
+TEST_DB_STRATEGY=per_worker \
+TEST_BASELINE_CLONE_PER_WORKER=1 \
+TEST_BASELINE_MODE=snapshot \
+TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/prod_latest.sql.gz \
+TEST_BASELINE_REUSE=1 \
+php runTest.php back-php
+```
+
+Invalidación operativa:
+
+```bash
+./scripts/invalidate_baseline.sh mysql mi_db_baseline
+```
+
+
+## 14.1) Límite deliberado del target de migraciones
+
+`migration-contract` no acepta `per_worker` porque ese modo agrega otra variable al diagnóstico. Primero validás que la baseline y las migraciones cierren sobre una sola DB. Después, si querés throughput, clonás esa baseline a workers.
+
+
+## 7.1) Snapshot baseline desde backupkit
+
+Además de `TEST_BASELINE_SNAPSHOT_FILE`, `testkit` ahora puede resolver el snapshot baseline a partir de artefactos generados por `backupkit`.
+
+Variables admitidas:
+
+- `TEST_BASELINE_BACKUPKIT_METADATA_JSON`
+- `TEST_BASELINE_BACKUPKIT_REPORT_JSON`
+- `TEST_BASELINE_REQUIRE_BACKUPKIT_SUCCESS=1`
+
+Precedencia de resolución:
+
+1. `TEST_BASELINE_SNAPSHOT_FILE`
+2. `TEST_BASELINE_BACKUPKIT_METADATA_JSON`
+3. `TEST_BASELINE_BACKUPKIT_REPORT_JSON`
+
+### Metadata sidecar
+
+Si apuntás a `*.sql.gz.metadata.json`, `testkit` toma:
+
+- `path`
+- `sha256`
+- `size_bytes`
+- `engine`
+- `project`
+- `resource`
+
+### Reporte JSON
+
+Si apuntás a `backup-report.json`, `verify-artifact-report.json` o `restore-test-report.json`, `testkit` intenta resolver el artefacto desde:
+
+- `artifacts[].path`
+- fallback `artifact.path`
+- fallback `restore_test.artifact.path`
+
+Con `TEST_BASELINE_REQUIRE_BACKUPKIT_SUCCESS=1`, el reporte debe traer `final_status/status` y no puede estar en `ERROR|FAIL|FAILED`.
+
+### Wrapper operativo
+
+```bash
+./scripts/migration_contract_from_backup.sh report /ruta/restore-test-report.json
+./scripts/migration_contract_from_backup.sh metadata /ruta/mi_dump.sql.gz.metadata.json
+```
+
+
+
+## 15) Estado de migración y pendientes incrementales
+
+`migration-contract` ya no depende únicamente de `TEST_SEED_MIGRATIONS`.
+
+Puede resolver qué migraciones faltan usando tres estrategias:
+
+- `TEST_MIGRATION_STATE_MODE=explicit`
+  - declarar `TEST_MIGRATION_APPLIED=001_init,002_acl`
+- `TEST_MIGRATION_STATE_MODE=manifest_table`
+  - leer una tabla real de control:
+    - `TEST_MIGRATION_STATE_TABLE`
+    - `TEST_MIGRATION_STATE_COLUMN`
+- `TEST_MIGRATION_STATE_MODE=state_files`
+  - cada migración puede declarar `test/seeds/<driver>/migrations/<id>/state.json`
+
+Ejemplo de `state.json`:
+
+```json
+{
+  "markers": [
+    { "type": "table", "name": "Usuario" },
+    { "type": "column", "table": "Usuario", "column": "activo" }
+  ]
+}
+```
+
+Variables clave:
+
+- `TEST_MIGRATION_STATE_MODE`
+- `TEST_MIGRATION_APPLIED`
+- `TEST_MIGRATION_STATE_TABLE`
+- `TEST_MIGRATION_STATE_COLUMN`
+- `TEST_MIGRATION_TARGET=latest|<id>`
+- `TEST_MIGRATION_AUTO_PENDING=1`
+
+Política recomendada para upgrades reales:
+
+```bash
+TEST_BASELINE_MODE=snapshot
+TEST_MIGRATION_STATE_MODE=manifest_table
+TEST_MIGRATION_STATE_TABLE=migrations
+TEST_MIGRATION_STATE_COLUMN=version
+TEST_MIGRATION_TARGET=latest
+TEST_MIGRATION_AUTO_PENDING=1
+php runTest.php migration-contract
+```
+
+Si además definís `TEST_SEED_MIGRATIONS`, ese valor explícito gana y desactiva el cálculo automático de pendientes para esa corrida.

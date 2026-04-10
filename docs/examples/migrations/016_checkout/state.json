@@ -1,0 +1,12 @@
+{
+  "markers": [
+    {
+      "type": "table",
+      "name": "CheckoutCargaOrden"
+    },
+    {
+      "type": "table",
+      "name": "CheckoutCargaEvento"
+    }
+  ]
+}

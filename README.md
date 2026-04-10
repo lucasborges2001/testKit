@@ -19,6 +19,7 @@ While it aims for reusability, it depends on specific layout conventions and sta
   - `back_python`
   - `front_php`
   - `front_js`
+  - `migration_contract`
 - Useful reporting:
   - suite summary (`suite_status`, `no_tests_reason`)
   - module summary
@@ -76,6 +77,9 @@ php runTest.php front-js
 php runTest.php smoke
 php runTest.php perf
 php runTest.php stress
+
+# baseline / migraciones
+TEST_BASELINE_MODE=snapshot php runTest.php migration-contract
 
 # filters
 TEST_SCOPE=integration TEST_MATCH=ocpp php runTest.php back
@@ -147,3 +151,59 @@ Ownership:
 `testkit` is an execution platform and environment manager. It does not own the results; all test outputs, history, and coverage data are stored within the host project's `test/` directory to ensure they belong to the project being tested.
 
 For layered seeds, `testkit` owns lifecycle and orchestration. Project support should build scenarios with builders/helpers after the structural base exists; it should not redefine reset policy or the seed pipeline.
+
+
+## Baseline modes
+
+`testkit` now supports two baseline inputs for store bootstrap:
+
+- `TEST_BASELINE_MODE=layered` keeps the classic `schema -> base -> migrations -> validations` flow.
+- `TEST_BASELINE_MODE=snapshot` restores a `.sql`/`.sql.gz` artifact and then applies requested migrations/validations.
+
+For reusable baselines you can enable:
+
+- `TEST_BASELINE_REUSE=1`
+- `TEST_BASELINE_CLONE_PER_WORKER=1`
+- `TEST_BASELINE_INVALIDATE=1` when you need to force a rebuild.
+
+
+## Migration contract target
+
+`migration-contract` agrega una suite dedicada para validar el baseline restaurado y las migraciones estructurales sin depender de tests de dominio.
+
+Uso recomendado:
+
+```bash
+TEST_BASELINE_MODE=snapshot \
+TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz \
+TEST_DB_STRATEGY=shared \
+php runTest.php migration-contract
+```
+
+Restricciones intencionales:
+
+- requiere `TEST_BASELINE_MODE=snapshot`
+- falla si intentás correrlo con `TEST_DB_STRATEGY=per_worker`
+- valida bootstrap + manifest; no reemplaza suites funcionales del proyecto
+
+
+## BackupKit-aware snapshot baseline
+
+Además del path directo al dump, `testkit` puede resolver el baseline snapshot desde metadata o reportes JSON generados por `backupkit`.
+
+Variables nuevas:
+
+- `TEST_BASELINE_BACKUPKIT_METADATA_JSON`
+- `TEST_BASELINE_BACKUPKIT_REPORT_JSON`
+- `TEST_BASELINE_REQUIRE_BACKUPKIT_SUCCESS`
+
+
+## Migration state
+
+`testkit` ahora puede resolver migraciones pendientes de forma incremental para `migration-contract`:
+
+- estado explícito (`TEST_MIGRATION_APPLIED`)
+- tabla de control (`TEST_MIGRATION_STATE_TABLE`)
+- markers por migración (`state.json`)
+
+El objetivo no es adivinar mágicamente el upgrade; es volver explícito cómo se detecta el punto de partida antes de aplicar pendientes.
