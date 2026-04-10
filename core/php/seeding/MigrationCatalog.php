@@ -21,6 +21,8 @@ final class MigrationCatalog
             return [
                 'entries' => [],
                 'executable' => [],
+                'active' => [],
+                'optional' => [],
                 'historical_absorbed' => [],
             ];
         }
@@ -42,12 +44,20 @@ final class MigrationCatalog
         );
 
         $executable = [];
+        $active = [];
+        $optional = [];
         $historicalAbsorbed = [];
         foreach ($entries as $entry) {
             $id = (string)$entry['id'];
             $kind = (string)$entry['kind'];
             if (self::isExecutableKind($kind)) {
                 $executable[] = $id;
+                if ($kind === self::KIND_ACTIVE) {
+                    $active[] = $id;
+                }
+                if ($kind === self::KIND_OPTIONAL) {
+                    $optional[] = $id;
+                }
                 continue;
             }
 
@@ -59,6 +69,8 @@ final class MigrationCatalog
         return [
             'entries' => $entries,
             'executable' => $executable,
+            'active' => $active,
+            'optional' => $optional,
             'historical_absorbed' => $historicalAbsorbed,
         ];
     }

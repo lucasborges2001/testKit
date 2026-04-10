@@ -139,7 +139,11 @@ final class MigrationStateResolver
     {
         $catalog = MigrationCatalog::load($seedDir);
         $available = array_values((array)($catalog['executable'] ?? []));
-        $applied = MigrationCatalog::normalizeSelectedExecutablesFromCatalog($catalog, $requestedMigrations);
+        $defaultActive = array_values((array)($catalog['active'] ?? []));
+        $applied = MigrationCatalog::normalizeSelectedExecutablesFromCatalog(
+            $catalog,
+            array_merge($defaultActive, $requestedMigrations)
+        );
         $target = self::resolveTarget($available);
         $pending = self::resolvePending($available, $applied, $target);
 

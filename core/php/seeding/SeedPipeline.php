@@ -232,13 +232,14 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
 
     if ($baselineMode === 'layered') {
         $migrationState = MigrationStateResolver::resolveLayeredBaseline($seedDir, $requested);
+        $planned = array_values((array)($migrationState['applied'] ?? []));
         Trace::log('seed.migration.state', [
             'baseline_mode' => $baselineMode,
             'requested' => $requested,
-            'planned' => $requested,
+            'planned' => $planned,
             'state' => $migrationState,
         ]);
-        return [$requested, $rawMigrations, $skipPostValidations, $migrationState];
+        return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
     }
 
     $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
