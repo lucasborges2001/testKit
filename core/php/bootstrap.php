@@ -8,6 +8,7 @@ require_once __DIR__ . '/common/ProjectEnv.php';
 require_once __DIR__ . '/common/Trace.php';
 require_once __DIR__ . '/common/Lock.php';
 
+require_once __DIR__ . '/config/SuiteContractRegistry.php';
 require_once __DIR__ . '/config/RunnerConfig.php';
 require_once __DIR__ . '/discovery/TestTagger.php';
 require_once __DIR__ . '/discovery/TestDiscovery.php';
@@ -20,7 +21,13 @@ require_once __DIR__ . '/execution/ParallelGuard.php';
 require_once __DIR__ . '/coverage/CoverageMerger.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
+require_once __DIR__ . '/store/bootstrap.php';
+require_once __DIR__ . '/seeding/BaselineManifest.php';
+require_once __DIR__ . '/seeding/MigrationCatalog.php';
+require_once __DIR__ . '/seeding/SuiteSeedState.php';
+
 require_once __DIR__ . '/reporting/UI.php';
+require_once __DIR__ . '/reporting/StructuredWarnings.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
 require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';

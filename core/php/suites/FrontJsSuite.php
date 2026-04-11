@@ -3,14 +3,19 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Suites;
 
+use Throwable;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Discovery\TestDiscovery;
+use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Execution\ProcessRunner;
+use Testkit\Core\Execution\SuiteExecutor;
 use Testkit\Core\Reporting\HistoryRepository;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Reporting\StructuredWarnings;
+use Testkit\Core\Seeding\SuiteSeedState;
 
 final class FrontJsSuite
 {
@@ -28,67 +33,132 @@ final class FrontJsSuite
             'js'
         );
 
-        ContractWorldBootstrap::prepare('front_js', $repoRoot);
-
-        $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
-        if (!is_file($runner)) {
-            fwrite(STDERR, 'Falta runner JS: ' . $runner . PHP_EOL);
-            return 3;
-        }
-
-        $nodePath = self::findBin((string)$config['node_binary']);
-        if ($nodePath === null) {
-            $requireNode = (bool)$config['js_require_node'];
-            fwrite(STDERR, ($requireNode ? 'FAIL' : 'SKIP') . ': no se encontro \'' . (string)$config['node_binary'] . "' en PATH.\n");
-            return $requireNode ? 1 : 2;
-        }
-
         $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
         $reportRoot = Paths::resolveReportRoot($discovered);
         $moduleScope = self::moduleScope($discovered);
-
+        Paths::ensureDir($reportRoot);
         Paths::recordSuiteReportRoot($reportRoot, 'front_js');
 
-        $selectedFile = self::writeSelectedTestsFile($discovered);
-        $env = self::baseEnv();
-        $env['TESTKIT_ROOT'] = Paths::testkitRoot();
-        $env['TK_REPO_ROOT'] = $repoRoot;
-        $env['TESTKIT_REPORT_ROOT'] = $reportRoot;
-        $env['TESTKIT_REPORT_SCOPE_REL'] = Paths::relativeToRepo($reportRoot);
-        $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
-        $env['TESTKIT_SELECTED_TESTS_FILE'] = $selectedFile;
-        $env['TEST_SCOPE'] = (string)$config['scope'];
-        $env['TEST_CATEGORY'] = (string)$config['category'];
-        $env['TEST_MATCH'] = (string)$config['match'];
-        $env['TEST_LIST'] = (bool)$config['list_only'] ? '1' : '0';
-        $env['TEST_FAIL_FAST'] = (bool)$config['fail_fast'] ? '1' : '0';
-        $env['TEST_JOBS'] = (string)$config['jobs'];
-        $env['TEST_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
-        $env['TEST_JS_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
-        $env['TEST_SLOW_THRESHOLD_MS'] = (string)($config['thresholds']['slow_ms'] ?? 1500);
-        $env['TEST_SLOW_TOP'] = (string)($config['thresholds']['slow_top'] ?? 10);
-        $env['TEST_PERF_MAX_MS'] = (string)($config['thresholds']['perf_max_ms'] ?? 0);
-        $env['TEST_PERF_WARN_MS'] = (string)($config['thresholds']['perf_warn_ms'] ?? 0);
+        $runId = self::envString('TEST_RUN_ID');
+        if ($runId === '') {
+            $runId = self::buildRunId();
+            putenv('TEST_RUN_ID=' . $runId);
+        }
+        $metaRunId = self::envString('TEST_META_RUN_ID', $runId);
 
+        $policy = [];
+        $warnings = [];
+        $admission = [
+            'store_mode' => 'shared',
+            'concurrency_policy' => 'not_applicable',
+            'run_admitted' => true,
+            'reason' => null,
+            'resource' => '',
+            'lock_key' => '',
+            'lock_owner_run_id' => null,
+            'lock_owner_meta_run_id' => null,
+            'lock_owner_hostname' => null,
+            'lock_acquired_at' => null,
+        ];
+
+        $lockLease = null;
         try {
-            $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
-            $done = ProcessRunner::finish($job);
+            ContractWorldBootstrap::prepare('front_js', $repoRoot);
+
+            $policy = ParallelGuard::evaluate($discovered, $config, Paths::repoRoot());
+            $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
+            $admission = ParallelGuard::admissionState($policy);
+
+            $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
+            if ($errors !== []) {
+                $admission = ParallelGuard::rejectedByPolicyState($policy);
+                ParallelGuard::assertSafe($policy);
+            }
+
+            foreach ($warnings as $warning) {
+                $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+                $summary = (string)($warning['summary'] ?? 'warning');
+                fwrite(STDERR, 'WARN[' . $code . '] ' . $summary . PHP_EOL);
+            }
+
+            $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
+            if (!is_file($runner)) {
+                throw new \RuntimeException('Falta runner JS: ' . $runner);
+            }
+
+            $nodePath = self::findBin((string)$config['node_binary']);
+            if ($nodePath === null) {
+                $requireNode = (bool)$config['js_require_node'];
+                throw new \RuntimeException(($requireNode ? 'FAIL' : 'SKIP') . ': no se encontro ' . "'" . (string)$config['node_binary'] . "' en PATH.");
+            }
+
+            $selectedFile = self::writeSelectedTestsFile($discovered);
+            try {
+                try {
+                    $lockLease = ParallelGuard::acquireSuiteStoreLock($policy);
+                } catch (Throwable $e) {
+                    $admission = ParallelGuard::rejectedByLockState($policy);
+                    throw $e;
+                }
+
+                $env = self::baseEnv();
+                $env['TESTKIT_ROOT'] = Paths::testkitRoot();
+                $env['TK_REPO_ROOT'] = $repoRoot;
+                $env['TESTKIT_REPORT_ROOT'] = $reportRoot;
+                $env['TESTKIT_REPORT_SCOPE_REL'] = Paths::relativeToRepo($reportRoot);
+                $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
+                $env['TESTKIT_SELECTED_TESTS_FILE'] = $selectedFile;
+                $env['TEST_SCOPE'] = (string)$config['scope'];
+                $env['TEST_CATEGORY'] = (string)$config['category'];
+                $env['TEST_MATCH'] = (string)$config['match'];
+                $env['TEST_LIST'] = (bool)$config['list_only'] ? '1' : '0';
+                $env['TEST_FAIL_FAST'] = (bool)$config['fail_fast'] ? '1' : '0';
+                $env['TEST_JOBS'] = (string)$config['jobs'];
+                $env['TEST_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
+                $env['TEST_JS_REQUIRE_TESTS'] = (bool)$config['require_tests'] ? '1' : '0';
+                $env['TEST_SLOW_THRESHOLD_MS'] = (string)($config['thresholds']['slow_ms'] ?? 1500);
+                $env['TEST_SLOW_TOP'] = (string)($config['thresholds']['slow_top'] ?? 10);
+                $env['TEST_PERF_MAX_MS'] = (string)($config['thresholds']['perf_max_ms'] ?? 0);
+                $env['TEST_PERF_WARN_MS'] = (string)($config['thresholds']['perf_warn_ms'] ?? 0);
+                $env['TEST_RUN_ID'] = $runId;
+                $env['TEST_META_RUN_ID'] = $metaRunId;
+
+                $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
+                $done = ProcessRunner::finish($job);
+            } finally {
+                @unlink($selectedFile);
+            }
+
+            $stdout = (string)($done['stdout'] ?? '');
+            $stderr = (string)($done['stderr'] ?? '');
+            if ($stdout !== '') {
+                fwrite(STDOUT, $stdout);
+            }
+            if ($stderr !== '') {
+                fwrite(STDERR, $stderr);
+            }
+
+            self::enrichLatestReport($reportRoot, $config, $policy, $warnings, $admission, $runId, $metaRunId);
+
+            return (int)($done['code'] ?? 1);
+        } catch (Throwable $e) {
+            $result = self::buildOperationalFailureResult(
+                config: $config,
+                tests: $discovered,
+                reportRoot: $reportRoot,
+                runId: $runId,
+                metaRunId: $metaRunId,
+                policy: $policy,
+                warnings: $warnings,
+                admission: $admission,
+                error: $e
+            );
+            $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
+            ResultWriter::writeSuite($result);
+            return SuiteExecutor::EXIT_ERROR;
         } finally {
-            @unlink($selectedFile);
+            $lockLease?->release();
         }
-
-        $stdout = (string)($done['stdout'] ?? '');
-        $stderr = (string)($done['stderr'] ?? '');
-        if ($stdout !== '') {
-            fwrite(STDOUT, $stdout);
-        }
-        if ($stderr !== '') {
-            fwrite(STDERR, $stderr);
-        }
-
-        self::enrichLatestReport($reportRoot, $config);
-
-        return (int)($done['code'] ?? 1);
     }
 
     /**
@@ -112,8 +182,11 @@ final class FrontJsSuite
 
     /**
      * @param array<string,mixed> $config
+     * @param array<string,mixed> $policy
+     * @param array<int,array<string,mixed>> $warnings
+     * @param array<string,mixed> $admission
      */
-    private static function enrichLatestReport(string $reportRoot, array $config): void
+    private static function enrichLatestReport(string $reportRoot, array $config, array $policy, array $warnings, array $admission, string $runId, string $metaRunId): void
     {
         $report = ReportSummary::loadLatestSuiteReport('front_js', [$reportRoot]);
         if (!is_array($report)) {
@@ -121,9 +194,35 @@ final class FrontJsSuite
         }
 
         $report['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
+        $report['runner_contract_version'] = (int)($config['runner_contract_version'] ?? 1);
         $report['runner_capabilities'] = $config['runner_capabilities'] ?? [];
+        $report['runner_hazards'] = $config['runner_hazards'] ?? [];
+        $report['runner_contract'] = [
+            'version' => (int)($config['runner_contract_version'] ?? 1),
+            'capabilities' => $config['runner_capabilities'] ?? [],
+            'hazards' => $config['runner_hazards'] ?? [],
+        ];
         $report['suite_status'] = self::suiteStatus($report);
         $report['no_tests_reason'] = self::noTestsReason($report);
+        $report['run_id'] = $runId;
+        $report['meta_run_id'] = $metaRunId;
+        $report['run_kind'] = 'suite';
+        $report['parallel_policy'] = [
+            'jobs' => (int)($policy['jobs'] ?? $config['jobs'] ?? 1),
+            'db_strategy' => (string)($policy['db_strategy'] ?? 'shared'),
+            'has_db_sensitive_tests' => (bool)($policy['has_db_sensitive_tests'] ?? false),
+            'has_db_runtime' => (bool)($policy['has_db_runtime'] ?? false),
+            'requires_db_isolation' => (bool)($policy['requires_db_isolation'] ?? false),
+            'top_level_parallel_supported' => (bool)($policy['top_level_parallel_supported'] ?? true),
+            'top_level_parallel_policy' => (string)($policy['top_level_parallel_policy'] ?? ''),
+            'intra_suite_parallel_policy' => (string)($policy['intra_suite_parallel_policy'] ?? ''),
+            'declared_runner_hazards' => is_array($policy['declared_runner_hazards'] ?? null) ? $policy['declared_runner_hazards'] : [],
+            'suite_lock_key' => (string)($policy['suite_lock_key'] ?? ''),
+            'warnings' => $warnings,
+        ];
+        $report['concurrency_admission'] = $admission;
+        $report['evidence_valid'] = true;
+        $report['evidence_invalid_reason'] = null;
 
         $history = HistoryRepository::updateAndAnalyze(
             $report,
@@ -131,6 +230,8 @@ final class FrontJsSuite
         );
         $report['history_file'] = $history['history_file'];
         $report['fragility_hints'] = $history['fragility_hints'];
+
+        $report = SuiteSeedState::attachToReport($report, Paths::repoRoot());
 
         ResultWriter::writeSuite($report);
     }
@@ -266,5 +367,152 @@ final class FrontJsSuite
             }
         }
         return $env;
+    }
+
+    private static function envString(string $key, string $default = ''): string
+    {
+        $value = getenv($key);
+        if (!is_string($value) || trim($value) === '') {
+            return $default;
+        }
+        return trim($value);
+    }
+
+    private static function buildRunId(): string
+    {
+        try {
+            $suffix = bin2hex(random_bytes(3));
+        } catch (\Throwable) {
+            $suffix = substr((string)sha1(uniqid('', true)), 0, 6);
+        }
+
+        return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<int,array<string,mixed>> $tests
+     * @param array<string,mixed> $policy
+     * @param array<int,array<string,mixed>> $warnings
+     * @param array<string,mixed> $admission
+     * @return array<string,mixed>
+     */
+    private static function buildOperationalFailureResult(
+        array $config,
+        array $tests,
+        string $reportRoot,
+        string $runId,
+        string $metaRunId,
+        array $policy,
+        array $warnings,
+        array $admission,
+        Throwable $error
+    ): array {
+        $moduleScope = self::moduleScope($tests);
+        $failureKind = (string)($admission['reason'] ?? '') === 'shared_store_locked'
+            ? 'environment_conflict'
+            : 'setup_failure';
+
+        $failure = ReportSummary::buildThrowableFailure($error, [
+            'test_id' => 'front_js.bootstrap',
+            'test_name' => 'front_js.bootstrap',
+            'case' => 'front_js.bootstrap',
+            'suite_id' => 'front_js',
+            'suite' => 'front_js',
+            'scope' => (string)($config['scope'] ?? 'all'),
+            'category' => (string)($config['category'] ?? 'all'),
+            'file' => '',
+            'kind' => $failureKind,
+            'artifact_path' => Paths::relativeToRepo($reportRoot),
+        ]);
+
+        $selectedTestFiles = array_map(static fn(array $t): string => (string)($t['rel'] ?? ''), $tests);
+        $durationMs = 0;
+
+        return [
+            'suite_id' => 'front_js',
+            'language' => 'js',
+            'scope' => (string)($config['scope'] ?? 'all'),
+            'category' => (string)($config['category'] ?? 'all'),
+            'tests_total' => count($tests),
+            'pass' => 0,
+            'fail' => 1,
+            'skip' => 0,
+            'tests' => [],
+            'failed_tests' => [],
+            'slow_tests' => [],
+            'perf_violations' => [],
+            'exit_code' => SuiteExecutor::EXIT_ERROR,
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'finished_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'started_ms' => 0,
+            'duration_ms' => $durationMs,
+            'list_only' => (bool)($config['list_only'] ?? false),
+            'require_tests' => (bool)($config['require_tests'] ?? false),
+            'jobs' => (int)($config['jobs'] ?? 1),
+            'module_summary' => [],
+            'report_contract_version' => (int)($config['report_contract_version'] ?? 2),
+            'runner_contract_version' => (int)($config['runner_contract_version'] ?? 1),
+            'runner_capabilities' => $config['runner_capabilities'] ?? [],
+            'runner_hazards' => $config['runner_hazards'] ?? [],
+            'runner_contract' => [
+                'version' => (int)($config['runner_contract_version'] ?? 1),
+                'capabilities' => $config['runner_capabilities'] ?? [],
+                'hazards' => $config['runner_hazards'] ?? [],
+            ],
+            'report_root' => $reportRoot,
+            'report_scope_rel' => Paths::relativeToRepo($reportRoot),
+            'match' => (string)($config['match'] ?? ''),
+            'selected_common_dir' => '',
+            'selected_module_scope' => $moduleScope,
+            'selected_test_count' => count($tests),
+            'selected_test_files' => $selectedTestFiles,
+            'suite_status' => $tests === [] ? 'no_tests' : 'failed',
+            'no_tests_reason' => $tests === [] ? self::noTestsReason(['suite_status' => 'no_tests'], $config) : null,
+            'run_id' => $runId,
+            'meta_run_id' => $metaRunId,
+            'run_kind' => 'suite',
+            'report_keep' => (int)($config['report_keep'] ?? 5),
+            'runs_index_keep' => (int)($config['runs_index_keep'] ?? $config['report_keep'] ?? 5),
+            'filters' => [
+                'suite' => 'front_js',
+                'scope' => (string)($config['scope'] ?? 'all'),
+                'category' => (string)($config['category'] ?? 'all'),
+                'match' => (string)($config['match'] ?? ''),
+            ],
+            'summary' => [
+                'total' => count($tests),
+                'passed' => 0,
+                'failed' => 1,
+                'skipped' => 0,
+                'duration_ms' => $durationMs,
+                'suite_status' => $tests === [] ? 'no_tests' : 'failed',
+            ],
+            'parallel_policy' => [
+                'jobs' => (int)($policy['jobs'] ?? $config['jobs'] ?? 1),
+                'db_strategy' => (string)($policy['db_strategy'] ?? 'shared'),
+                'has_db_sensitive_tests' => (bool)($policy['has_db_sensitive_tests'] ?? false),
+                'has_db_runtime' => (bool)($policy['has_db_runtime'] ?? false),
+                'requires_db_isolation' => (bool)($policy['requires_db_isolation'] ?? false),
+                'top_level_parallel_supported' => (bool)($policy['top_level_parallel_supported'] ?? true),
+                'top_level_parallel_policy' => (string)($policy['top_level_parallel_policy'] ?? ''),
+                'intra_suite_parallel_policy' => (string)($policy['intra_suite_parallel_policy'] ?? ''),
+                'declared_runner_hazards' => is_array($policy['declared_runner_hazards'] ?? null) ? $policy['declared_runner_hazards'] : [],
+                'suite_lock_key' => (string)($policy['suite_lock_key'] ?? ''),
+                'warnings' => $warnings,
+            ],
+            'concurrency_admission' => $admission,
+            'evidence_valid' => false,
+            'evidence_invalid_reason' => (string)($admission['reason'] ?? 'runner_exception') ?: 'runner_exception',
+            'failures' => [$failure],
+            'grouped_failures' => ReportSummary::groupFailures([$failure]),
+            'failure_contract' => [
+                'canonical' => 'failures',
+                'legacy_fallback' => 'failed_tests',
+            ],
+            'first_failure' => ReportSummary::summarizeFailure($failure),
+            'history_file' => null,
+            'fragility_hints' => [],
+        ];
     }
 }

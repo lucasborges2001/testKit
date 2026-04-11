@@ -38,12 +38,15 @@ final class RunnerConfig
         $tagMap = Env::string('TK_TAG_MAP', '');
         $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
         $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
+        $contract = SuiteContractRegistry::contractForSuite($suiteId, $language);
 
         return [
             'suite_id' => $suiteId,
             'language' => $language,
             'report_contract_version' => 2,
-            'runner_capabilities' => self::suiteCapabilities($suiteId, $language),
+            'runner_contract_version' => (int)($contract['contract_version'] ?? 1),
+            'runner_capabilities' => is_array($contract['capabilities'] ?? null) ? $contract['capabilities'] : [],
+            'runner_hazards' => is_array($contract['hazards'] ?? null) ? $contract['hazards'] : [],
             'tests_dir' => Paths::normalize($testsDir),
             'scope' => $scope,
             'category' => $category,
@@ -69,40 +72,6 @@ final class RunnerConfig
             'runs_index_keep' => $runsIndexKeep,
         ];
     }
-
-    /**
-     * @return array<string,mixed>
-     */
-    public static function suiteCapabilities(string $suiteId, string $language): array
-    {
-        $language = strtolower(trim($language));
-        $suiteId = strtolower(trim($suiteId));
-
-        $nativeCoverageArtifacts = false;
-        $structuredCoverageDiagnostics = false;
-        $coverageFormats = [];
-
-        if ($language === 'php') {
-            $nativeCoverageArtifacts = true;
-            $structuredCoverageDiagnostics = true;
-            $coverageFormats = ['json', 'lcov'];
-        } elseif ($language === 'python') {
-            $nativeCoverageArtifacts = true;
-            $coverageFormats = ['trace'];
-        }
-
-        return [
-            'shared_discovery_contract' => true,
-            'perf_thresholds' => true,
-            'fragility_history' => true,
-            'module_scoped_reports' => true,
-            'native_coverage_artifacts' => $nativeCoverageArtifacts,
-            'structured_coverage_diagnostics' => $structuredCoverageDiagnostics,
-            'coverage_formats' => $coverageFormats,
-            'suite_engine' => $suiteId,
-        ];
-    }
-
 
     /**
      * @return array<string,mixed>

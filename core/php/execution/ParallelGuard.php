@@ -6,8 +6,8 @@ namespace Testkit\Core\Execution;
 use RuntimeException;
 use Testkit\Core\Common\Lock;
 use Testkit\Core\Common\LockLease;
-use Testkit\Core\Common\Paths;
 use Testkit\Core\Common\ProjectEnv;
+use Testkit\Core\Reporting\StructuredWarnings;
 
 final class ParallelGuard
 {
@@ -22,36 +22,74 @@ final class ParallelGuard
 
         $jobs = max(1, (int)($config['jobs'] ?? 1));
         $strategy = self::normalizeDbStrategy((string)(getenv('TEST_DB_STRATEGY') ?: 'shared'));
-        $hasDbSensitiveTests = self::hasDbSensitiveTests($tests);
         $hasDbRuntime = self::hasDbRuntimeContract();
         $driver = self::detectDriver();
         $baseDb = self::resolveBaseDatabaseName($driver);
         $suiteId = (string)($config['suite_id'] ?? 'suite');
+        $declaredHazards = self::declaredHazards($config);
 
-        $requiresDbIsolation = $jobs > 1 && $hasDbSensitiveTests && $hasDbRuntime;
+        $dbSensitivityMode = self::dbSensitivityMode($declaredHazards);
+        $hasDbSensitiveTests = match ($dbSensitivityMode) {
+            'always' => true,
+            'never' => false,
+            default => self::hasDbSensitiveTests($tests),
+        };
+
+        $topLevelPolicy = self::topLevelParallelPolicy($declaredHazards);
+        $intraSuitePolicy = self::intraSuiteParallelPolicy($declaredHazards);
+        $requiresDbIsolation = self::requiresDbIsolation($jobs, $hasDbSensitiveTests, $hasDbRuntime, $intraSuitePolicy);
+
         $errors = [];
         $warnings = [];
 
         if ($requiresDbIsolation && $strategy !== 'per_worker') {
-            $errors[] =
-                "Configuración insegura: suite {$suiteId} usa TEST_JOBS={$jobs} sobre tests integration/e2e " .
-                "con DB y TEST_DB_STRATEGY={$strategy}. Para paralelismo intra-suite con DB la única ruta " .
-                "soportada es TEST_DB_STRATEGY=per_worker.";
+            $errors[] = StructuredWarnings::fromText(
+                "Configuración insegura: suite {$suiteId} usa TEST_JOBS={$jobs} sobre tests DB-sensibles con TEST_DB_STRATEGY={$strategy}. Para paralelismo intra-suite con DB la única ruta soportada es TEST_DB_STRATEGY=per_worker.",
+                'UNSAFE_PARALLEL_DB_CONFIGURATION',
+                'error',
+                true,
+                [
+                    'suite_id' => $suiteId,
+                    'jobs' => $jobs,
+                    'db_strategy' => $strategy,
+                    'intra_suite_parallel_policy' => $intraSuitePolicy,
+                ]
+            );
+        }
+
+        if ($jobs > 1 && $intraSuitePolicy === 'sequential_only') {
+            $errors[] = StructuredWarnings::fromText(
+                "La suite {$suiteId} declara ejecución secuencial únicamente. No se admite TEST_JOBS={$jobs}.",
+                'SUITE_DECLARED_SEQUENTIAL_ONLY',
+                'error',
+                true,
+                [
+                    'suite_id' => $suiteId,
+                    'jobs' => $jobs,
+                ]
+            );
         }
 
         if ($jobs > 1 && $strategy === 'per_worker' && $hasDbSensitiveTests && $hasDbRuntime) {
-            $warnings[] =
-                'TEST_DB_STRATEGY=per_worker aísla workers dentro de una misma suite, ' .
-                'pero NO vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto.';
+            $warnings[] = StructuredWarnings::fromText(
+                'TEST_DB_STRATEGY=per_worker aísla workers dentro de una misma suite, pero NO vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto.',
+                'TOP_LEVEL_PARALLEL_STILL_UNSAFE',
+                'warn',
+                false,
+                [
+                    'suite_id' => $suiteId,
+                    'top_level_parallel_policy' => $topLevelPolicy,
+                ]
+            );
         }
 
         $suiteLockKey = '';
         $suiteLockReason = '';
-        if ($hasDbSensitiveTests && $hasDbRuntime) {
+        $requiresExclusiveTopLevel = self::requiresExclusiveTopLevel($topLevelPolicy, $hasDbSensitiveTests, $hasDbRuntime);
+        if ($requiresExclusiveTopLevel) {
             $suiteLockKey = 'suite_store.' . self::safeLockSegment($driver) . '.' . self::safeLockSegment($baseDb !== '' ? $baseDb : 'default');
             $suiteLockReason =
-                'Esta suite toca integration/e2e con DB. Para evitar seed/bootstrap cruzado y colisiones entre corridas top-level, ' .
-                'testkit serializa el acceso al store base del proyecto.';
+                'La suite requiere exclusividad top-level sobre el store base del proyecto para evitar bootstrap/seed cruzado y colisiones entre corridas.';
         }
 
         return [
@@ -63,11 +101,15 @@ final class ParallelGuard
             'requires_db_isolation' => $requiresDbIsolation,
             'base_db_driver' => $driver,
             'base_db_name' => $baseDb,
-            'top_level_parallel_supported' => !($hasDbSensitiveTests && $hasDbRuntime),
+            'top_level_parallel_supported' => !$requiresExclusiveTopLevel,
             'suite_lock_key' => $suiteLockKey,
             'suite_lock_reason' => $suiteLockReason,
-            'warnings' => $warnings,
-            'errors' => $errors,
+            'warnings' => StructuredWarnings::canonicalize($warnings),
+            'errors' => StructuredWarnings::canonicalize($errors),
+            'declared_runner_hazards' => $declaredHazards,
+            'db_sensitivity_mode' => $dbSensitivityMode,
+            'top_level_parallel_policy' => $topLevelPolicy,
+            'intra_suite_parallel_policy' => $intraSuitePolicy,
         ];
     }
 
@@ -76,12 +118,12 @@ final class ParallelGuard
      */
     public static function assertSafe(array $policy): void
     {
-        $errors = is_array($policy['errors'] ?? null) ? $policy['errors'] : [];
+        $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
         if ($errors === []) {
             return;
         }
 
-        throw new RuntimeException(implode(' ', array_map('strval', $errors)));
+        throw new RuntimeException(StructuredWarnings::joinSummaries($errors));
     }
 
     /**
@@ -138,7 +180,7 @@ final class ParallelGuard
         $state = self::admissionState($policy);
         $state['run_admitted'] = false;
         $state['reason'] = 'unsafe_parallel_db_configuration';
-        $state['message'] = implode(' ', array_map('strval', (array)($policy['errors'] ?? [])));
+        $state['message'] = StructuredWarnings::joinSummaries(StructuredWarnings::canonicalize($policy['errors'] ?? []));
 
         return $state;
     }
@@ -287,5 +329,71 @@ final class ParallelGuard
         }
 
         return ($driver !== '' ? $driver : 'db') . '/' . ($dbName !== '' ? $dbName : 'default');
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private static function declaredHazards(array $config): array
+    {
+        return is_array($config['runner_hazards'] ?? null) ? $config['runner_hazards'] : [];
+    }
+
+    /**
+     * @param array<string,mixed> $hazards
+     */
+    private static function dbSensitivityMode(array $hazards): string
+    {
+        $mode = strtolower(trim((string)($hazards['db_sensitivity'] ?? 'discovered')));
+        return in_array($mode, ['always', 'never', 'discovered'], true) ? $mode : 'discovered';
+    }
+
+    /**
+     * @param array<string,mixed> $hazards
+     */
+    private static function topLevelParallelPolicy(array $hazards): string
+    {
+        $policy = strtolower(trim((string)($hazards['top_level_parallel_policy'] ?? 'exclusive_when_db_sensitive')));
+        return in_array($policy, ['exclusive', 'exclusive_when_db_sensitive', 'allowed'], true)
+            ? $policy
+            : 'exclusive_when_db_sensitive';
+    }
+
+    /**
+     * @param array<string,mixed> $hazards
+     */
+    private static function intraSuiteParallelPolicy(array $hazards): string
+    {
+        $policy = strtolower(trim((string)($hazards['intra_suite_parallel_policy'] ?? 'per_worker_when_db_sensitive')));
+        return in_array($policy, ['per_worker_when_db_sensitive', 'per_worker', 'sequential_only', 'allowed'], true)
+            ? $policy
+            : 'per_worker_when_db_sensitive';
+    }
+
+    private static function requiresDbIsolation(int $jobs, bool $hasDbSensitiveTests, bool $hasDbRuntime, string $policy): bool
+    {
+        if ($jobs <= 1 || !$hasDbRuntime) {
+            return false;
+        }
+
+        return match ($policy) {
+            'per_worker' => true,
+            'per_worker_when_db_sensitive' => $hasDbSensitiveTests,
+            default => false,
+        };
+    }
+
+    private static function requiresExclusiveTopLevel(string $policy, bool $hasDbSensitiveTests, bool $hasDbRuntime): bool
+    {
+        if (!$hasDbRuntime) {
+            return false;
+        }
+
+        return match ($policy) {
+            'exclusive' => true,
+            'exclusive_when_db_sensitive' => $hasDbSensitiveTests,
+            default => false,
+        };
     }
 }

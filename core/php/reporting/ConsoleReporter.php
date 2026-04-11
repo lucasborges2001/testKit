@@ -59,6 +59,8 @@ final class ConsoleReporter
             echo UI::failure('Evidence invalid') . ' ' . UI::gray('reason=' . $reason) . "\n";
         }
 
+        self::printWarnings($result);
+
         $firstFailure = $result['first_failure'] ?? null;
         if (is_array($firstFailure)) {
             $kind = trim((string)($firstFailure['kind'] ?? ''));
@@ -109,6 +111,22 @@ final class ConsoleReporter
         echo "\n";
         echo UI::gray('report_root=' . (string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
         echo UI::gray('selected_tests=' . (int)($meta['selected_test_count'] ?? 0) . ', failed_files=' . count($failedFiles)) . "\n";
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function printWarnings(array $result): void
+    {
+        $warnings = StructuredWarnings::normalizeList($result['warnings'] ?? (($result['parallel_policy']['warnings'] ?? null)));
+        if ($warnings === []) {
+            return;
+        }
+
+        UI::section("Warnings");
+        foreach ($warnings as $warning) {
+            echo "  - " . StructuredWarnings::consoleLine($warning) . "\n";
+        }
     }
 
     /**

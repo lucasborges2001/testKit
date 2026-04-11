@@ -26,6 +26,7 @@ final class CanonicalReport
             'artifacts' => self::artifacts($report),
             'seed_state' => self::seedState($report),
             'warnings' => self::warnings($report),
+            'runner' => self::runner($report),
         ];
 
         return $report;
@@ -114,7 +115,12 @@ final class CanonicalReport
         $hasExplicitSeedState = is_array($migrationState)
             || array_key_exists('baseline_mode', $report)
             || array_key_exists('snapshot_file', $report)
-            || array_key_exists('manifest_path', $report);
+            || array_key_exists('manifest_path', $report)
+            || array_key_exists('seed_state', $report);
+
+        if (is_array($report['seed_state'] ?? null)) {
+            return $report['seed_state'];
+        }
 
         if (!$hasExplicitSeedState) {
             return null;
@@ -133,15 +139,28 @@ final class CanonicalReport
 
     /**
      * @param array<string,mixed> $report
-     * @return array<int,mixed>
+     * @return array<int,array<string,mixed>>
      */
     private static function warnings(array $report): array
     {
         $parallel = $report['parallel_policy'] ?? null;
-        if (is_array($parallel) && is_array($parallel['warnings'] ?? null)) {
-            return array_values($parallel['warnings']);
+        if (is_array($parallel) && array_key_exists('warnings', $parallel)) {
+            return StructuredWarnings::canonicalize($parallel['warnings']);
         }
 
-        return [];
+        return StructuredWarnings::canonicalize($report['warnings'] ?? []);
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function runner(array $report): array
+    {
+        return [
+            'contract_version' => (int)($report['runner_contract_version'] ?? 1),
+            'capabilities' => is_array($report['runner_capabilities'] ?? null) ? $report['runner_capabilities'] : [],
+            'hazards' => is_array($report['runner_hazards'] ?? null) ? $report['runner_hazards'] : [],
+        ];
     }
 }

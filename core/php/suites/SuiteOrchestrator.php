@@ -14,6 +14,8 @@ use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\HistoryRepository;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Seeding\SuiteSeedState;
+use Testkit\Core\Reporting\StructuredWarnings;
 
 final class SuiteOrchestrator
 {
@@ -58,17 +60,19 @@ final class SuiteOrchestrator
 
         try {
             $policy = ParallelGuard::evaluate($tests, $config, Paths::repoRoot());
-            $warnings = is_array($policy['warnings'] ?? null) ? $policy['warnings'] : [];
+            $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
             $admission = ParallelGuard::admissionState($policy);
 
-            $errors = is_array($policy['errors'] ?? null) ? $policy['errors'] : [];
+            $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
             if ($errors !== []) {
                 $admission = ParallelGuard::rejectedByPolicyState($policy);
                 ParallelGuard::assertSafe($policy);
             }
 
             foreach ($warnings as $warning) {
-                fwrite(STDERR, 'WARN: ' . (string)$warning . PHP_EOL);
+                $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+                $summary = (string)($warning['summary'] ?? 'warning');
+                fwrite(STDERR, 'WARN[' . $code . ']: ' . $summary . PHP_EOL);
             }
 
             ConsoleReporter::printSuiteStart($config, count($tests));
@@ -88,7 +92,14 @@ final class SuiteOrchestrator
 
             $moduleScope = self::moduleScope($tests);
             $result['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
+            $result['runner_contract_version'] = (int)($config['runner_contract_version'] ?? 1);
             $result['runner_capabilities']     = $config['runner_capabilities'] ?? [];
+            $result['runner_hazards']          = $config['runner_hazards'] ?? [];
+            $result['runner_contract']         = [
+                'version' => (int)($config['runner_contract_version'] ?? 1),
+                'capabilities' => $config['runner_capabilities'] ?? [],
+                'hazards' => $config['runner_hazards'] ?? [],
+            ];
             $result['report_root']             = $reportRoot;
             $result['report_scope_rel']        = Paths::relativeToRepo($reportRoot);
             $result['match']                   = (string)($config['match'] ?? '');
@@ -124,6 +135,9 @@ final class SuiteOrchestrator
                 'has_db_runtime' => (bool)($policy['has_db_runtime'] ?? false),
                 'requires_db_isolation' => (bool)($policy['requires_db_isolation'] ?? false),
                 'top_level_parallel_supported' => (bool)($policy['top_level_parallel_supported'] ?? true),
+                'top_level_parallel_policy' => (string)($policy['top_level_parallel_policy'] ?? ''),
+                'intra_suite_parallel_policy' => (string)($policy['intra_suite_parallel_policy'] ?? ''),
+                'declared_runner_hazards' => is_array($policy['declared_runner_hazards'] ?? null) ? $policy['declared_runner_hazards'] : [],
                 'suite_lock_key' => (string)($policy['suite_lock_key'] ?? ''),
                 'warnings' => $warnings,
             ];
@@ -173,6 +187,8 @@ final class SuiteOrchestrator
                 $postRun($result, $config);
             }
 
+            $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
+
             ConsoleReporter::printSuiteResult($result);
             ResultWriter::writeSuite($result);
 
@@ -189,6 +205,8 @@ final class SuiteOrchestrator
                 admission: $admission,
                 error: $e
             );
+
+            $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
 
             ConsoleReporter::printSuiteResult($result);
             ResultWriter::writeSuite($result);
@@ -346,7 +364,7 @@ final class SuiteOrchestrator
      * @param array<string,mixed> $config
      * @param array<int,array<string,mixed>> $tests
      * @param array<string,mixed> $policy
-     * @param array<int,string> $warnings
+     * @param array<int,array<string,mixed>> $warnings
      * @param array<string,mixed> $admission
      * @return array<string,mixed>
      */
@@ -405,7 +423,14 @@ final class SuiteOrchestrator
             'jobs' => (int)($config['jobs'] ?? 1),
             'module_summary' => [],
             'report_contract_version' => (int)($config['report_contract_version'] ?? 2),
+            'runner_contract_version' => (int)($config['runner_contract_version'] ?? 1),
             'runner_capabilities' => $config['runner_capabilities'] ?? [],
+            'runner_hazards' => $config['runner_hazards'] ?? [],
+            'runner_contract' => [
+                'version' => (int)($config['runner_contract_version'] ?? 1),
+                'capabilities' => $config['runner_capabilities'] ?? [],
+                'hazards' => $config['runner_hazards'] ?? [],
+            ],
             'report_root' => $reportRoot,
             'report_scope_rel' => Paths::relativeToRepo($reportRoot),
             'match' => (string)($config['match'] ?? ''),
@@ -441,6 +466,9 @@ final class SuiteOrchestrator
                 'has_db_runtime' => (bool)($policy['has_db_runtime'] ?? false),
                 'requires_db_isolation' => (bool)($policy['requires_db_isolation'] ?? false),
                 'top_level_parallel_supported' => (bool)($policy['top_level_parallel_supported'] ?? true),
+                'top_level_parallel_policy' => (string)($policy['top_level_parallel_policy'] ?? ''),
+                'intra_suite_parallel_policy' => (string)($policy['intra_suite_parallel_policy'] ?? ''),
+                'declared_runner_hazards' => is_array($policy['declared_runner_hazards'] ?? null) ? $policy['declared_runner_hazards'] : [],
                 'suite_lock_key' => (string)($policy['suite_lock_key'] ?? ''),
                 'warnings' => $warnings,
             ],

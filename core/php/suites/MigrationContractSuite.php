@@ -7,6 +7,7 @@ use RuntimeException;
 use Throwable;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Config\SuiteContractRegistry;
 use Testkit\Core\Reporting\ResultWriter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Seeding\BaselineManifest;
@@ -133,19 +134,22 @@ final class MigrationContractSuite
         array $failures,
         ?array $resolvedSnapshot = null
     ): array {
+        $contract = SuiteContractRegistry::contractForSuite('migration_contract', 'php');
         $passed = $suiteStatus === 'passed' ? 1 : 0;
         $failed = $suiteStatus === 'failed' ? 1 : 0;
 
         return [
             'report_contract_version' => 1,
+            'runner_contract_version' => (int)($contract['contract_version'] ?? 1),
             'suite_id' => 'migration_contract',
             'suite_status' => $suiteStatus,
             'no_tests_reason' => '',
-            'runner_capabilities' => [
-                'bootstrap_only' => true,
-                'executes_domain_tests' => false,
-                'supports_snapshot_baseline' => true,
-                'supports_layered_baseline' => false,
+            'runner_capabilities' => is_array($contract['capabilities'] ?? null) ? $contract['capabilities'] : [],
+            'runner_hazards' => is_array($contract['hazards'] ?? null) ? $contract['hazards'] : [],
+            'runner_contract' => [
+                'version' => (int)($contract['contract_version'] ?? 1),
+                'capabilities' => is_array($contract['capabilities'] ?? null) ? $contract['capabilities'] : [],
+                'hazards' => is_array($contract['hazards'] ?? null) ? $contract['hazards'] : [],
             ],
             'run_kind' => 'suite',
             'run_id' => Env::string('TEST_RUN_ID', ''),
