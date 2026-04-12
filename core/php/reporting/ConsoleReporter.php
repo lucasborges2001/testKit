@@ -118,14 +118,17 @@ final class ConsoleReporter
      */
     private static function printWarnings(array $result): void
     {
-        $warnings = StructuredWarnings::normalizeList($result['warnings'] ?? (($result['parallel_policy']['warnings'] ?? null)));
+        $warnings = StructuredWarnings::canonicalize($result['warnings'] ?? ($result['parallel_policy']['warnings'] ?? null));
         if ($warnings === []) {
             return;
         }
 
         UI::section("Warnings");
         foreach ($warnings as $warning) {
-            echo "  - " . StructuredWarnings::consoleLine($warning) . "\n";
+            $severity = strtoupper((string)($warning['severity'] ?? 'WARN'));
+            $code     = (string)($warning['code'] ?? 'WARNING');
+            $summary  = (string)($warning['summary'] ?? '');
+            echo "  - [{$severity}] {$code}: {$summary}\n";
         }
     }
 
