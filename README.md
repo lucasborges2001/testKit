@@ -106,14 +106,22 @@ DB profile report (if enabled):
 php scripts/query_report.php
 ```
 
+Framework self-tests:
+
+```bash
+php tests/framework/run.php
+```
+
 ## Reporting contract
 
 Each suite report now exposes, at minimum:
 
 - `report_contract_version`
 - `suite_status` (`passed|failed|all_skipped|no_tests|listed`)
+- `outcome_status` (`passed|failed|partial|skipped|timeout|contention|bootstrap_error|discovery_error|reporting_error|infra_error|no_tests|listed`)
 - `no_tests_reason` when selection is empty
 - `runner_capabilities` so consumers can distinguish what each suite actually supports
+- `diagnostics` / `summary.status_counts` / `summary.phase_failure_counts` for timeout, bootstrap/store contention and other operational causes
 
 `front_js` consumes the same discovered selection produced by the shared PHP discovery layer, so scope/category/match resolution and module-scoped report roots stay aligned across suites.
 

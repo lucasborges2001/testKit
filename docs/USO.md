@@ -161,17 +161,11 @@ No usar con:
 
 ### `clean`
 
-Mantiene una sola DB pero la limpia entre tests sensibles.
+**No implementado.** Usar `clean` lanza un error explícito al iniciar la suite.
 
-Útil para:
+Si necesitás reducir drift entre tests en modo secuencial, usá `shared` y gestioná el estado en los propios tests o fixtures del proyecto.
 
-- corridas secuenciales donde querés reducir drift entre tests
-
-No usar con:
-
-- `TEST_JOBS > 1` en suites con DB integration/e2e
-
-Razón: sigue habiendo una sola DB mutable.
+Para aislamiento real, usá `per_worker`.
 
 ### `per_worker`
 
@@ -695,9 +689,9 @@ Ejemplo de `state.json`:
 ```json
 {
   "markers": [
-    { "type": "table", "name": "CheckoutCargaOrden" },
-    { "type": "column", "table": "CheckoutCargaOrden", "column": "id" },
-    { "type": "column", "table": "CheckoutCargaOrden", "column": "sesion_carga_id" }
+    { "type": "table", "name": "orders" },
+    { "type": "column", "table": "orders", "column": "id" },
+    { "type": "column", "table": "orders", "column": "status" }
   ]
 }
 ```

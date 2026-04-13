@@ -267,8 +267,9 @@ final class MysqlStoreAdapter implements StoreAdapter
         $port = escapeshellarg($this->mysqlPort());
         $user = escapeshellarg($this->adminUser());
 
+        // set -o pipefail ensures that a mysqldump failure is not masked by mysql's exit code.
         $command = sprintf(
-            '%s --host=%s --port=%s --user=%s --single-transaction --skip-lock-tables --routines --triggers --events --no-tablespaces %s'
+            'set -o pipefail; %s --host=%s --port=%s --user=%s --single-transaction --skip-lock-tables --routines --triggers --events --no-tablespaces %s'
             . ' | %s --host=%s --port=%s --user=%s %s',
             escapeshellcmd($binDump),
             $host,
@@ -283,6 +284,7 @@ final class MysqlStoreAdapter implements StoreAdapter
         );
 
         $this->runShellCommand($command, $env, 'mysql clone database');
+        $this->verifyCloneResult($sourceDatabase, $targetDatabase);
 
         Trace::log('store.clone_database', [
             'driver' => 'mysql',
@@ -310,8 +312,9 @@ final class MysqlStoreAdapter implements StoreAdapter
 
         if (str_ends_with(strtolower($artifactPath), '.gz')) {
             $binGzip = $this->requireBinary('gzip');
+            // set -o pipefail ensures gzip decompression failures are not hidden by mysql's exit code.
             $command = sprintf(
-                '%s -dc %s | %s --host=%s --port=%s --user=%s %s',
+                'set -o pipefail; %s -dc %s | %s --host=%s --port=%s --user=%s %s',
                 escapeshellcmd($binGzip),
                 $file,
                 escapeshellcmd($binMysql),
@@ -339,6 +342,65 @@ final class MysqlStoreAdapter implements StoreAdapter
             'db' => $targetDatabase,
             'artifact' => $artifactPath,
         ]);
+    }
+
+    /**
+     * After a clone, verify that the target database received at least as many tables
+     * as the source had. A discrepancy of source > 0 AND target = 0 indicates that
+     * mysqldump produced no output (e.g. auth failure, empty dump, early crash).
+     *
+     * Uses information_schema so no extra binaries or connections are needed.
+     * The check is intentionally cheap: we count tables, we do not compare rows.
+     */
+    private function verifyCloneResult(string $source, string $target): void
+    {
+        try {
+            $pdo  = $this->adminConnectNoDatabase();
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM information_schema.tables
+                 WHERE table_schema = ? AND table_type = 'BASE TABLE'"
+            );
+
+            $stmt->execute([$source]);
+            $sourceCount = (int)$stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if ($sourceCount === 0) {
+                return; // source was empty — nothing meaningful to check
+            }
+
+            $stmt->execute([$target]);
+            $targetCount = (int)$stmt->fetchColumn();
+            $stmt->closeCursor();
+
+            if ($targetCount === 0) {
+                throw new \RuntimeException(
+                    sprintf(
+                        'Clone fallido: fuente "%s" tiene %d tabla(s) pero target "%s" tiene 0. '
+                        . 'Revisá el stderr de mysqldump en el log.',
+                        $source,
+                        $sourceCount,
+                        $target
+                    )
+                );
+            }
+
+            Trace::log('store.clone_verify', [
+                'driver'       => 'mysql',
+                'source_db'    => $source,
+                'target_db'    => $target,
+                'source_tables' => $sourceCount,
+                'target_tables' => $targetCount,
+            ]);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(
+                'Error verificando clone de DB: ' . $e->getMessage(),
+                0,
+                $e
+            );
+        }
     }
 
     private function dropObjects(PDO $pdo, string $sql, callable $buildDropSql): int

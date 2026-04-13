@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/core/php/bootstrap.php';
+require_once __DIR__ . '/../../core/php/bootstrap.php';
 
 use Testkit\Core\Execution\ProcessRunner;
 
@@ -13,7 +13,7 @@ $cmd = [
 ];
 
 echo "--- Prueba 2: Bloqueo secuencial (finish) ---\n";
-$job = ProcessRunner::start($cmd, __DIR__, []);
+$job = ProcessRunner::start($cmd, dirname(__DIR__, 2), []);
 
 if (!($job['ok'] ?? false)) {
     fwrite(STDERR, "Error al iniciar proceso\n");

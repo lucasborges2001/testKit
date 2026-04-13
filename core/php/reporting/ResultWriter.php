@@ -194,6 +194,7 @@ final class ResultWriter
             'runs_index' => 'runs_latest.json',
         ];
 
+        $report = ReportSummary::enrichReport($report);
         return CanonicalReport::enrich($report);
     }
 

@@ -47,9 +47,24 @@ final class BaselineManifest
             throw new \RuntimeException('No se pudo serializar baseline manifest.');
         }
 
-        $written = file_put_contents($path, $json . PHP_EOL);
-        if ($written === false) {
-            throw new \RuntimeException('No se pudo escribir baseline manifest: ' . $path);
+        $dir = dirname($path);
+        $tmp = @tempnam($dir, '.manifest_tmp_');
+        if ($tmp === false) {
+            throw new \RuntimeException('No se pudo crear archivo temporal para baseline manifest en: ' . $dir);
+        }
+
+        try {
+            $written = file_put_contents($tmp, $json . PHP_EOL);
+            if ($written === false) {
+                throw new \RuntimeException('No se pudo escribir baseline manifest temporal: ' . $tmp);
+            }
+
+            if (!@rename($tmp, $path)) {
+                throw new \RuntimeException('No se pudo renombrar manifest temporal a destino: ' . $path);
+            }
+        } catch (\Throwable $e) {
+            @unlink($tmp);
+            throw $e;
         }
     }
 

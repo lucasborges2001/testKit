@@ -2,50 +2,50 @@
   "markers": [
     {
       "type": "table",
-      "name": "CheckoutCargaOrden"
+      "name": "orders"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaOrden",
+      "table": "orders",
       "column": "id"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaOrden",
-      "column": "sesion_carga_id"
+      "table": "orders",
+      "column": "session_id"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaOrden",
-      "column": "estado"
+      "table": "orders",
+      "column": "status"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaOrden",
+      "table": "orders",
       "column": "created_at"
     },
     {
       "type": "table",
-      "name": "CheckoutCargaEvento"
+      "name": "order_events"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaEvento",
+      "table": "order_events",
       "column": "id"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaEvento",
-      "column": "orden_id"
+      "table": "order_events",
+      "column": "order_id"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaEvento",
-      "column": "tipo"
+      "table": "order_events",
+      "column": "type"
     },
     {
       "type": "column",
-      "table": "CheckoutCargaEvento",
+      "table": "order_events",
       "column": "created_at"
     }
   ]

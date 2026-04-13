@@ -22,6 +22,7 @@ final class CanonicalReport
             'final_status' => self::finalStatus($report),
             'selection' => self::selection($report, $kind),
             'summary' => is_array($report['summary'] ?? null) ? $report['summary'] : [],
+            'diagnostics' => ReportSummary::diagnostics($report),
             'evidence' => self::evidence($report),
             'artifacts' => self::artifacts($report),
             'seed_state' => self::seedState($report),
@@ -37,7 +38,10 @@ final class CanonicalReport
      */
     private static function finalStatus(array $report): string
     {
-        $status = strtolower(trim((string)($report['suite_status'] ?? '')));
+        $status = strtolower(trim((string)($report['outcome_status'] ?? '')));
+        if ($status === '') {
+            $status = strtolower(trim((string)($report['suite_status'] ?? '')));
+        }
         if ($status === '') {
             $status = strtolower(trim((string)($report['final_status'] ?? '')));
         }
@@ -46,6 +50,9 @@ final class CanonicalReport
             'passed' => 'PASS',
             'failed' => 'FAIL',
             'partial' => 'PARTIAL',
+            'timeout' => 'TIMEOUT',
+            'contention' => 'BLOCKED',
+            'infra_error', 'bootstrap_error', 'discovery_error', 'reporting_error' => 'ERROR',
             'skipped', 'all_skipped' => 'SKIP',
             'no_tests' => 'NO_TESTS',
             'listed' => 'LISTED',

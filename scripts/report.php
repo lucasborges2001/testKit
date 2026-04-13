@@ -49,14 +49,18 @@ usort($reports, static fn(array $a, array $b): int => strcmp((string)$a['suite_i
 $totalPass = 0;
 $totalFail = 0;
 $totalSkip = 0;
+$totalTimeout = 0;
 $totalTests = 0;
 $allFailures = [];
+$globalPhaseCounts = [];
+$globalCauseCounts = [];
 
 foreach ($reports as &$r) {
     $summary = is_array($r['summary'] ?? null) ? $r['summary'] : [];
     $totalPass += (int)($r['pass'] ?? $summary['passed'] ?? 0);
     $totalFail += (int)($r['fail'] ?? $summary['failed'] ?? 0);
     $totalSkip += (int)($r['skip'] ?? $summary['skipped'] ?? 0);
+    $totalTimeout += (int)($r['timeout'] ?? $summary['timeouts'] ?? 0);
     $totalTests += (int)($r['tests_total'] ?? $summary['total'] ?? 0);
 
     $failures = ReportSummary::canonicalFailures($r);
@@ -64,32 +68,44 @@ foreach ($reports as &$r) {
     $r['_triage_summary'] = is_array($r['triage_summary'] ?? null)
         ? $r['triage_summary']
         : FailureClassifier::summarize($failures, 4);
+    $r['_diagnostics'] = is_array($r['diagnostics'] ?? null) ? $r['diagnostics'] : ReportSummary::diagnostics($r);
 
     foreach ($failures as $failure) {
         $allFailures[] = $failure;
+    }
+
+    foreach ((array)($r['_diagnostics']['phase_failure_counts'] ?? []) as $phase => $count) {
+        $globalPhaseCounts[(string)$phase] = (int)($globalPhaseCounts[(string)$phase] ?? 0) + (int)$count;
+    }
+    foreach ((array)($r['_diagnostics']['cause_counts'] ?? []) as $cause => $count) {
+        $globalCauseCounts[(string)$cause] = (int)($globalCauseCounts[(string)$cause] ?? 0) + (int)$count;
     }
 }
 unset($r);
 
 echo "== TestKit Executive Summary ==\n";
-echo "Status:    " . ($totalFail > 0 ? "FAIL" : "PASS") . "\n";
+echo "Status:    " . ($totalFail > 0 ? ($totalTimeout > 0 ? "TIMEOUT/FAIL" : "FAIL") : "PASS") . "\n";
 echo "Total:     {$totalTests} tests\n";
-echo "Results:   pass={$totalPass} fail={$totalFail} skip={$totalSkip}\n";
+echo "Results:   pass={$totalPass} fail={$totalFail} skip={$totalSkip} timeout={$totalTimeout}\n";
 echo str_repeat("=", 96) . "\n\n";
 
 echo "Suite Summary\n";
 echo str_pad("Suite", 16) . " | "
+    . str_pad("Outcome", 16) . " | "
     . str_pad("Scope", 16) . " | "
     . str_pad("Tests", 5, ' ', STR_PAD_LEFT) . " | "
     . str_pad("Pass", 4, ' ', STR_PAD_LEFT) . " | "
     . str_pad("Fail", 4, ' ', STR_PAD_LEFT) . " | "
     . str_pad("Skip", 4, ' ', STR_PAD_LEFT) . " | "
+    . str_pad("T/O", 3, ' ', STR_PAD_LEFT) . " | "
     . str_pad("Time (ms)", 9, ' ', STR_PAD_LEFT) . " | "
-    . "Location\n";
-echo str_repeat("-", 120) . "\n";
+    . "Phase/Cause\n";
+echo str_repeat("-", 140) . "\n";
 foreach ($reports as $report) {
     $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+    $diagnostics = is_array($report['_diagnostics'] ?? null) ? $report['_diagnostics'] : [];
     $suite = str_pad((string)$report['suite_id'], 16);
+    $outcome = str_pad((string)($diagnostics['outcome_status'] ?? $report['outcome_status'] ?? $report['suite_status'] ?? 'unknown'), 16);
     $scope = trim((string)($report['selected_module_scope'] ?? ''));
     if ($scope === '') {
         $scope = 'global';
@@ -99,10 +115,11 @@ foreach ($reports as $report) {
     $pass = str_pad((string)($report['pass'] ?? $summary['passed'] ?? 0), 4, ' ', STR_PAD_LEFT);
     $fail = str_pad((string)($report['fail'] ?? $summary['failed'] ?? 0), 4, ' ', STR_PAD_LEFT);
     $skip = str_pad((string)($report['skip'] ?? $summary['skipped'] ?? 0), 4, ' ', STR_PAD_LEFT);
+    $timeout = str_pad((string)($report['timeout'] ?? $summary['timeouts'] ?? 0), 3, ' ', STR_PAD_LEFT);
     $duration = str_pad((string)($report['duration_ms'] ?? $summary['duration_ms'] ?? 0), 9, ' ', STR_PAD_LEFT);
-    $location = (string)($report['report_scope_rel'] ?? $report['report_root'] ?? '(default)');
+    $phaseCause = (string)($diagnostics['primary_phase'] ?? 'none') . '/' . (string)($diagnostics['cause_code'] ?? 'none');
 
-    echo "{$suite} | {$scope} | {$tests} | {$pass} | {$fail} | {$skip} | {$duration} | {$location}\n";
+    echo "{$suite} | {$outcome} | {$scope} | {$tests} | {$pass} | {$fail} | {$skip} | {$timeout} | {$duration} | {$phaseCause}\n";
 }
 
 echo "\nDominant blockers\n";
@@ -137,6 +154,28 @@ if ($globalTriage === []) {
     }
 }
 
+echo "\nDiagnostic signals\n";
+if ($globalPhaseCounts === [] && $globalCauseCounts === []) {
+    echo "- none\n";
+} else {
+    if ($globalPhaseCounts !== []) {
+        echo '- phase failures: ';
+        $parts = [];
+        foreach ($globalPhaseCounts as $phase => $count) {
+            $parts[] = $phase . '=' . $count;
+        }
+        echo implode(', ', $parts) . "\n";
+    }
+    if ($globalCauseCounts !== []) {
+        echo '- causes: ';
+        $parts = [];
+        foreach ($globalCauseCounts as $cause => $count) {
+            $parts[] = $cause . '=' . $count;
+        }
+        echo implode(', ', $parts) . "\n";
+    }
+}
+
 echo "\nScope Details\n";
 $printedScope = false;
 foreach ($reports as $report) {
@@ -165,6 +204,14 @@ foreach ($reports as $report) {
 
     $hasFailures = true;
     echo '- ' . (string)$report['suite_id'] . "\n";
+    $diagnostics = is_array($report['_diagnostics'] ?? null) ? $report['_diagnostics'] : [];
+    echo '    outcome: ' . (string)($diagnostics['outcome_status'] ?? $report['outcome_status'] ?? $report['suite_status'] ?? 'unknown')
+        . ', phase=' . (string)($diagnostics['primary_phase'] ?? 'none')
+        . ', cause=' . (string)($diagnostics['cause_code'] ?? 'none') . "\n";
+    if ((bool)($diagnostics['has_contention'] ?? false)) {
+        echo '    contention: resource=' . (string)($diagnostics['resource'] ?? '')
+            . ', lock=' . (string)($diagnostics['lock_key'] ?? '') . "\n";
+    }
 
     $failedFiles = ReportSummary::failedFiles($failures);
     echo '    files: ' . ($failedFiles ? implode(', ', $failedFiles) : 'none') . "\n";

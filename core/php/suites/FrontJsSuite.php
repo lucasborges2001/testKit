@@ -33,11 +33,10 @@ final class FrontJsSuite
             'js'
         );
 
-        $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
-        $reportRoot = Paths::resolveReportRoot($discovered);
-        $moduleScope = self::moduleScope($discovered);
-        Paths::ensureDir($reportRoot);
-        Paths::recordSuiteReportRoot($reportRoot, 'front_js');
+        $discovered = [];
+        $reportRoot = Paths::reportsRoot();
+        $moduleScope = '';
+        $currentPhase = 'discovery';
 
         $runId = self::envString('TEST_RUN_ID');
         if ($runId === '') {
@@ -63,8 +62,16 @@ final class FrontJsSuite
 
         $lockLease = null;
         try {
+            $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
+            $reportRoot = Paths::resolveReportRoot($discovered);
+            $moduleScope = self::moduleScope($discovered);
+            Paths::ensureDir($reportRoot);
+            Paths::recordSuiteReportRoot($reportRoot, 'front_js');
+
+            $currentPhase = 'bootstrap';
             ContractWorldBootstrap::prepare('front_js', $repoRoot);
 
+            $currentPhase = 'admission';
             $policy = ParallelGuard::evaluate($discovered, $config, Paths::repoRoot());
             $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
             $admission = ParallelGuard::admissionState($policy);
@@ -123,6 +130,7 @@ final class FrontJsSuite
                 $env['TEST_RUN_ID'] = $runId;
                 $env['TEST_META_RUN_ID'] = $metaRunId;
 
+                $currentPhase = 'execution';
                 $job = ProcessRunner::start([$nodePath, $runner], $repoRoot, $env);
                 $done = ProcessRunner::finish($job);
             } finally {
@@ -138,6 +146,7 @@ final class FrontJsSuite
                 fwrite(STDERR, $stderr);
             }
 
+            $currentPhase = 'reporting';
             self::enrichLatestReport($reportRoot, $config, $policy, $warnings, $admission, $runId, $metaRunId);
 
             return (int)($done['code'] ?? 1);
@@ -151,9 +160,11 @@ final class FrontJsSuite
                 policy: $policy,
                 warnings: $warnings,
                 admission: $admission,
+                phase: $currentPhase,
                 error: $e
             );
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
+            $result = ReportSummary::enrichReport($result);
             ResultWriter::writeSuite($result);
             return SuiteExecutor::EXIT_ERROR;
         } finally {
@@ -232,6 +243,7 @@ final class FrontJsSuite
         $report['fragility_hints'] = $history['fragility_hints'];
 
         $report = SuiteSeedState::attachToReport($report, Paths::repoRoot());
+        $report = ReportSummary::enrichReport($report);
 
         ResultWriter::writeSuite($report);
     }
@@ -406,12 +418,38 @@ final class FrontJsSuite
         array $policy,
         array $warnings,
         array $admission,
+        string $phase,
         Throwable $error
     ): array {
         $moduleScope = self::moduleScope($tests);
-        $failureKind = (string)($admission['reason'] ?? '') === 'shared_store_locked'
-            ? 'environment_conflict'
-            : 'setup_failure';
+        $admissionReason = (string)($admission['reason'] ?? '');
+        $failureKind = match (true) {
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'environment_conflict',
+            $phase === 'discovery' => 'discovery_failure',
+            $phase === 'reporting' => 'reporting_failure',
+            $phase === 'bootstrap' => 'bootstrap_failure',
+            default => 'bootstrap_failure',
+        };
+        $failurePhase = match (true) {
+            $phase === 'discovery' => 'discovery',
+            $phase === 'reporting' => 'reporting',
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'store_setup',
+            $phase === 'bootstrap' => 'bootstrap',
+            default => 'execution',
+        };
+        $failureDomain = match (true) {
+            $phase === 'discovery' => 'discovery',
+            $phase === 'reporting' => 'reporting',
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'store',
+            $phase === 'bootstrap' => 'bootstrap',
+            default => 'runner',
+        };
+        $causeCode = $admissionReason !== '' ? $admissionReason : match ($failurePhase) {
+            'discovery' => 'discovery_failed',
+            'reporting' => 'report_write_failed',
+            'bootstrap' => 'bootstrap_failed',
+            default => 'runner_exception',
+        };
 
         $failure = ReportSummary::buildThrowableFailure($error, [
             'test_id' => 'front_js.bootstrap',
@@ -423,6 +461,9 @@ final class FrontJsSuite
             'category' => (string)($config['category'] ?? 'all'),
             'file' => '',
             'kind' => $failureKind,
+            'phase' => $failurePhase,
+            'failure_domain' => $failureDomain,
+            'cause_code' => $causeCode,
             'artifact_path' => Paths::relativeToRepo($reportRoot),
         ]);
 

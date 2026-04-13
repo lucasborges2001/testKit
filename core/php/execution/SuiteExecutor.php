@@ -31,6 +31,7 @@ final class SuiteExecutor
             'pass' => 0,
             'fail' => 0,
             'skip' => 0,
+            'timeout' => 0,
             'tests' => [],
             'failed_tests' => [],
             'slow_tests' => [],
@@ -111,7 +112,8 @@ final class SuiteExecutor
                 $env = array_merge($baseEnv, $launch['env'] ?? []);
                 $env['TEST_WORKER_ID'] = (string)$workerId;
 
-                $job = ProcessRunner::start($launch['cmd'], (string)($config['repo_root'] ?? Env::string('TK_REPO_ROOT', getcwd() ?: '.')), $env);
+                $timeoutSec = max(0, (int)($config['test_timeout_sec'] ?? 0));
+                $job = ProcessRunner::start($launch['cmd'], (string)($config['repo_root'] ?? Env::string('TK_REPO_ROOT', getcwd() ?: '.')), $env, $timeoutSec);
                 $running[] = [
                     'test' => $test,
                     'worker' => $workerId,
@@ -162,7 +164,8 @@ final class SuiteExecutor
         $env = array_merge($baseEnv, $launch['env'] ?? []);
         $env['TEST_WORKER_ID'] = (string)$workerId;
 
-        $job = ProcessRunner::start($launch['cmd'], (string)($config['repo_root'] ?? Env::string('TK_REPO_ROOT', getcwd() ?: '.')), $env);
+        $timeoutSec = max(0, (int)($config['test_timeout_sec'] ?? 0));
+        $job = ProcessRunner::start($launch['cmd'], (string)($config['repo_root'] ?? Env::string('TK_REPO_ROOT', getcwd() ?: '.')), $env, $timeoutSec);
         $finished = ProcessRunner::finish($job);
 
         return self::buildEntryFromJob($test, $launch, $finished, $config);
@@ -178,7 +181,10 @@ final class SuiteExecutor
     private static function buildEntryFromJob(array $test, array $launch, array $finished, array $config): array
     {
         $exitCode = (int)($finished['code'] ?? 127);
-        $status = $exitCode === self::EXIT_PASS ? 'pass' : ($exitCode === self::EXIT_SKIP ? 'skip' : 'fail');
+        $timedOut = (bool)($finished['timeout'] ?? false);
+        $status = $timedOut
+            ? 'timeout'
+            : ($exitCode === self::EXIT_PASS ? 'pass' : ($exitCode === self::EXIT_SKIP ? 'skip' : 'fail'));
         $durationMs = (int)($finished['duration_ms'] ?? 0);
 
         $entry = self::baseEntry(
@@ -190,6 +196,18 @@ final class SuiteExecutor
             (string)($finished['stderr'] ?? ''),
             $launch['cmd'] ?? []
         );
+
+        if ($timedOut) {
+            $entry['timeout'] = true;
+            $entry['error_type'] = 'process_timeout';
+            $entry['failure_phase'] = 'execution';
+            $entry['failure_domain'] = 'runner';
+            $entry['failure_cause_code'] = 'process_timeout';
+        } elseif ($status === 'fail') {
+            $entry['error_type'] = 'exit_code_' . $exitCode;
+            $entry['failure_phase'] = 'execution';
+            $entry['failure_domain'] = 'test';
+        }
 
         $perfMax = (int)($config['thresholds']['perf_max_ms'] ?? 0);
         $category = (string)($config['category'] ?? 'all');
@@ -248,6 +266,10 @@ final class SuiteExecutor
             $result['pass']++;
         } elseif ($entry['status'] === 'skip') {
             $result['skip']++;
+        } elseif ($entry['status'] === 'timeout') {
+            $result['timeout']++;
+            $result['fail']++;
+            $result['failed_tests'][] = $entry;
         } else {
             $result['fail']++;
             $result['failed_tests'][] = $entry;
@@ -345,7 +367,7 @@ final class SuiteExecutor
         foreach ($tests as $test) {
             $module = (string)($test['module'] ?? 'unknown');
             if (!isset($summary[$module])) {
-                $summary[$module] = ['pass' => 0, 'fail' => 0, 'skip' => 0, 'total' => 0];
+                $summary[$module] = ['pass' => 0, 'fail' => 0, 'skip' => 0, 'timeout' => 0, 'total' => 0];
             }
 
             $summary[$module]['total']++;

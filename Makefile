@@ -50,3 +50,6 @@ report:
 
 query-report:
 	./bin/testkit run --rm testkit php /workspace/testkit/scripts/query_report.php
+
+self-test:
+	php tests/framework/run.php

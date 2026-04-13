@@ -6,6 +6,7 @@ namespace Testkit\Core\Suites;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
+use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
@@ -46,84 +47,119 @@ final class MetaRunner
         $suiteRows = [];
         $suiteReports = [];
         $overallFail = false;
+        $currentPhase = 'admission';
+        $resourcePolicy = ParallelGuard::evaluateRunResource($selected, Paths::repoRoot());
+        $admission = ParallelGuard::runResourceAdmissionState($resourcePolicy);
+        $resourceLease = null;
 
-        foreach ($selected as $suiteId) {
-            $start = self::nowMs();
-            $code = self::runSuite($suiteId);
-            $duration = max(0, self::nowMs() - $start);
-
-            $suiteRow = [
-                'suite_id' => $suiteId,
-                'exit_code' => $code,
-                'duration_ms' => $duration,
-            ];
-
-            $suiteReport = ReportSummary::loadLatestSuiteReport($suiteId, array_filter([
-                Paths::reportRootForSuite($suiteId) ?? '',
-                Paths::aggregateMetaReportRoot(),
-            ]));
-            if (is_array($suiteReport)) {
-                $suiteReports[] = $suiteReport;
-                $suiteRow['report_root'] = (string)($suiteReport['report_root'] ?? '');
-                $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
-                $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
-                $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
-                $suiteRow['suite_status'] = (string)($suiteReport['suite_status'] ?? '');
-                $suiteRow['no_tests_reason'] = (string)($suiteReport['no_tests_reason'] ?? '');
-                $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
-                $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
-                $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
-                $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
-                $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
-                $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
-                $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
+        try {
+            try {
+                $resourceLease = ParallelGuard::acquireRunResourceLock($resourcePolicy);
+            } catch (\Throwable $e) {
+                $admission = ParallelGuard::rejectedByRunLockState($resourcePolicy);
+                throw $e;
             }
 
-            $suiteRows[] = $suiteRow;
+            $currentPhase = 'execution';
+            foreach ($selected as $suiteId) {
+                $start = self::nowMs();
+                $code = self::runSuite($suiteId);
+                $duration = max(0, self::nowMs() - $start);
 
-            if ($code !== 0 && $code !== 2) {
-                $overallFail = true;
-                if ((bool)$config['meta_fail_fast']) {
-                    break;
+                $suiteRow = [
+                    'suite_id' => $suiteId,
+                    'exit_code' => $code,
+                    'duration_ms' => $duration,
+                ];
+
+                $suiteReport = ReportSummary::loadLatestSuiteReport($suiteId, array_filter([
+                    Paths::reportRootForSuite($suiteId) ?? '',
+                    Paths::aggregateMetaReportRoot(),
+                ]));
+                if (is_array($suiteReport)) {
+                    $suiteReports[] = $suiteReport;
+                    $suiteRow['report_root'] = (string)($suiteReport['report_root'] ?? '');
+                    $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
+                    $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
+                    $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
+                    $suiteRow['suite_status'] = (string)($suiteReport['suite_status'] ?? '');
+                    $suiteRow['outcome_status'] = (string)($suiteReport['outcome_status'] ?? '');
+                    $suiteRow['no_tests_reason'] = (string)($suiteReport['no_tests_reason'] ?? '');
+                    $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
+                    $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
+                    $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
+                    $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
+                    $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
+                    $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
+                    $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
+                }
+
+                $suiteRows[] = $suiteRow;
+
+                if ($code !== 0 && $code !== 2) {
+                    $overallFail = true;
+                    if ((bool)$config['meta_fail_fast']) {
+                        break;
+                    }
                 }
             }
+
+            $reportRoot = Paths::aggregateMetaReportRoot();
+            Paths::ensureDir($reportRoot);
+
+            $meta = ReportSummary::buildMetaReport(
+                $target,
+                Env::string('TEST_CATEGORY', 'all'),
+                $suiteRows,
+                $suiteReports,
+                $reportRoot,
+                max(0, self::nowMs() - $metaStart),
+                $metaStartedAt
+            );
+
+            $meta['run_id'] = $runId;
+            $meta['meta_run_id'] = $runId;
+            $meta['run_kind'] = 'meta';
+            $meta['report_keep'] = (int)($config['report_keep'] ?? 5);
+            $meta['runs_index_keep'] = (int)($config['runs_index_keep'] ?? $config['report_keep'] ?? 5);
+            $meta['concurrency_admission'] = $admission;
+            $meta['filters'] = [
+                'target' => $target,
+                'scope' => Env::string('TEST_SCOPE', 'all'),
+                'category' => Env::string('TEST_CATEGORY', 'all'),
+                'match' => Env::string('TEST_MATCH', ''),
+            ];
+            $meta = ReportSummary::enrichReport($meta);
+
+            $currentPhase = 'reporting';
+            ConsoleReporter::printMeta($meta);
+            ResultWriter::writeMeta($meta);
+
+            if ($overallFail) {
+                echo "\n[Action Required]\n";
+                echo "Alguna suite falló. Revisá los logs de arriba o corré el reporte detallado:\n";
+                echo "  php scripts/report.php\n";
+            }
+
+            return $overallFail ? 1 : 0;
+        } catch (\Throwable $e) {
+            $meta = self::buildOperationalFailureMeta(
+                target: $target,
+                category: Env::string('TEST_CATEGORY', 'all'),
+                reportRoot: Paths::aggregateMetaReportRoot(),
+                durationMs: max(0, self::nowMs() - $metaStart),
+                startedAt: $metaStartedAt,
+                runId: $runId,
+                admission: $admission,
+                phase: $currentPhase,
+                error: $e
+            );
+            ConsoleReporter::printMeta($meta);
+            ResultWriter::writeMeta($meta);
+            return 1;
+        } finally {
+            $resourceLease?->release();
         }
-
-        $reportRoot = Paths::aggregateMetaReportRoot();
-        Paths::ensureDir($reportRoot);
-
-        $meta = ReportSummary::buildMetaReport(
-            $target,
-            Env::string('TEST_CATEGORY', 'all'),
-            $suiteRows,
-            $suiteReports,
-            $reportRoot,
-            max(0, self::nowMs() - $metaStart),
-            $metaStartedAt
-        );
-
-        $meta['run_id'] = $runId;
-        $meta['meta_run_id'] = $runId;
-        $meta['run_kind'] = 'meta';
-        $meta['report_keep'] = (int)($config['report_keep'] ?? 5);
-        $meta['runs_index_keep'] = (int)($config['runs_index_keep'] ?? $config['report_keep'] ?? 5);
-        $meta['filters'] = [
-            'target' => $target,
-            'scope' => Env::string('TEST_SCOPE', 'all'),
-            'category' => Env::string('TEST_CATEGORY', 'all'),
-            'match' => Env::string('TEST_MATCH', ''),
-        ];
-
-        ConsoleReporter::printMeta($meta);
-        ResultWriter::writeMeta($meta);
-
-        if ($overallFail) {
-            echo "\n[Action Required]\n";
-            echo "Alguna suite falló. Revisá los logs de arriba o corré el reporte detallado:\n";
-            echo "  php scripts/report.php\n";
-        }
-
-        return $overallFail ? 1 : 0;
     }
 
     /**
@@ -203,5 +239,91 @@ final class MetaRunner
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function buildOperationalFailureMeta(
+        string $target,
+        string $category,
+        string $reportRoot,
+        int $durationMs,
+        string $startedAt,
+        string $runId,
+        array $admission,
+        string $phase,
+        \Throwable $error
+    ): array {
+        Paths::ensureDir($reportRoot);
+
+        $failurePhase = in_array((string)($admission['reason'] ?? ''), ['shared_store_locked', 'store_resource_locked'], true)
+            ? 'store_setup'
+            : $phase;
+        $failureDomain = $failurePhase === 'store_setup' ? 'store' : ($failurePhase === 'reporting' ? 'reporting' : 'infra');
+        $causeCode = (string)($admission['reason'] ?? '');
+        if ($causeCode === '') {
+            $causeCode = $failurePhase === 'reporting' ? 'report_write_failed' : 'runner_exception';
+        }
+
+        $failure = ReportSummary::buildThrowableFailure($error, [
+            'test_id' => 'meta.run',
+            'test_name' => 'meta.run',
+            'case' => 'meta.run',
+            'suite_id' => 'meta',
+            'suite' => 'meta',
+            'scope' => Env::string('TEST_SCOPE', 'all'),
+            'category' => $category,
+            'kind' => in_array((string)($admission['reason'] ?? ''), ['shared_store_locked', 'store_resource_locked'], true) ? 'environment_conflict' : 'setup_failure',
+            'phase' => $failurePhase,
+            'failure_domain' => $failureDomain,
+            'cause_code' => $causeCode,
+            'artifact_path' => Paths::relativeToRepo($reportRoot),
+        ]);
+
+        $meta = [
+            'target' => $target,
+            'category' => $category,
+            'started_at' => $startedAt,
+            'duration_ms' => $durationMs,
+            'report_root' => $reportRoot,
+            'report_scope_rel' => Paths::relativeToRepo($reportRoot),
+            'selected_module_scope' => '',
+            'selected_test_count' => 0,
+            'suite_status_counts' => [],
+            'outcome_status_counts' => [],
+            'summary' => [
+                'total' => 0,
+                'passed' => 0,
+                'failed' => 0,
+                'skipped' => 0,
+                'duration_ms' => $durationMs,
+            ],
+            'failures' => [$failure],
+            'failure_contract' => [
+                'canonical' => 'failures',
+                'legacy_fallback' => 'suites[].has_failures',
+            ],
+            'first_failure' => ReportSummary::summarizeFailure($failure),
+            'evidence_valid' => false,
+            'evidence_invalid_reason' => $causeCode,
+            'failed_files' => [],
+            'top_failure_messages' => ReportSummary::topFailureMessages([$failure], 5),
+            'suite_ids' => [],
+            'has_failures' => true,
+            'suites' => [],
+            'run_id' => $runId,
+            'meta_run_id' => $runId,
+            'run_kind' => 'meta',
+            'concurrency_admission' => $admission,
+            'filters' => [
+                'target' => $target,
+                'scope' => Env::string('TEST_SCOPE', 'all'),
+                'category' => $category,
+                'match' => Env::string('TEST_MATCH', ''),
+            ],
+        ];
+
+        return ReportSummary::enrichReport($meta);
     }
 }

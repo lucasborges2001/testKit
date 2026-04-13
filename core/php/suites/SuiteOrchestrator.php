@@ -27,11 +27,9 @@ final class SuiteOrchestrator
      */
     public static function run(array $config, array $extensions, callable $buildCommand, ?callable $postRun = null): int
     {
-        $tests = TestDiscovery::discover((string)$config['tests_dir'], $extensions, $config);
-
-        $reportRoot = Paths::resolveReportRoot($tests);
-        Paths::ensureDir($reportRoot);
-        Paths::recordSuiteReportRoot($reportRoot, (string)($config['suite_id'] ?? 'suite'));
+        $tests = [];
+        $reportRoot = Paths::reportsRoot();
+        $currentPhase = 'discovery';
 
         $runId = self::envString('TEST_RUN_ID');
         if ($runId === '') {
@@ -59,6 +57,12 @@ final class SuiteOrchestrator
         $lockLease = null;
 
         try {
+            $tests = TestDiscovery::discover((string)$config['tests_dir'], $extensions, $config);
+            $reportRoot = Paths::resolveReportRoot($tests);
+            Paths::ensureDir($reportRoot);
+            Paths::recordSuiteReportRoot($reportRoot, (string)($config['suite_id'] ?? 'suite'));
+
+            $currentPhase = 'admission';
             $policy = ParallelGuard::evaluate($tests, $config, Paths::repoRoot());
             $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
             $admission = ParallelGuard::admissionState($policy);
@@ -88,6 +92,7 @@ final class SuiteOrchestrator
             }
 
             $config['repo_root'] = Paths::repoRoot();
+            $currentPhase = 'execution';
             $result = SuiteExecutor::execute($tests, $config, $buildCommand);
 
             $moduleScope = self::moduleScope($tests);
@@ -188,8 +193,10 @@ final class SuiteOrchestrator
             }
 
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
+            $result = ReportSummary::enrichReport($result);
 
             ConsoleReporter::printSuiteResult($result);
+            $currentPhase = 'reporting';
             ResultWriter::writeSuite($result);
 
             return (int)$result['exit_code'];
@@ -203,10 +210,12 @@ final class SuiteOrchestrator
                 policy: $policy,
                 warnings: $warnings,
                 admission: $admission,
+                phase: $currentPhase,
                 error: $e
             );
 
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
+            $result = ReportSummary::enrichReport($result);
 
             ConsoleReporter::printSuiteResult($result);
             ResultWriter::writeSuite($result);
@@ -377,12 +386,34 @@ final class SuiteOrchestrator
         array $policy,
         array $warnings,
         array $admission,
+        string $phase,
         Throwable $error
     ): array {
         $moduleScope = self::moduleScope($tests);
-        $failureKind = (string)($admission['reason'] ?? '') === 'shared_store_locked'
-            ? 'environment_conflict'
-            : 'setup_failure';
+        $admissionReason = (string)($admission['reason'] ?? '');
+        $failureKind = match (true) {
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'environment_conflict',
+            $phase === 'discovery' => 'discovery_failure',
+            $phase === 'reporting' => 'reporting_failure',
+            default => 'bootstrap_failure',
+        };
+        $failurePhase = match (true) {
+            $phase === 'discovery' => 'discovery',
+            $phase === 'reporting' => 'reporting',
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'store_setup',
+            default => 'bootstrap',
+        };
+        $failureDomain = match (true) {
+            $phase === 'discovery' => 'discovery',
+            $phase === 'reporting' => 'reporting',
+            in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) => 'store',
+            default => 'bootstrap',
+        };
+        $causeCode = $admissionReason !== '' ? $admissionReason : match ($failurePhase) {
+            'discovery' => 'discovery_failed',
+            'reporting' => 'report_write_failed',
+            default => 'bootstrap_failed',
+        };
 
         $failure = ReportSummary::buildThrowableFailure($error, [
             'test_id' => (string)($config['suite_id'] ?? 'suite') . '.bootstrap',
@@ -394,6 +425,9 @@ final class SuiteOrchestrator
             'category' => (string)($config['category'] ?? 'all'),
             'file' => '',
             'kind' => $failureKind,
+            'phase' => $failurePhase,
+            'failure_domain' => $failureDomain,
+            'cause_code' => $causeCode,
             'artifact_path' => Paths::relativeToRepo($reportRoot),
         ]);
 
@@ -438,7 +472,7 @@ final class SuiteOrchestrator
             'selected_module_scope' => $moduleScope,
             'selected_test_count' => count($tests),
             'selected_test_files' => $selectedTestFiles,
-            'suite_status' => $tests === [] ? 'no_tests' : 'failed',
+            'suite_status' => $tests === [] && $phase === 'discovery' ? 'failed' : ($tests === [] ? 'no_tests' : 'failed'),
             'no_tests_reason' => $tests === [] ? self::noTestsReason(['suite_status' => 'no_tests'], $config) : null,
             'run_id' => $runId,
             'meta_run_id' => $metaRunId,

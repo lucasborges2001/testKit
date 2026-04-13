@@ -41,7 +41,10 @@ final class ReportSummary
             'duration_ms'    => (int)($entry['duration_ms'] ?? 0),
             'error_type'     => self::inferErrorType($entry),
             'exception_class'=> null,
-            'kind'           => 'test_failure',
+            'kind'           => self::entryKind($entry),
+            'phase'          => (string)($entry['failure_phase'] ?? self::entryPhase($entry)),
+            'failure_domain' => (string)($entry['failure_domain'] ?? self::entryDomain($entry)),
+            'cause_code'     => (string)($entry['failure_cause_code'] ?? self::entryCauseCode($entry)),
             'message'        => $message,
             'assertion'      => null,
             'diff_excerpt'   => null,
@@ -80,6 +83,9 @@ final class ReportSummary
             'error_type' => (string)($context['error_type'] ?? self::throwableClass($e)),
             'exception_class' => self::throwableClass($e),
             'kind' => (string)($context['kind'] ?? 'setup_failure'),
+            'phase' => (string)($context['phase'] ?? self::phaseFromKind((string)($context['kind'] ?? 'setup_failure'))),
+            'failure_domain' => (string)($context['failure_domain'] ?? self::domainFromKind((string)($context['kind'] ?? 'setup_failure'))),
+            'cause_code' => (string)($context['cause_code'] ?? self::causeCodeFromKind((string)($context['kind'] ?? 'setup_failure'))),
             'message' => trim($e->getMessage()) !== '' ? trim($e->getMessage()) : self::throwableClass($e),
             'assertion' => null,
             'diff_excerpt' => null,
@@ -152,8 +158,13 @@ final class ReportSummary
 
         return [
             'file' => (string)($failure['file'] ?? $failure['test_id'] ?? ''),
+            'suite_id' => (string)($failure['suite_id'] ?? $failure['suite'] ?? ''),
             'case' => (string)($failure['case'] ?? $failure['test_name'] ?? ''),
             'kind' => $kind,
+            'phase' => (string)($failure['phase'] ?? self::phaseFromKind($kind)),
+            'failure_domain' => (string)($failure['failure_domain'] ?? self::domainFromKind($kind)),
+            'cause_code' => (string)($failure['cause_code'] ?? self::causeCodeFromKind($kind)),
+            'status' => (string)($failure['status'] ?? 'fail'),
             'exception_class' => $exceptionClass !== '' ? $exceptionClass : null,
             'message' => (string)($failure['message'] ?? ''),
             'stack_excerpt' => $stack,
@@ -358,6 +369,7 @@ final class ReportSummary
             'selected_module_scope' => $selectedModuleScope,
             'selected_test_count'   => $selectedTestCount,
             'suite_status_counts'   => $suiteStatusCounts,
+            'outcome_status_counts' => self::aggregateOutcomeStatusCounts($suiteReports),
             'summary'               => $summary,
             'failures'              => $canonicalFailures,
             'failure_contract'      => [
@@ -372,6 +384,111 @@ final class ReportSummary
             'suite_ids'             => array_values(array_map(static fn(array $row): string => (string)($row['suite_id'] ?? ''), $suiteRows)),
             'has_failures'          => $summary['failed'] > 0 || $canonicalFailures !== [],
             'suites'                => $suiteRows,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    public static function enrichReport(array $report): array
+    {
+        $diagnostics = self::diagnostics($report);
+
+        $report['outcome_status'] = $diagnostics['outcome_status'];
+        $report['failure_phase'] = $diagnostics['primary_phase'];
+        $report['failure_domain'] = $diagnostics['failure_domain'];
+        $report['failure_cause_code'] = $diagnostics['cause_code'];
+        $report['diagnostics'] = $diagnostics;
+        $report['status_counts'] = is_array($diagnostics['status_counts'] ?? null) ? $diagnostics['status_counts'] : [];
+        $report['phase_failure_counts'] = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
+        $report['cause_counts'] = is_array($diagnostics['cause_counts'] ?? null) ? $diagnostics['cause_counts'] : [];
+
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $summary['suite_status'] = (string)($report['suite_status'] ?? $summary['suite_status'] ?? '');
+        $summary['outcome_status'] = $diagnostics['outcome_status'];
+        $summary['status_counts'] = $report['status_counts'];
+        $summary['phase_failure_counts'] = $report['phase_failure_counts'];
+        $summary['cause_counts'] = $report['cause_counts'];
+        $summary['timeouts'] = (int)($report['status_counts']['timeout'] ?? 0);
+        $summary['infra_errors'] = (int)($report['status_counts']['infra_error'] ?? 0);
+        $summary['contention_errors'] = (int)($report['status_counts']['contention'] ?? 0);
+        $report['summary'] = $summary;
+
+        return $report;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    public static function diagnostics(array $report): array
+    {
+        $failures = self::canonicalFailures($report);
+        $statusCounts = [
+            'pass' => (int)($report['pass'] ?? 0),
+            'fail' => (int)($report['fail'] ?? 0),
+            'skip' => (int)($report['skip'] ?? 0),
+            'timeout' => 0,
+            'infra_error' => 0,
+            'contention' => 0,
+        ];
+        $phaseCounts = [];
+        $causeCounts = [];
+
+        foreach ($failures as $failure) {
+            $status = strtolower(trim((string)($failure['status'] ?? 'fail')));
+            if ($status === 'timeout') {
+                $statusCounts['timeout']++;
+            }
+
+            $phase = trim((string)($failure['phase'] ?? self::phaseFromKind((string)($failure['kind'] ?? ''))));
+            if ($phase !== '') {
+                $phaseCounts[$phase] = (int)($phaseCounts[$phase] ?? 0) + 1;
+            }
+
+            $cause = trim((string)($failure['cause_code'] ?? self::causeCodeFromKind((string)($failure['kind'] ?? ''))));
+            if ($cause !== '') {
+                $causeCounts[$cause] = (int)($causeCounts[$cause] ?? 0) + 1;
+            }
+
+            $domain = trim((string)($failure['failure_domain'] ?? self::domainFromKind((string)($failure['kind'] ?? ''))));
+            if ($status !== 'timeout' && in_array($domain, ['infra', 'bootstrap', 'store', 'discovery', 'reporting', 'runner'], true)) {
+                $statusCounts['infra_error']++;
+            }
+
+            if ($cause === 'shared_store_locked' || $cause === 'store_resource_locked') {
+                $statusCounts['contention']++;
+            }
+        }
+
+        $admission = is_array($report['concurrency_admission'] ?? null) ? $report['concurrency_admission'] : [];
+        $admissionReason = trim((string)($admission['reason'] ?? ''));
+        $primaryFailure = $failures !== [] ? $failures[0] : null;
+        $primaryKind = is_array($primaryFailure) ? (string)($primaryFailure['kind'] ?? '') : '';
+        $primaryPhase = is_array($primaryFailure) ? (string)($primaryFailure['phase'] ?? self::phaseFromKind($primaryKind)) : '';
+        $failureDomain = is_array($primaryFailure) ? (string)($primaryFailure['failure_domain'] ?? self::domainFromKind($primaryKind)) : '';
+        $causeCode = is_array($primaryFailure) ? (string)($primaryFailure['cause_code'] ?? self::causeCodeFromKind($primaryKind)) : '';
+
+        $outcomeStatus = self::determineOutcomeStatus($report, $statusCounts, $failureDomain, $primaryPhase, $causeCode, $admissionReason);
+
+        return [
+            'outcome_status' => $outcomeStatus,
+            'failure_domain' => $failureDomain !== '' ? $failureDomain : 'none',
+            'primary_phase' => $primaryPhase !== '' ? $primaryPhase : 'none',
+            'cause_code' => $causeCode !== '' ? $causeCode : ($admissionReason !== '' ? $admissionReason : 'none'),
+            'status_counts' => $statusCounts,
+            'phase_failure_counts' => $phaseCounts,
+            'cause_counts' => $causeCounts,
+            'has_timeout' => $statusCounts['timeout'] > 0,
+            'has_contention' => $statusCounts['contention'] > 0 || in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true),
+            'resource' => (string)($admission['resource'] ?? ''),
+            'lock_key' => (string)($admission['lock_key'] ?? ''),
+            'lock_scope' => (string)($admission['lock_scope'] ?? ''),
+            'lock_owner_run_id' => $admission['lock_owner_run_id'] ?? null,
+            'lock_owner_meta_run_id' => $admission['lock_owner_meta_run_id'] ?? null,
+            'lock_owner_hostname' => $admission['lock_owner_hostname'] ?? null,
+            'lock_acquired_at' => $admission['lock_acquired_at'] ?? null,
         ];
     }
 
@@ -448,8 +565,13 @@ final class ReportSummary
      */
     private static function inferFailureKind(array $failure): string
     {
+        $status = strtolower(trim((string)($failure['status'] ?? '')));
         $errorType = strtolower(trim((string)($failure['error_type'] ?? '')));
         $file = trim((string)($failure['file'] ?? ''));
+
+        if ($status === 'timeout' || $errorType === 'process_timeout') {
+            return 'timeout';
+        }
 
         if ($file === '' || $file === 'migration_contract' || $errorType === 'runtime_exception' || $errorType === 'error') {
             return 'setup_failure';
@@ -460,6 +582,163 @@ final class ReportSummary
         }
 
         return 'test_failure';
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suiteReports
+     * @return array<string,int>
+     */
+    private static function aggregateOutcomeStatusCounts(array $suiteReports): array
+    {
+        $counts = [];
+        foreach ($suiteReports as $report) {
+            $outcome = trim((string)($report['outcome_status'] ?? ''));
+            if ($outcome === '') {
+                continue;
+            }
+            $counts[$outcome] = (int)($counts[$outcome] ?? 0) + 1;
+        }
+        ksort($counts);
+        return $counts;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @param array<string,int> $statusCounts
+     */
+    private static function determineOutcomeStatus(
+        array $report,
+        array $statusCounts,
+        string $failureDomain,
+        string $primaryPhase,
+        string $causeCode,
+        string $admissionReason
+    ): string {
+        if ((bool)($report['list_only'] ?? false)) {
+            return 'listed';
+        }
+
+        if (in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) || in_array($causeCode, ['shared_store_locked', 'store_resource_locked'], true)) {
+            return 'contention';
+        }
+
+        $testsTotal = (int)($report['tests_total'] ?? 0);
+        if ($testsTotal === 0) {
+            return 'no_tests';
+        }
+
+        if ($statusCounts['timeout'] > 0) {
+            return 'timeout';
+        }
+
+        if (in_array($primaryPhase, ['discovery', 'bootstrap', 'store_setup', 'reporting'], true) || in_array($failureDomain, ['infra', 'bootstrap', 'store', 'discovery', 'reporting', 'runner'], true)) {
+            return match ($primaryPhase) {
+                'discovery' => 'discovery_error',
+                'bootstrap', 'store_setup' => 'bootstrap_error',
+                'reporting' => 'reporting_error',
+                default => 'infra_error',
+            };
+        }
+
+        if ((int)($report['fail'] ?? 0) > 0) {
+            return 'failed';
+        }
+
+        if ((int)($report['skip'] ?? 0) > 0 && (int)($report['pass'] ?? 0) === 0) {
+            return 'skipped';
+        }
+
+        if ((int)($report['skip'] ?? 0) > 0) {
+            return 'partial';
+        }
+
+        return 'passed';
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function entryKind(array $entry): string
+    {
+        $status = strtolower(trim((string)($entry['status'] ?? 'fail')));
+        if ($status === 'timeout' || (bool)($entry['timeout'] ?? false)) {
+            return 'timeout';
+        }
+
+        return 'test_failure';
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function entryPhase(array $entry): string
+    {
+        if ((bool)($entry['timeout'] ?? false)) {
+            return 'execution';
+        }
+
+        return 'execution';
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function entryDomain(array $entry): string
+    {
+        if ((bool)($entry['timeout'] ?? false)) {
+            return 'runner';
+        }
+
+        return 'test';
+    }
+
+    /**
+     * @param array<string,mixed> $entry
+     */
+    private static function entryCauseCode(array $entry): string
+    {
+        if ((bool)($entry['timeout'] ?? false)) {
+            return 'process_timeout';
+        }
+
+        return self::inferErrorType($entry);
+    }
+
+    private static function phaseFromKind(string $kind): string
+    {
+        return match (strtolower(trim($kind))) {
+            'timeout', 'test_failure' => 'execution',
+            'environment_conflict' => 'store_setup',
+            'discovery_failure' => 'discovery',
+            'bootstrap_failure' => 'bootstrap',
+            'reporting_failure' => 'reporting',
+            default => 'bootstrap',
+        };
+    }
+
+    private static function domainFromKind(string $kind): string
+    {
+        return match (strtolower(trim($kind))) {
+            'timeout' => 'runner',
+            'test_failure' => 'test',
+            'environment_conflict' => 'store',
+            'discovery_failure' => 'discovery',
+            'bootstrap_failure' => 'bootstrap',
+            'reporting_failure' => 'reporting',
+            default => 'infra',
+        };
+    }
+
+    private static function causeCodeFromKind(string $kind): string
+    {
+        return match (strtolower(trim($kind))) {
+            'timeout' => 'process_timeout',
+            'environment_conflict' => 'shared_store_locked',
+            'discovery_failure' => 'discovery_failed',
+            'bootstrap_failure' => 'bootstrap_failed',
+            'reporting_failure' => 'report_write_failed',
+            default => 'runner_exception',
+        };
     }
 
     /**

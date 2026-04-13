@@ -46,18 +46,29 @@ final class ConsoleReporter
         $pass = (int)($result['pass'] ?? 0);
         $fail = (int)($result['fail'] ?? 0);
         $skip = (int)($result['skip'] ?? 0);
+        $timeout = (int)($result['timeout'] ?? ($result['status_counts']['timeout'] ?? 0));
         $duration = (int)($result['duration_ms'] ?? 0);
+        $diagnostics = is_array($result['diagnostics'] ?? null) ? $result['diagnostics'] : ReportSummary::diagnostics($result);
+        $outcome = strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'));
+        $phase = (string)($diagnostics['primary_phase'] ?? 'none');
+        $domain = (string)($diagnostics['failure_domain'] ?? 'none');
+        $cause = (string)($diagnostics['cause_code'] ?? 'none');
 
         $p = UI::success("PASS={$pass}");
         $f = $fail > 0 ? UI::failure("FAIL={$fail}") : UI::gray("FAIL={$fail}");
         $s = $skip > 0 ? UI::warning("SKIP={$skip}") : UI::gray("SKIP={$skip}");
+        $t = $timeout > 0 ? UI::warning("TIMEOUT={$timeout}") : UI::gray("TIMEOUT={$timeout}");
 
-        echo "\n" . UI::bold("Summary:") . " {$p} {$f} {$s} " . UI::gray("time_ms={$duration}") . "\n";
+        echo "\n" . UI::bold("Summary:") . " {$p} {$f} {$s} {$t} " . UI::gray("time_ms={$duration}") . "\n";
+        echo UI::bold("Outcome:") . ' ' . ($outcome === 'PASS' ? UI::success($outcome) : ($outcome === 'TIMEOUT' || $outcome === 'BLOCKED' ? UI::warning($outcome) : UI::failure($outcome)))
+            . ' ' . UI::gray("phase={$phase} domain={$domain} cause={$cause}") . "\n";
 
         if (array_key_exists('evidence_valid', $result) && (bool)($result['evidence_valid'] ?? true) === false) {
             $reason = trim((string)($result['evidence_invalid_reason'] ?? 'runner_exception'));
             echo UI::failure('Evidence invalid') . ' ' . UI::gray('reason=' . $reason) . "\n";
         }
+
+        self::printDiagnostics($diagnostics);
 
         self::printWarnings($result);
 
@@ -102,6 +113,7 @@ final class ConsoleReporter
 
         $summary = is_array($meta['summary'] ?? null) ? $meta['summary'] : [];
         $failedFiles = is_array($meta['failed_files'] ?? null) ? $meta['failed_files'] : [];
+        $diagnostics = is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : ReportSummary::diagnostics($meta);
         echo "\n" . UI::bold("Meta:") . " ";
         echo UI::gray('total=' . (int)($summary['total'] ?? 0));
         echo ' ' . UI::gray('pass=' . (int)($summary['passed'] ?? 0));
@@ -109,6 +121,7 @@ final class ConsoleReporter
         echo ' ' . UI::gray('skip=' . (int)($summary['skipped'] ?? 0));
         echo ' ' . UI::gray('time_ms=' . (int)($summary['duration_ms'] ?? $meta['duration_ms'] ?? 0));
         echo "\n";
+        echo UI::gray('outcome=' . (string)($diagnostics['outcome_status'] ?? 'passed') . ', phase=' . (string)($diagnostics['primary_phase'] ?? 'none') . ', cause=' . (string)($diagnostics['cause_code'] ?? 'none')) . "\n";
         echo UI::gray('report_root=' . (string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
         echo UI::gray('selected_tests=' . (int)($meta['selected_test_count'] ?? 0) . ', failed_files=' . count($failedFiles)) . "\n";
     }
@@ -143,17 +156,19 @@ final class ConsoleReporter
         }
 
         UI::section("Module Summary");
-        echo UI::gray(str_pad("Module", 30) . " | Total | Pass | Fail | Skip") . "\n";
+        echo UI::gray(str_pad("Module", 30) . " | Total | Pass | Fail | Skip | Timeout") . "\n";
         UI::separator();
         foreach ($summary as $module => $stat) {
             $pass = (int)($stat['pass'] ?? 0);
             $fail = (int)($stat['fail'] ?? 0);
             $skip = (int)($stat['skip'] ?? 0);
+            $timeout = (int)($stat['timeout'] ?? 0);
             $total = (int)($stat['total'] ?? 0);
 
             $moduleStr = str_pad((string)$module, 30);
             $f = $fail > 0 ? UI::failure(sprintf("%4d", $fail)) : sprintf("%4d", $fail);
-            echo sprintf("%s | %5d | %4d | %s | %4d\n", $moduleStr, $total, $pass, $f, $skip);
+            $t = $timeout > 0 ? UI::warning(sprintf("%7d", $timeout)) : sprintf("%7d", $timeout);
+            echo sprintf("%s | %5d | %4d | %s | %4d | %s\n", $moduleStr, $total, $pass, $f, $skip, $t);
         }
     }
 
@@ -171,7 +186,9 @@ final class ConsoleReporter
         foreach ($failures as $failure) {
             $rel = (string)($failure['file'] ?? $failure['test_id'] ?? 'unknown');
             $code = (string)($failure['error_type'] ?? 'fail');
-            echo "  " . UI::failure("X") . " {$rel} " . UI::gray("({$code})") . "\n";
+            $phase = (string)($failure['phase'] ?? 'execution');
+            $cause = (string)($failure['cause_code'] ?? $code);
+            echo "  " . UI::failure("X") . " {$rel} " . UI::gray("({$code}, phase={$phase}, cause={$cause})") . "\n";
 
             foreach (['message', 'assertion', 'trace_excerpt', 'stderr_excerpt', 'stdout_excerpt'] as $field) {
                 $snippet = trim((string)($failure[$field] ?? ''));
@@ -196,6 +213,48 @@ final class ConsoleReporter
             $suiteId = (string)($result['suite_id'] ?? '');
             $target = str_replace('_', '-', $suiteId);
             echo "\n" . UI::bold("Next step:") . " " . UI::info("TEST_MATCH='{$firstFile}' php runTest.php {$target}") . "\n";
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $diagnostics
+     */
+    private static function printDiagnostics(array $diagnostics): void
+    {
+        $phaseCounts = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
+        $causeCounts = is_array($diagnostics['cause_counts'] ?? null) ? $diagnostics['cause_counts'] : [];
+        $resource = trim((string)($diagnostics['resource'] ?? ''));
+        $lockKey = trim((string)($diagnostics['lock_key'] ?? ''));
+
+        if ($phaseCounts === [] && $causeCounts === [] && $resource === '' && $lockKey === '') {
+            return;
+        }
+
+        UI::section('Diagnostics');
+        if ($phaseCounts !== []) {
+            $parts = [];
+            foreach ($phaseCounts as $phase => $count) {
+                $parts[] = $phase . '=' . (int)$count;
+            }
+            echo '  - phase_failures: ' . implode(', ', $parts) . "\n";
+        }
+        if ($causeCounts !== []) {
+            $parts = [];
+            foreach ($causeCounts as $cause => $count) {
+                $parts[] = $cause . '=' . (int)$count;
+            }
+            echo '  - cause_counts: ' . implode(', ', $parts) . "\n";
+        }
+        if ($resource !== '') {
+            echo '  - resource: ' . $resource . "\n";
+        }
+        if ($lockKey !== '') {
+            echo '  - lock: ' . $lockKey;
+            $owner = trim((string)($diagnostics['lock_owner_run_id'] ?? ''));
+            if ($owner !== '') {
+                echo ' owner_run=' . $owner;
+            }
+            echo "\n";
         }
     }
 

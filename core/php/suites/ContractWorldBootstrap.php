@@ -38,6 +38,15 @@ final class ContractWorldBootstrap
         $driver = $driver ?? StoreRegistry::detectDriver('mysql');
         $strategy = self::normalizeStrategy(Env::string('TEST_DB_STRATEGY', 'shared'));
 
+        if ($strategy === 'clean') {
+            throw new RuntimeException(
+                "TEST_DB_STRATEGY=clean no está implementado: el framework no limpia entre tests individuales.\n"
+                . "Alternativas:\n"
+                . "  - TEST_DB_STRATEGY=shared  → todos los tests usan la misma DB, sin limpieza\n"
+                . "  - TEST_DB_STRATEGY=per_worker → cada worker tiene su propia DB (requiere TEST_JOBS>1)"
+            );
+        }
+
         fwrite(
             STDERR,
             sprintf(

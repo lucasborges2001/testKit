@@ -141,8 +141,6 @@ private static function runLayered(string $driver, string $seedDir, string $proj
     self::applyRequestedMigrations($pdo, $seedDir, $migrations);
     self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
 
-    self::traceCheckoutTablesIfRelevant($pdo, $rawMigrations, $migrations);
-
     echo "Seed pipeline por capas aplicado correctamente
 ";
     return 0;
@@ -184,8 +182,6 @@ private static function runSnapshot(string $driver, string $seedDir, string $pro
 
     self::applyRequestedMigrations($pdo, $seedDir, $migrations);
     self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
-
-    self::traceCheckoutTablesIfRelevant($pdo, $rawMigrations, $migrations);
 
     echo "Seed pipeline snapshot aplicado correctamente
 ";
@@ -484,7 +480,6 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
                 'path' => $normalized,
                 'exists' => false,
                 'size_bytes' => null,
-                'mtime' => null,
                 'sha256' => null,
             ];
         }
@@ -494,7 +489,6 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
             'path' => $normalized,
             'exists' => true,
             'size_bytes' => filesize($path) ?: 0,
-            'mtime' => @filemtime($path) ?: 0,
             'sha256' => is_string($sha) ? $sha : null,
         ];
     }
@@ -798,60 +792,6 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         }
 
         return '';
-    }
-
-    /**
-     * @param array<int,string> $migrations
-     */
-    private static function traceCheckoutTablesIfRelevant(PDO $pdo, string $rawMigrations, array $migrations): void
-    {
-        if (!Trace::migrationsEnabled()) {
-            return;
-        }
-
-        $match = strtolower((string)(getenv('TEST_MATCH') ?: ''));
-        $target = strtolower((string)(getenv('TEST_TARGET') ?: ''));
-        $scopeHint = strtolower((string)(getenv('TK_BACK_PHP_DIR') ?: ''));
-        $relevant = in_array('016_checkout', $migrations, true)
-            || str_contains($match, 'checkout')
-            || str_contains($target, 'checkout')
-            || str_contains($scopeHint, 'checkout');
-
-        if (!$relevant) {
-            return;
-        }
-
-        $requiredTables = ['CheckoutCargaOrden', 'CheckoutCargaEvento'];
-        $missing = [];
-        foreach ($requiredTables as $table) {
-            $exists = self::tableExists($pdo, $table);
-            Trace::log('checkout.table.verify', [
-                'table' => $table,
-                'exists' => $exists,
-            ]);
-            if (!$exists) {
-                $missing[] = $table;
-            }
-        }
-
-        if ($missing !== []) {
-            throw new RuntimeException(
-                'Checkout trace verification fallo: faltan tablas [' . implode(', ', $missing) . '] '
-                . 'despues del pipeline. TEST_SEED_MIGRATIONS(raw)=' . $rawMigrations
-                . ' parsed=' . json_encode($migrations, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-            );
-        }
-    }
-
-    private static function tableExists(PDO $pdo, string $table): bool
-    {
-        $stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
-        );
-        $stmt->execute([$table]);
-        $exists = (int)$stmt->fetchColumn() === 1;
-        $stmt->closeCursor();
-        return $exists;
     }
 
     private static function realPathOrOriginal(string $path): string

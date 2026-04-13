@@ -400,6 +400,7 @@ final class Inspector
             . ' pass=' . (int)($row['passed'] ?? 0)
             . ' fail=' . (int)($row['failed'] ?? 0)
             . ' skip=' . (int)($row['skipped'] ?? 0)
+            . ' timeout=' . (int)($row['timeouts'] ?? 0)
             . ' time_ms=' . (int)($row['duration_ms'] ?? 0)
             . PHP_EOL;
     }
@@ -418,6 +419,7 @@ final class Inspector
         foreach ($suiteReports as $report) {
             echo '  - ' . (string)($report['suite_id'] ?? 'suite')
                 . ' status=' . (string)($report['suite_status'] ?? '')
+                . ' outcome=' . (string)($report['outcome_status'] ?? '')
                 . ' tests=' . (int)($report['selected_test_count'] ?? 0)
                 . ' fail=' . (int)($report['fail'] ?? 0)
                 . ' scope=' . (string)($report['selected_module_scope'] ?? 'global')
@@ -440,6 +442,8 @@ final class Inspector
         echo '  file: ' . (string)($failure['file'] ?? '') . PHP_EOL;
         echo '  case: ' . (string)($failure['case'] ?? '') . PHP_EOL;
         echo '  kind: ' . (string)($failure['kind'] ?? '') . PHP_EOL;
+        echo '  phase: ' . (string)($failure['phase'] ?? '') . PHP_EOL;
+        echo '  cause_code: ' . (string)($failure['cause_code'] ?? '') . PHP_EOL;
         echo '  exception_class: ' . (string)($failure['exception_class'] ?? '') . PHP_EOL;
         echo '  message: ' . (string)($failure['message'] ?? '') . PHP_EOL;
         $stack = is_array($failure['stack_excerpt'] ?? null) ? $failure['stack_excerpt'] : [];
@@ -508,6 +512,7 @@ final class Inspector
                 }
                 echo '  - ' . (string)($lock['name'] ?? '')
                     . ' run_id=' . (string)($lock['run_id'] ?? '')
+                    . ' meta_run_id=' . (string)($lock['meta_run_id'] ?? '')
                     . ' acquired_at=' . (string)($lock['acquired_at'] ?? '')
                     . PHP_EOL;
             }
@@ -531,6 +536,7 @@ final class Inspector
                 . ' db_strategy=' . (string)($parallel['db_strategy'] ?? '')
                 . ' jobs=' . (int)($parallel['jobs'] ?? 0)
                 . ' suite_lock_key=' . (string)($parallel['suite_lock_key'] ?? '')
+                . ' admission_lock_scope=' . (string)(is_array($policy['concurrency_admission'] ?? null) ? (($policy['concurrency_admission']['lock_scope'] ?? '')) : '')
                 . PHP_EOL;
         }
     }

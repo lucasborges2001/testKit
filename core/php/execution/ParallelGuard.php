@@ -7,6 +7,7 @@ use RuntimeException;
 use Testkit\Core\Common\Lock;
 use Testkit\Core\Common\LockLease;
 use Testkit\Core\Common\ProjectEnv;
+use Testkit\Core\Config\SuiteContractRegistry;
 use Testkit\Core\Reporting\StructuredWarnings;
 
 final class ParallelGuard
@@ -152,6 +153,79 @@ final class ParallelGuard
     }
 
     /**
+     * @param array<int,string> $suiteIds
+     * @return array<string,mixed>
+     */
+    public static function evaluateRunResource(array $suiteIds, string $repoRoot): array
+    {
+        ProjectEnv::hydrateCurrentProcess($repoRoot, false);
+
+        $driver = self::detectDriver();
+        $baseDb = self::resolveBaseDatabaseName($driver);
+        $hasDbRuntime = self::hasDbRuntimeContract();
+        $selectedSuites = array_values(array_unique(array_filter(array_map(
+            static fn(string $suiteId): string => strtolower(trim($suiteId)),
+            $suiteIds
+        ))));
+
+        $requiresLock = false;
+        foreach ($selectedSuites as $suiteId) {
+            $hazards = SuiteContractRegistry::hazards($suiteId);
+            $mutatesSharedStore = (bool)($hazards['bootstrap_mutates_store'] ?? false);
+            $sharedBootstrap = (string)($hazards['store_bootstrap'] ?? '') === 'project_shared_store';
+            if ($mutatesSharedStore || $sharedBootstrap) {
+                $requiresLock = true;
+                break;
+            }
+        }
+
+        $lockKey = '';
+        $lockReason = '';
+        if ($requiresLock && $hasDbRuntime) {
+            $lockKey = 'store_resource.' . self::safeLockSegment($driver) . '.' . self::safeLockSegment($baseDb !== '' ? $baseDb : 'default');
+            $lockReason = 'La corrida top-level reserva el store base completo para impedir intercalado entre runners independientes.';
+        }
+
+        return [
+            'suite_ids' => $selectedSuites,
+            'base_db_driver' => $driver,
+            'base_db_name' => $baseDb,
+            'has_db_runtime' => $hasDbRuntime,
+            'requires_resource_lock' => $requiresLock && $hasDbRuntime,
+            'resource_lock_key' => $lockKey,
+            'resource_lock_reason' => $lockReason,
+            'resource' => self::resourceLabel([
+                'base_db_driver' => $driver,
+                'base_db_name' => $baseDb,
+            ]),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $policy
+     */
+    public static function acquireRunResourceLock(array $policy): ?LockLease
+    {
+        $lockKey = trim((string)($policy['resource_lock_key'] ?? ''));
+        if ($lockKey === '') {
+            return null;
+        }
+
+        $lease = Lock::acquire($lockKey, false);
+        if ($lease !== null) {
+            return $lease;
+        }
+
+        $driver = (string)($policy['base_db_driver'] ?? 'db');
+        $baseDb = (string)($policy['base_db_name'] ?? 'default');
+
+        throw new RuntimeException(
+            "Corrida top-level concurrente no soportada: ya existe otra ejecución usando {$driver}/{$baseDb}. " .
+            'No lances varios runTest.php sobre el mismo store compartido al mismo tiempo.'
+        );
+    }
+
+    /**
      * @param array<string,mixed> $policy
      * @return array<string,mixed>
      */
@@ -164,6 +238,7 @@ final class ParallelGuard
             'reason' => null,
             'resource' => self::resourceLabel($policy),
             'lock_key' => trim((string)($policy['suite_lock_key'] ?? '')),
+            'lock_scope' => 'suite',
             'lock_owner_run_id' => null,
             'lock_owner_meta_run_id' => null,
             'lock_owner_hostname' => null,
@@ -194,16 +269,41 @@ final class ParallelGuard
         $state = self::admissionState($policy);
         $state['run_admitted'] = false;
         $state['reason'] = 'shared_store_locked';
+        self::attachLockOwner($state, trim((string)($policy['suite_lock_key'] ?? '')));
+        return $state;
+    }
 
-        $lockKey = trim((string)($policy['suite_lock_key'] ?? ''));
-        $owner = $lockKey !== '' ? Lock::readOwner($lockKey) : null;
-        if (is_array($owner)) {
-            $state['lock_owner_run_id'] = trim((string)($owner['run_id'] ?? '')) ?: null;
-            $state['lock_owner_meta_run_id'] = trim((string)($owner['meta_run_id'] ?? '')) ?: null;
-            $state['lock_owner_hostname'] = trim((string)($owner['hostname'] ?? '')) ?: null;
-            $state['lock_acquired_at'] = trim((string)($owner['acquired_at'] ?? '')) ?: null;
-        }
+    /**
+     * @param array<string,mixed> $policy
+     * @return array<string,mixed>
+     */
+    public static function runResourceAdmissionState(array $policy): array
+    {
+        return [
+            'store_mode' => 'shared',
+            'concurrency_policy' => ($policy['requires_resource_lock'] ?? false) ? 'exclusive' : 'not_applicable',
+            'run_admitted' => true,
+            'reason' => null,
+            'resource' => (string)($policy['resource'] ?? ''),
+            'lock_key' => trim((string)($policy['resource_lock_key'] ?? '')),
+            'lock_scope' => 'run',
+            'lock_owner_run_id' => null,
+            'lock_owner_meta_run_id' => null,
+            'lock_owner_hostname' => null,
+            'lock_acquired_at' => null,
+        ];
+    }
 
+    /**
+     * @param array<string,mixed> $policy
+     * @return array<string,mixed>
+     */
+    public static function rejectedByRunLockState(array $policy): array
+    {
+        $state = self::runResourceAdmissionState($policy);
+        $state['run_admitted'] = false;
+        $state['reason'] = 'store_resource_locked';
+        self::attachLockOwner($state, trim((string)($policy['resource_lock_key'] ?? '')));
         return $state;
     }
 
@@ -329,6 +429,22 @@ final class ParallelGuard
         }
 
         return ($driver !== '' ? $driver : 'db') . '/' . ($dbName !== '' ? $dbName : 'default');
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     */
+    private static function attachLockOwner(array &$state, string $lockKey): void
+    {
+        $owner = $lockKey !== '' ? Lock::readOwner($lockKey) : null;
+        if (!is_array($owner)) {
+            return;
+        }
+
+        $state['lock_owner_run_id'] = trim((string)($owner['run_id'] ?? '')) ?: null;
+        $state['lock_owner_meta_run_id'] = trim((string)($owner['meta_run_id'] ?? '')) ?: null;
+        $state['lock_owner_hostname'] = trim((string)($owner['hostname'] ?? '')) ?: null;
+        $state['lock_acquired_at'] = trim((string)($owner['acquired_at'] ?? '')) ?: null;
     }
 
     /**

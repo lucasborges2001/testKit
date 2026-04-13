@@ -26,6 +26,10 @@ jobs:
           chmod +x bin/testkit scripts/*.sh || true
           ./bin/testkit doctor
 
+      - name: Framework self-tests
+        run: |
+          php tests/framework/run.php
+
       - name: Levantar stack (MySQL)
         run: |
           ./bin/testkit up -d
