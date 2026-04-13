@@ -177,7 +177,18 @@ function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
   Write-Host ""
   Write-Host "TESTKIT_STACK: $StackCsv"
   Write-Host ""
+  $backDir = if ($env:TK_BACK_DIR) { $env:TK_BACK_DIR } else { 'back' }
+  $publicDir = if ($env:TK_PUBLIC_DIR) { $env:TK_PUBLIC_DIR } else { 'public_html' }
+  Write-Host "TK_BACK_DIR:   $backDir"
+  Write-Host "TK_PUBLIC_DIR: $publicDir"
+  Write-Host ""
+  $testJobs = if ($env:TEST_JOBS) { $env:TEST_JOBS } else { '1' }
+  $dbStrategy = if ($env:TEST_DB_STRATEGY) { $env:TEST_DB_STRATEGY } else { 'shared' }
+  $workerSuffix = if ($env:TEST_DB_WORKER_SUFFIX_FORMAT) { $env:TEST_DB_WORKER_SUFFIX_FORMAT } else { '_w%02d' }
   $storeProvision = if ($env:TEST_STORE_PROVISION) { $env:TEST_STORE_PROVISION } else { 'managed' }
+  Write-Host "TEST_JOBS: $testJobs"
+  Write-Host "TEST_DB_STRATEGY: $dbStrategy"
+  Write-Host "TEST_DB_WORKER_SUFFIX_FORMAT: $workerSuffix"
   Write-Host "TEST_STORE_PROVISION: $storeProvision"
   Write-Host ""
 }

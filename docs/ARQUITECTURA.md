@@ -2,7 +2,7 @@
 
 ## 1) Criterio estructural
 
-Alineado con `docs/Estructura.md` y `docs/Reestructura.md`:
+Criterios estructurales del proyecto:
 
 - archivos chicos
 - responsabilidades separadas
@@ -71,12 +71,14 @@ testkit/
   - `2`: skip
   - `3`: error de runner/config
 
-- Artefactos (propiedad del proyecto anfitrión):
-  - `test/reports/*.json`
-  - `test/<side>/<module>/report/*.json` cuando la selección pertenece a un único módulo funcional
-  - `test/history/*.json`
-  - `test/coverage/*`
-  - `test/querylog.jsonl`
+- Artefactos (propiedad del proyecto anfitrión, bajo `.testkit/` en el repo del proyecto):
+  - `.testkit/reports/<suite>_latest.json` — reporte más reciente por suite
+  - `.testkit/reports/runs/<run_id>/` — corridas aisladas por run_id (cuando se usa MetaRunner)
+  - `.testkit/reports/latest_run.json` — manifiesto de la última corrida completada
+  - `.testkit/history/<suite>.json` — historial para detección de fragilidad
+  - `.testkit/baselines/<driver>/<db>.manifest.json` — manifest de baseline reutilizable
+  - `test/coverage/<suite>/` — artefactos de coverage por suite
+  - `test/querylog.jsonl` — query profiling (si `TEST_DB_PROFILE=1`)
 
 ## 5.1) Contrato de reporte por suite
 
@@ -119,6 +121,30 @@ Para agregar una estrategia de baseline:
 - El pipeline layered de seeds vive en `testkit`, no en `_support`.
 - La validación de migraciones contra estado realista no debe mezclar escenarios de negocio con bootstrap estructural.
 - El clone-per-worker desde una baseline es una optimización controlada; no reemplaza el aislamiento lógico de los tests.
+
+## 7.1) Alcance real de soporte por motor (v1)
+
+### MySQL (motor principal, soporte completo)
+
+- provision, reset, clean, connect
+- snapshot restore (`.sql`, `.sql.gz`)
+- clone de DB entre nombres (para `per_worker`)
+- migration-contract con `TEST_BASELINE_MODE=snapshot`
+
+### PostgreSQL (soporte parcial, no usar para snapshot/clone)
+
+- provision, reset, clean, connect: **implementado**
+- `restoreSnapshot()`: **no implementado** — lanza excepción
+- `cloneDatabase()`: **no implementado** — lanza excepción
+- `migration_contract` con snapshot: **no soportado** — rechaza explícitamente drivers no MySQL
+
+El compose de PG (`compose.pg.yaml`) se provee para proyectos que consumen PG como infraestructura de tests.
+El core de testkit (seeding, migration-contract, clone-per-worker) opera únicamente sobre MySQL en esta versión.
+
+### Redis
+
+No hay capa PHP de core para Redis.
+`compose.redis.yaml` provee el servicio; el proyecto lo consume directamente si lo necesita.
 
 
 ## 3.2) Baseline reutilizable

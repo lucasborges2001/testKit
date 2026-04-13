@@ -107,10 +107,11 @@ final class MigrationContractSuite
         }
 
         $strategy = strtolower(trim(Env::string('TEST_DB_STRATEGY', 'shared')));
-        if ($strategy === 'per_worker') {
+        if ($strategy !== 'shared') {
             throw new RuntimeException(
-                'migration-contract no acepta TEST_DB_STRATEGY=per_worker. ' .
-                'Primero validá una baseline única; después clonás workers si querés throughput.'
+                'migration-contract solo acepta TEST_DB_STRATEGY=shared. ' .
+                'Primero validá una baseline única sobre una DB única; después clonás workers si querés throughput. ' .
+                "Valor recibido: {$strategy}."
             );
         }
 
@@ -139,7 +140,7 @@ final class MigrationContractSuite
         $failed = $suiteStatus === 'failed' ? 1 : 0;
 
         return [
-            'report_contract_version' => 1,
+            'report_contract_version' => 2,
             'runner_contract_version' => (int)($contract['contract_version'] ?? 1),
             'suite_id' => 'migration_contract',
             'suite_status' => $suiteStatus,

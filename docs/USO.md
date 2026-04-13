@@ -366,8 +366,12 @@ Este target no intenta correr tests funcionales del proyecto. Su trabajo es más
 Contrato:
 
 - requiere `TEST_BASELINE_MODE=snapshot`
-- requiere `TEST_BASELINE_SNAPSHOT_FILE`
-- requiere `TEST_DB_STRATEGY=shared`
+- requiere exactamente uno de:
+  - `TEST_BASELINE_SNAPSHOT_FILE` (path directo al dump)
+  - `TEST_BASELINE_BACKUPKIT_METADATA_JSON` (metadata sidecar de backupkit)
+  - `TEST_BASELINE_BACKUPKIT_REPORT_JSON` (reporte JSON de backupkit)
+- requiere `TEST_DB_STRATEGY=shared` (el único valor aceptado; `per_worker` y `clean` son rechazados)
+- solo soporta MySQL (`DB_DRIVER=mysql` o default); rechaza explícitamente otros drivers
 - escribe `migration_contract_latest.json` en el report root de la corrida
 
 Ejemplo:
