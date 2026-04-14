@@ -21,14 +21,13 @@ final class CanonicalReport
             'report_kind' => $kind,
             'final_status' => self::finalStatus($report),
             'selection' => self::selection($report, $kind),
+            'selection_manifest' => self::selectionManifest($report),
             'summary' => is_array($report['summary'] ?? null) ? $report['summary'] : [],
             'diagnostics' => ReportSummary::diagnostics($report),
-            'phase_timeline' => ReportSummary::phaseTimeline($report),
-            'recommended_actions' => ReportSummary::recommendedActions($report),
-            'agent_summary' => ReportSummary::agentSummary($report),
             'evidence' => self::evidence($report),
             'artifacts' => self::artifacts($report),
             'seed_state' => self::seedState($report),
+            'regression_delta' => self::regressionDelta($report),
             'warnings' => self::warnings($report),
             'runner' => self::runner($report),
         ];
@@ -85,6 +84,31 @@ final class CanonicalReport
      * @param array<string,mixed> $report
      * @return array<string,mixed>
      */
+    private static function selectionManifest(array $report): array
+    {
+        $manifest = $report['selection_manifest'] ?? null;
+        if (!is_array($manifest)) {
+            return [];
+        }
+
+        return [
+            'suite_id' => (string)($manifest['suite_id'] ?? ''),
+            'scope' => (string)($manifest['scope'] ?? ''),
+            'category' => (string)($manifest['category'] ?? ''),
+            'match' => (string)($manifest['match'] ?? ''),
+            'list_only' => (bool)($manifest['list_only'] ?? false),
+            'selected_test_count' => (int)($manifest['selected_test_count'] ?? 0),
+            'selected_module_scope' => (string)($manifest['selected_module_scope'] ?? ''),
+            'selected_common_dir' => (string)($manifest['selected_common_dir'] ?? ''),
+            'selected_test_files' => array_values((array)($manifest['selected_test_files'] ?? [])),
+            'source' => (string)($manifest['source'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
     private static function evidence(array $report): array
     {
         $firstFailure = $report['first_failure'] ?? null;
@@ -112,6 +136,7 @@ final class CanonicalReport
             'history_file' => $report['history_file'] ?? null,
             'manifest_path' => $report['manifest_path'] ?? null,
             'snapshot_file' => $report['snapshot_file'] ?? null,
+            'items' => array_values(array_filter((array)($report['normalized_artifacts'] ?? []), 'is_array')),
         ];
     }
 
@@ -144,6 +169,28 @@ final class CanonicalReport
             'applied_migrations' => array_values((array)($report['applied_migrations'] ?? [])),
             'pending_migrations' => array_values((array)($report['pending_migrations'] ?? [])),
             'resolved_snapshot' => is_array($report['resolved_snapshot'] ?? null) ? $report['resolved_snapshot'] : null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function regressionDelta(array $report): array
+    {
+        $delta = $report['regression_delta'] ?? null;
+        if (!is_array($delta)) {
+            return [
+                'new_failures' => [],
+                'resolved_failures' => [],
+                'status_transitions' => [],
+            ];
+        }
+
+        return [
+            'new_failures' => array_values((array)($delta['new_failures'] ?? [])),
+            'resolved_failures' => array_values((array)($delta['resolved_failures'] ?? [])),
+            'status_transitions' => array_values(array_filter((array)($delta['status_transitions'] ?? []), 'is_array')),
         ];
     }
 

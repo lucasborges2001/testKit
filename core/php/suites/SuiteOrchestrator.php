@@ -96,6 +96,8 @@ final class SuiteOrchestrator
             $result = SuiteExecutor::execute($tests, $config, $buildCommand);
 
             $moduleScope = self::moduleScope($tests);
+            $selectionManifest = self::selectionManifest($tests, $config);
+
             $result['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
             $result['runner_contract_version'] = (int)($config['runner_contract_version'] ?? 1);
             $result['runner_capabilities']     = $config['runner_capabilities'] ?? [];
@@ -112,6 +114,7 @@ final class SuiteOrchestrator
             $result['selected_module_scope']   = $moduleScope;
             $result['selected_test_count']     = count($tests);
             $result['selected_test_files']     = array_map(fn(array $t): string => (string)($t['rel'] ?? ''), $tests);
+            $result['selection_manifest']      = $selectionManifest;
             $result['suite_status']            = self::suiteStatus($result, $tests, $config);
             $result['no_tests_reason']         = self::noTestsReason($result, $config);
             $result['run_id']                  = $runId;
@@ -164,6 +167,9 @@ final class SuiteOrchestrator
             );
             $result['history_file'] = $history['history_file'];
             $result['fragility_hints'] = $history['fragility_hints'];
+            $result['regression_delta'] = is_array($history['regression_delta'] ?? null)
+                ? $history['regression_delta']
+                : self::emptyRegressionDelta();
 
             $isPhpSuite = ((string)($config['language'] ?? '') === 'php') || self::extensionsContainPhp($extensions);
             if ((bool)$config['coverage'] && $isPhpSuite) {
@@ -280,6 +286,42 @@ final class SuiteOrchestrator
             $common[] = $seg;
         }
         return implode('/', $common);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $tests
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private static function selectionManifest(array $tests, array $config): array
+    {
+        return [
+            'suite_id' => (string)($config['suite_id'] ?? ''),
+            'scope' => (string)($config['scope'] ?? 'all'),
+            'category' => (string)($config['category'] ?? 'all'),
+            'match' => (string)($config['match'] ?? ''),
+            'list_only' => (bool)($config['list_only'] ?? false),
+            'selected_test_count' => count($tests),
+            'selected_module_scope' => self::moduleScope($tests),
+            'selected_common_dir' => self::commonDir($tests),
+            'selected_test_files' => array_values(array_map(
+                static fn(array $test): string => (string)($test['rel'] ?? ''),
+                $tests
+            )),
+            'source' => 'suite_orchestrator',
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function emptyRegressionDelta(): array
+    {
+        return [
+            'new_failures' => [],
+            'resolved_failures' => [],
+            'status_transitions' => [],
+        ];
     }
 
     /**
@@ -472,6 +514,7 @@ final class SuiteOrchestrator
             'selected_module_scope' => $moduleScope,
             'selected_test_count' => count($tests),
             'selected_test_files' => $selectedTestFiles,
+            'selection_manifest' => self::selectionManifest($tests, $config),
             'suite_status' => $tests === [] && $phase === 'discovery' ? 'failed' : ($tests === [] ? 'no_tests' : 'failed'),
             'no_tests_reason' => $tests === [] ? self::noTestsReason(['suite_status' => 'no_tests'], $config) : null,
             'run_id' => $runId,
@@ -518,6 +561,7 @@ final class SuiteOrchestrator
             'first_failure' => ReportSummary::summarizeFailure($failure),
             'history_file' => null,
             'fragility_hints' => [],
+            'regression_delta' => self::emptyRegressionDelta(),
         ];
     }
 }

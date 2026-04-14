@@ -22,6 +22,13 @@ final class HistoryRepository
             $history['tests'] = [];
         }
 
+        /** @var array<string,mixed> $previousTests */
+        $previousTests = is_array($history['tests']) ? $history['tests'] : [];
+        $regressionDelta = self::buildRegressionDelta(
+            $previousTests,
+            is_array($result['tests'] ?? null) ? (array)$result['tests'] : []
+        );
+
         foreach (($result['tests'] ?? []) as $test) {
             $rel = (string)($test['rel'] ?? 'unknown');
             $status = (string)($test['status'] ?? 'fail');
@@ -83,6 +90,74 @@ final class HistoryRepository
         return [
             'history_file' => $file,
             'fragility_hints' => array_slice($hints, 0, 10),
+            'regression_delta' => $regressionDelta,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $previousTests
+     * @param array<int,array<string,mixed>> $currentTests
+     * @return array<string,mixed>
+     */
+    private static function buildRegressionDelta(array $previousTests, array $currentTests): array
+    {
+        $newFailures = [];
+        $resolvedFailures = [];
+        $statusTransitions = [];
+
+        foreach ($currentTests as $test) {
+            if (!is_array($test)) {
+                continue;
+            }
+
+            $rel = trim((string)($test['rel'] ?? $test['file'] ?? ''));
+            if ($rel === '') {
+                continue;
+            }
+
+            $currentStatus = trim((string)($test['status'] ?? 'fail'));
+            $previousRow = $previousTests[$rel] ?? null;
+            $previousStatus = is_array($previousRow) ? trim((string)($previousRow['last_status'] ?? '')) : '';
+
+            if ($previousStatus !== '' && $previousStatus !== $currentStatus) {
+                $statusTransitions[] = [
+                    'test' => $rel,
+                    'from' => $previousStatus,
+                    'to' => $currentStatus,
+                ];
+            }
+
+            if (in_array($previousStatus, ['pass', 'skip'], true) && in_array($currentStatus, ['fail', 'timeout'], true)) {
+                $newFailures[$rel] = true;
+            }
+
+            if (in_array($previousStatus, ['fail', 'timeout'], true) && $currentStatus === 'pass') {
+                $resolvedFailures[$rel] = true;
+            }
+        }
+
+        usort($statusTransitions, static function (array $left, array $right): int {
+            $cmp = strcmp((string)($left['test'] ?? ''), (string)($right['test'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $cmp = strcmp((string)($left['from'] ?? ''), (string)($right['from'] ?? ''));
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcmp((string)($left['to'] ?? ''), (string)($right['to'] ?? ''));
+        });
+
+        $newFailures = array_values(array_keys($newFailures));
+        sort($newFailures);
+
+        $resolvedFailures = array_values(array_keys($resolvedFailures));
+        sort($resolvedFailures);
+
+        return [
+            'new_failures' => $newFailures,
+            'resolved_failures' => $resolvedFailures,
+            'status_transitions' => $statusTransitions,
         ];
     }
 
