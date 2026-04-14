@@ -17,46 +17,45 @@ final class ReportSummary
         $stdout = (string)($entry['stdout'] ?? '');
         $stderr = (string)($entry['stderr'] ?? '');
 
-        $message       = self::extractFirstMessage($stderr) ?? self::extractFirstMessage($stdout);
-        $traceExcerpt  = self::extractTrace($stderr !== '' ? $stderr : $stdout, 10);
+        $message = self::extractFirstMessage($stderr) ?? self::extractFirstMessage($stdout);
+        $traceExcerpt = self::extractTrace($stderr !== '' ? $stderr : $stdout, 10);
         $stdoutExcerpt = self::textExcerpt($stdout, 15);
         $stderrExcerpt = self::textExcerpt($stderr, 15);
-        $testName      = self::inferTestName($entry);
+        $testName = self::inferTestName($entry);
 
-        $tags        = array_values((array)($entry['tags'] ?? []));
+        $tags = array_values((array)($entry['tags'] ?? []));
         $scopeTokens = array_values(array_filter($tags, fn(string $t): bool => in_array($t, ['unit', 'integration', 'e2e'], true)));
-        $catTokens   = array_values(array_filter($tags, fn(string $t): bool => !in_array($t, ['unit', 'integration', 'e2e'], true)));
+        $catTokens = array_values(array_filter($tags, fn(string $t): bool => !in_array($t, ['unit', 'integration', 'e2e'], true)));
 
         return [
-            'test_id'        => (string)($entry['rel'] ?? $entry['file'] ?? ''),
-            'test_name'      => $testName,
-            'case'           => $testName,
-            'suite_id'       => (string)($entry['suite_id'] ?? $entry['suite'] ?? $entry['module'] ?? ''),
-            'suite'          => (string)($entry['module'] ?? $entry['suite'] ?? ''),
-            'scope'          => implode(',', $scopeTokens),
-            'file'           => (string)($entry['rel'] ?? $entry['file'] ?? ''),
-            'line'           => null,
-            'category'       => implode(',', $catTokens),
-            'status'         => (string)($entry['status'] ?? 'fail'),
-            'duration_ms'    => (int)($entry['duration_ms'] ?? 0),
-            'error_type'     => self::inferErrorType($entry),
-            'exception_class'=> null,
-            'kind'           => self::entryKind($entry),
-            'phase'          => (string)($entry['failure_phase'] ?? self::entryPhase($entry)),
+            'test_id' => (string)($entry['rel'] ?? $entry['file'] ?? ''),
+            'test_name' => $testName,
+            'case' => $testName,
+            'suite_id' => (string)($entry['suite_id'] ?? $entry['suite'] ?? $entry['module'] ?? ''),
+            'suite' => (string)($entry['module'] ?? $entry['suite'] ?? ''),
+            'scope' => implode(',', $scopeTokens),
+            'file' => (string)($entry['rel'] ?? $entry['file'] ?? ''),
+            'line' => null,
+            'category' => implode(',', $catTokens),
+            'status' => (string)($entry['status'] ?? 'fail'),
+            'duration_ms' => (int)($entry['duration_ms'] ?? 0),
+            'error_type' => self::inferErrorType($entry),
+            'exception_class' => null,
+            'kind' => self::entryKind($entry),
+            'phase' => (string)($entry['failure_phase'] ?? self::entryPhase($entry)),
             'failure_domain' => (string)($entry['failure_domain'] ?? self::entryDomain($entry)),
-            'cause_code'     => (string)($entry['failure_cause_code'] ?? self::entryCauseCode($entry)),
-            'message'        => $message,
-            'assertion'      => null,
-            'diff_excerpt'   => null,
-            'trace_excerpt'  => $traceExcerpt,
+            'cause_code' => (string)($entry['failure_cause_code'] ?? self::entryCauseCode($entry)),
+            'message' => $message,
+            'assertion' => null,
+            'diff_excerpt' => null,
+            'trace_excerpt' => $traceExcerpt,
             'stdout_excerpt' => $stdoutExcerpt,
             'stderr_excerpt' => $stderrExcerpt,
-            'artifact_path'  => null,
+            'artifact_path' => null,
         ];
     }
 
     /**
-     * @param Throwable $e
      * @param array<string,mixed> $context
      * @return array<string,mixed>
      */
@@ -178,17 +177,17 @@ final class ReportSummary
      */
     public static function groupFailures(array $failures): array
     {
-        $byFile      = [];
+        $byFile = [];
         $byErrorType = [];
-        $byMessage   = [];
+        $byMessage = [];
 
         foreach ($failures as $f) {
-            $testId    = (string)($f['test_id'] ?? $f['file'] ?? 'unknown');
-            $file      = (string)($f['file'] ?? 'unknown');
+            $testId = (string)($f['test_id'] ?? $f['file'] ?? 'unknown');
+            $file = (string)($f['file'] ?? 'unknown');
             $errorType = (string)($f['error_type'] ?? 'unknown');
-            $msg       = (string)($f['message'] ?? '');
+            $msg = (string)($f['message'] ?? '');
 
-            $byFile[$file][]           = $testId;
+            $byFile[$file][] = $testId;
             $byErrorType[$errorType][] = $testId;
 
             if ($msg !== '') {
@@ -202,9 +201,9 @@ final class ReportSummary
         ksort($byMessage);
 
         return [
-            'by_file'       => $byFile,
+            'by_file' => $byFile,
             'by_error_type' => $byErrorType,
-            'by_message'    => $byMessage,
+            'by_message' => $byMessage,
         ];
     }
 
@@ -221,6 +220,7 @@ final class ReportSummary
                 $files[$file] = true;
             }
         }
+
         $out = array_keys($files);
         sort($out);
         return $out;
@@ -242,9 +242,9 @@ final class ReportSummary
             $key = substr((string)preg_replace('/\s+/', ' ', $message), 0, 200);
             if (!isset($agg[$key])) {
                 $agg[$key] = [
-                    'message'   => $key,
-                    'count'     => 0,
-                    'files'     => [],
+                    'message' => $key,
+                    'count' => 0,
+                    'files' => [],
                     'suite_ids' => [],
                 ];
             }
@@ -299,10 +299,10 @@ final class ReportSummary
         string $startedAt
     ): array {
         $summary = [
-            'total'       => 0,
-            'passed'      => 0,
-            'failed'      => 0,
-            'skipped'     => 0,
+            'total' => 0,
+            'passed' => 0,
+            'failed' => 0,
+            'skipped' => 0,
             'duration_ms' => $durationMs,
         ];
 
@@ -360,29 +360,30 @@ final class ReportSummary
             : '';
 
         return [
-            'target'                => $target,
-            'category'              => $category,
-            'started_at'            => $startedAt,
-            'duration_ms'           => $durationMs,
-            'report_root'           => $reportRoot,
-            'report_scope_rel'      => $reportScopeRel,
+            'target' => $target,
+            'category' => $category,
+            'started_at' => $startedAt,
+            'duration_ms' => $durationMs,
+            'report_root' => $reportRoot,
+            'report_scope_rel' => $reportScopeRel,
             'selected_module_scope' => $selectedModuleScope,
-            'selected_test_count'   => $selectedTestCount,
-            'suite_status_counts'   => $suiteStatusCounts,
+            'selected_test_count' => $selectedTestCount,
+            'suite_status_counts' => $suiteStatusCounts,
             'outcome_status_counts' => self::aggregateOutcomeStatusCounts($suiteReports),
-            'summary'               => $summary,
-            'failures'              => $canonicalFailures,
-            'failure_contract'      => [
+            'summary' => $summary,
+            'failures' => $canonicalFailures,
+            'failure_contract' => [
                 'canonical' => 'failures',
                 'legacy_fallback' => 'suites[].has_failures',
             ],
-            'first_failure'         => $canonicalFailures !== [] ? self::summarizeFailure($canonicalFailures[0]) : null,
-            'evidence_valid'        => $evidenceValid,
+            'first_failure' => $canonicalFailures !== [] ? self::summarizeFailure($canonicalFailures[0]) : null,
+            'evidence_valid' => $evidenceValid,
             'evidence_invalid_reason' => $evidenceInvalidReason,
-            'failed_files'          => self::failedFiles($canonicalFailures),
-            'top_failure_messages'  => self::topFailureMessages($canonicalFailures, 5),
-            'suite_ids'             => array_values(array_map(static fn(array $row): string => (string)($row['suite_id'] ?? ''), $suiteRows)),
-            'has_failures'          => $summary['failed'] > 0 || $canonicalFailures !== [],
+            'failed_files' => self::failedFiles($canonicalFailures),
+            'top_failure_messages' => self::topFailureMessages($canonicalFailures, 5),
+            'suite_ids' => array_values(array_map(static fn(array $row): string => (string)($row['suite_id'] ?? ''), $suiteRows)),
+            'has_failures' => $summary['failed'] > 0 || $canonicalFailures !== [],
+            'suites' => $suiteRows,
         ];
     }
 
@@ -414,9 +415,12 @@ final class ReportSummary
         $summary['contention_errors'] = (int)($report['status_counts']['contention'] ?? 0);
         $report['summary'] = $summary;
 
-        $report['selection_manifest'] = self::selectionManifest($report);
-        $report['regression_delta'] = self::regressionDelta($report);
-        $report['normalized_artifacts'] = self::normalizedArtifacts($report);
+        $report['failure_clusters'] = self::failureClusters($report);
+        $report['phase_timeline'] = self::phaseTimeline($report, $diagnostics);
+        $report['rerun_plan'] = self::rerunPlan($report);
+        $report['recommended_actions'] = self::recommendedActions($report, $diagnostics);
+        $report['run_delta'] = self::runDelta($report);
+        $report['agent_summary'] = self::agentSummary($report, $diagnostics);
 
         return $report;
     }
@@ -496,6 +500,336 @@ final class ReportSummary
     }
 
     /**
+     * @param array<string,mixed> $report
+     * @param array<string,mixed>|null $diagnostics
+     * @return array<int,array<string,mixed>>
+     */
+    public static function phaseTimeline(array $report, ?array $diagnostics = null): array
+    {
+        $diagnostics ??= self::diagnostics($report);
+        $primaryPhase = (string)($diagnostics['primary_phase'] ?? 'none');
+        $outcome = (string)($diagnostics['outcome_status'] ?? 'passed');
+        $isMeta = is_array($report['suites'] ?? null);
+
+        $phases = $isMeta
+            ? ['admission', 'execution', 'reporting']
+            : ['discovery', 'admission', 'bootstrap', 'execution', 'reporting'];
+
+        $order = array_flip($phases);
+        $failureIndex = array_key_exists($primaryPhase, $order) ? (int)$order[$primaryPhase] : null;
+        $timeline = [];
+
+        foreach ($phases as $index => $phase) {
+            $status = 'not_started';
+            if ($failureIndex === null) {
+                $status = 'completed';
+            } elseif ($index < $failureIndex) {
+                $status = 'completed';
+            } elseif ($index === $failureIndex) {
+                $status = in_array($outcome, ['passed', 'partial', 'skipped', 'listed', 'no_tests'], true) ? 'completed' : 'failed';
+            }
+
+            $timeline[] = [
+                'phase' => $phase,
+                'status' => $status,
+                'primary' => $phase === $primaryPhase,
+            ];
+        }
+
+        if ($failureIndex === null && $timeline !== []) {
+            $last = array_key_last($timeline);
+            if ($last !== null) {
+                $timeline[$last]['primary'] = true;
+            }
+        }
+
+        return $timeline;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<int,array<string,mixed>>
+     */
+    public static function failureClusters(array $report): array
+    {
+        $failures = self::canonicalFailures($report);
+        if ($failures === []) {
+            return [];
+        }
+
+        $clusters = [];
+        foreach ($failures as $failure) {
+            $family = self::failureFamily($failure);
+            $phase = (string)($failure['phase'] ?? 'execution');
+            $domain = (string)($failure['failure_domain'] ?? 'test');
+            $cause = (string)($failure['cause_code'] ?? 'unknown');
+            $messageKey = self::normalizeMessageKey((string)($failure['message'] ?? ''));
+            $fingerprint = substr(sha1($family . '|' . $phase . '|' . $domain . '|' . $cause . '|' . $messageKey), 0, 12);
+
+            if (!isset($clusters[$fingerprint])) {
+                $clusters[$fingerprint] = [
+                    'cluster_id' => 'cluster_' . (count($clusters) + 1),
+                    'fingerprint' => $fingerprint,
+                    'family' => $family,
+                    'count' => 0,
+                    'phase' => $phase,
+                    'failure_domain' => $domain,
+                    'likely_shared_cause' => $cause,
+                    'representative_failure' => self::summarizeFailure($failure),
+                    'affected_tests' => [],
+                    'affected_files' => [],
+                    'affected_modules' => [],
+                    'suite_ids' => [],
+                ];
+            }
+
+            $clusters[$fingerprint]['count']++;
+            $testId = trim((string)($failure['test_id'] ?? ''));
+            if ($testId !== '') {
+                $clusters[$fingerprint]['affected_tests'][$testId] = true;
+            }
+            $file = trim((string)($failure['file'] ?? ''));
+            if ($file !== '') {
+                $clusters[$fingerprint]['affected_files'][$file] = true;
+            }
+            $module = self::moduleFromFailure($failure);
+            if ($module !== '') {
+                $clusters[$fingerprint]['affected_modules'][$module] = true;
+            }
+            $suiteId = trim((string)($failure['suite_id'] ?? $failure['suite'] ?? ''));
+            if ($suiteId !== '') {
+                $clusters[$fingerprint]['suite_ids'][$suiteId] = true;
+            }
+        }
+
+        $rows = [];
+        foreach ($clusters as $row) {
+            $row['affected_tests'] = array_values(array_keys($row['affected_tests']));
+            $row['affected_files'] = array_values(array_keys($row['affected_files']));
+            $row['affected_modules'] = array_values(array_keys($row['affected_modules']));
+            $row['suite_ids'] = array_values(array_keys($row['suite_ids']));
+            sort($row['affected_tests']);
+            sort($row['affected_files']);
+            sort($row['affected_modules']);
+            sort($row['suite_ids']);
+            $rows[] = $row;
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $cmp = (int)$right['count'] <=> (int)$left['count'];
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strcmp((string)$left['fingerprint'], (string)$right['fingerprint']);
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<int,array<string,mixed>>
+     */
+    public static function rerunPlan(array $report): array
+    {
+        $plan = [];
+        $suiteId = trim((string)($report['suite_id'] ?? ''));
+        $target = $suiteId !== '' ? str_replace('_', '-', $suiteId) : trim((string)($report['target'] ?? ''));
+        $failures = self::canonicalFailures($report);
+        $clusters = self::failureClusters($report);
+
+        if ($failures !== []) {
+            $first = $failures[0];
+            $firstFile = trim((string)($first['file'] ?? $first['test_id'] ?? ''));
+            if ($firstFile !== '' && $target !== '') {
+                $plan[] = [
+                    'type' => 'rerun_single_test',
+                    'label' => 'isolate first failing file',
+                    'command' => "TEST_MATCH='{$firstFile}' php runTest.php {$target}",
+                    'reason' => 'Reduce search space to the first reproducible failing file.',
+                ];
+            }
+        }
+
+        if ($clusters !== []) {
+            $firstCluster = $clusters[0];
+            $module = (string)($firstCluster['affected_modules'][0] ?? '');
+            if ($module !== '' && $target !== '') {
+                $plan[] = [
+                    'type' => 'rerun_cluster_scope',
+                    'label' => 'rerun dominant failure cluster',
+                    'command' => "TEST_MATCH='{$module}' php runTest.php {$target}",
+                    'reason' => 'Dominant cluster usually carries the shared root cause.',
+                ];
+            }
+        }
+
+        if ($target !== '') {
+            $plan[] = [
+                'type' => 'rerun_suite',
+                'label' => 'rerun current suite',
+                'command' => "php runTest.php {$target}",
+                'reason' => 'Confirm whether the issue is isolated or suite-wide.',
+            ];
+        }
+
+        if (is_array($report['suites'] ?? null)) {
+            foreach ((array)$report['suites'] as $suite) {
+                if (!is_array($suite)) {
+                    continue;
+                }
+                $suiteCode = (int)($suite['exit_code'] ?? 0);
+                $suiteName = trim((string)($suite['suite_id'] ?? ''));
+                if ($suiteCode === 0 || $suiteCode === 2 || $suiteName === '') {
+                    continue;
+                }
+
+                $plan[] = [
+                    'type' => 'rerun_failed_suite',
+                    'label' => 'rerun first failed suite',
+                    'command' => 'php runTest.php ' . str_replace('_', '-', $suiteName),
+                    'reason' => 'Meta run should collapse quickly to the first failing suite.',
+                ];
+                break;
+            }
+        }
+
+        $plan[] = [
+            'type' => 'open_report',
+            'label' => 'full aggregated report',
+            'command' => 'php scripts/report.php',
+            'reason' => 'Open the structured report when console output is not enough.',
+        ];
+
+        return self::dedupePlan($plan);
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    public static function runDelta(array $report): array
+    {
+        $previousRunId = trim((string)($report['previous_run_id'] ?? ''));
+        $newFailures = (int)($report['new_failures_count'] ?? 0);
+        $resolvedFailures = (int)($report['resolved_failures_count'] ?? 0);
+        $persistentFailures = max(0, count(self::canonicalFailures($report)) - $newFailures);
+
+        if (is_array($report['suites'] ?? null)) {
+            $newFailures = 0;
+            $resolvedFailures = 0;
+            $persistentFailures = 0;
+            foreach ((array)$report['suites'] as $suiteRow) {
+                if (!is_array($suiteRow)) {
+                    continue;
+                }
+                $newFailures += (int)($suiteRow['new_failures_count'] ?? 0);
+                $resolvedFailures += (int)($suiteRow['resolved_failures_count'] ?? 0);
+                $suiteFailed = (int)($suiteRow['summary']['failed'] ?? 0);
+                $persistentFailures += max(0, $suiteFailed - (int)($suiteRow['new_failures_count'] ?? 0));
+                if ($previousRunId === '') {
+                    $previousRunId = trim((string)($suiteRow['previous_run_id'] ?? ''));
+                }
+            }
+        }
+
+        return [
+            'previous_run_id' => $previousRunId !== '' ? $previousRunId : null,
+            'new_failures_count' => $newFailures,
+            'resolved_failures_count' => $resolvedFailures,
+            'persistent_failures_count' => $persistentFailures,
+            'changed' => $newFailures > 0 || $resolvedFailures > 0,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @param array<string,mixed>|null $diagnostics
+     * @return array<int,array<string,mixed>>
+     */
+    public static function recommendedActions(array $report, ?array $diagnostics = null): array
+    {
+        $diagnostics ??= self::diagnostics($report);
+        $actions = [];
+        foreach (self::rerunPlan($report) as $priority => $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+            $actions[] = [
+                'priority' => $priority + 1,
+                'type' => (string)($step['type'] ?? 'action'),
+                'command' => (string)($step['command'] ?? ''),
+                'reason' => (string)($step['reason'] ?? ''),
+            ];
+        }
+
+        $cause = (string)($diagnostics['cause_code'] ?? '');
+        if ($cause === 'shared_store_locked' || $cause === 'store_resource_locked') {
+            array_unshift($actions, [
+                'priority' => 1,
+                'type' => 'release_contention',
+                'command' => 'Retry when the shared store lock is free.',
+                'reason' => 'Current failure is contention, not test logic.',
+            ]);
+        }
+
+        foreach ($actions as $index => $action) {
+            $actions[$index]['priority'] = $index + 1;
+        }
+
+        return $actions;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @param array<string,mixed>|null $diagnostics
+     * @return array<string,mixed>
+     */
+    public static function agentSummary(array $report, ?array $diagnostics = null): array
+    {
+        $diagnostics ??= self::diagnostics($report);
+        $clusters = self::failureClusters($report);
+        $delta = self::runDelta($report);
+        $actions = self::recommendedActions($report, $diagnostics);
+        $topCluster = $clusters[0] ?? null;
+
+        $primaryProblem = (string)($diagnostics['cause_code'] ?? 'none');
+        if (is_array($topCluster)) {
+            $primaryProblem = (string)($topCluster['family'] ?? $primaryProblem);
+        }
+
+        $suggestedFocus = [];
+        if (is_array($topCluster)) {
+            $suggestedFocus = array_slice(
+                array_merge(
+                    array_map(static fn(mixed $v): string => (string)$v, (array)($topCluster['affected_modules'] ?? [])),
+                    array_map(static fn(mixed $v): string => (string)$v, (array)($topCluster['affected_files'] ?? []))
+                ),
+                0,
+                4
+            );
+        }
+
+        $likelyRootCauses = [];
+        if (is_array($topCluster)) {
+            $likelyRootCauses[] = [
+                'family' => (string)($topCluster['family'] ?? 'unknown'),
+                'confidence' => min(0.95, 0.45 + ((int)($topCluster['count'] ?? 0) * 0.05)),
+                'evidence' => ['failure_clusters', 'first_failure', 'diagnostics'],
+            ];
+        }
+
+        return [
+            'verdict' => (string)($diagnostics['outcome_status'] ?? 'passed'),
+            'primary_problem' => $primaryProblem,
+            'suggested_focus' => array_values(array_unique(array_filter($suggestedFocus, static fn(string $v): bool => $v !== ''))),
+            'run_changed' => (bool)($delta['changed'] ?? false),
+            'likely_root_causes' => $likelyRootCauses,
+            'next_best_action' => $actions[0] ?? null,
+        ];
+    }
+
+    /**
      * @param array<int,string> $roots
      * @return array<string,mixed>|null
      */
@@ -539,140 +873,6 @@ final class ReportSummary
         }
 
         return null;
-    }
-
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
-    private static function selectionManifest(array $report): array
-    {
-        $existing = $report['selection_manifest'] ?? null;
-        if (is_array($existing)) {
-            $existing['selected_test_count'] = (int)($existing['selected_test_count'] ?? $report['selected_test_count'] ?? $report['tests_total'] ?? 0);
-            $existing['selected_test_files'] = array_values((array)($existing['selected_test_files'] ?? $report['selected_test_files'] ?? []));
-            $existing['selected_module_scope'] = (string)($existing['selected_module_scope'] ?? $report['selected_module_scope'] ?? '');
-            $existing['selected_common_dir'] = (string)($existing['selected_common_dir'] ?? $report['selected_common_dir'] ?? '');
-            $existing['scope'] = (string)($existing['scope'] ?? $report['scope'] ?? ($report['filters']['scope'] ?? ''));
-            $existing['category'] = (string)($existing['category'] ?? $report['category'] ?? ($report['filters']['category'] ?? ''));
-            $existing['match'] = (string)($existing['match'] ?? $report['match'] ?? ($report['filters']['match'] ?? ''));
-            return $existing;
-        }
-
-        return [
-            'suite_id' => (string)($report['suite_id'] ?? ''),
-            'scope' => (string)($report['scope'] ?? ($report['filters']['scope'] ?? '')),
-            'category' => (string)($report['category'] ?? ($report['filters']['category'] ?? '')),
-            'match' => (string)($report['match'] ?? ($report['filters']['match'] ?? '')),
-            'list_only' => (bool)($report['list_only'] ?? false),
-            'selected_test_count' => (int)($report['selected_test_count'] ?? $report['tests_total'] ?? 0),
-            'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
-            'selected_common_dir' => (string)($report['selected_common_dir'] ?? ''),
-            'selected_test_files' => array_values((array)($report['selected_test_files'] ?? [])),
-            'source' => 'report_summary',
-        ];
-    }
-
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
-    private static function regressionDelta(array $report): array
-    {
-        $delta = $report['regression_delta'] ?? null;
-        if (!is_array($delta)) {
-            return [
-                'new_failures' => [],
-                'resolved_failures' => [],
-                'status_transitions' => [],
-            ];
-        }
-
-        return [
-            'new_failures' => array_values((array)($delta['new_failures'] ?? [])),
-            'resolved_failures' => array_values((array)($delta['resolved_failures'] ?? [])),
-            'status_transitions' => array_values(array_filter((array)($delta['status_transitions'] ?? []), 'is_array')),
-        ];
-    }
-
-    /**
-     * @param array<string,mixed> $report
-     * @return array<int,array<string,mixed>>
-     */
-    private static function normalizedArtifacts(array $report): array
-    {
-        $items = [];
-
-        self::appendArtifact(
-            $items,
-            'report_root',
-            (string)($report['report_root'] ?? ''),
-            (string)($report['report_scope_rel'] ?? '')
-        );
-        self::appendArtifact($items, 'history_file', $report['history_file'] ?? null);
-        self::appendArtifact($items, 'manifest_path', $report['manifest_path'] ?? null);
-        self::appendArtifact($items, 'snapshot_file', $report['snapshot_file'] ?? null);
-        self::appendArtifact($items, 'coverage_json', $report['coverage_json'] ?? null);
-        self::appendArtifact($items, 'coverage_lcov', $report['coverage_lcov'] ?? null);
-
-        return $items;
-    }
-
-    /**
-     * @param array<int,array<string,mixed>> $items
-     */
-    private static function appendArtifact(array &$items, string $kind, mixed $path, mixed $displayPath = null): void
-    {
-        if (!is_string($path) || trim($path) === '') {
-            return;
-        }
-
-        $display = is_string($displayPath) && trim($displayPath) !== '' ? trim($displayPath) : self::displayArtifactPath($path);
-
-        $items[] = [
-            'kind' => $kind,
-            'path' => $display,
-            'source_path' => str_replace('\\', '/', trim($path)),
-            'exists' => self::artifactExists($path),
-        ];
-    }
-
-    private static function artifactExists(string $path): bool
-    {
-        $path = trim($path);
-        if ($path === '') {
-            return false;
-        }
-
-        $resolved = self::resolveArtifactPath($path);
-        return is_file($resolved) || is_dir($resolved);
-    }
-
-    private static function resolveArtifactPath(string $path): string
-    {
-        if (self::isAbsolutePath($path)) {
-            return str_replace('\\', '/', $path);
-        }
-
-        return rtrim(Paths::repoRoot(), '/\\') . '/' . ltrim(str_replace('\\', '/', $path), '/');
-    }
-
-    private static function displayArtifactPath(string $path): string
-    {
-        $normalized = str_replace('\\', '/', trim($path));
-        $repoRoot = rtrim(str_replace('\\', '/', Paths::repoRoot()), '/');
-
-        if (str_starts_with($normalized, $repoRoot . '/')) {
-            return substr($normalized, strlen($repoRoot) + 1);
-        }
-
-        return $normalized;
-    }
-
-    private static function isAbsolutePath(string $path): bool
-    {
-        return str_starts_with($path, '/')
-            || preg_match('/^[A-Za-z]:[\/\\\\]/', $path) === 1;
     }
 
     /**
@@ -760,7 +960,7 @@ final class ReportSummary
         }
 
         $testsTotal = (int)($report['tests_total'] ?? 0);
-        if ($testsTotal === 0) {
+        if ($testsTotal === 0 && !is_array($report['suites'] ?? null)) {
             return 'no_tests';
         }
 
@@ -777,7 +977,7 @@ final class ReportSummary
             };
         }
 
-        if ((int)($report['fail'] ?? 0) > 0) {
+        if ((int)($report['fail'] ?? 0) > 0 || (!empty($report['summary']['failed'] ?? 0))) {
             return 'failed';
         }
 
@@ -787,6 +987,10 @@ final class ReportSummary
 
         if ((int)($report['skip'] ?? 0) > 0) {
             return 'partial';
+        }
+
+        if (is_array($report['suites'] ?? null) && ((int)($report['summary']['failed'] ?? 0) > 0)) {
+            return 'failed';
         }
 
         return 'passed';
@@ -810,10 +1014,6 @@ final class ReportSummary
      */
     private static function entryPhase(array $entry): string
     {
-        if ((bool)($entry['timeout'] ?? false)) {
-            return 'execution';
-        }
-
         return 'execution';
     }
 
@@ -966,5 +1166,88 @@ final class ReportSummary
 
         $json['_source_file'] = $file;
         return $json;
+    }
+
+    /**
+     * @param array<string,mixed> $failure
+     */
+    private static function failureFamily(array $failure): string
+    {
+        $cause = strtolower(trim((string)($failure['cause_code'] ?? '')));
+        $message = strtolower(trim((string)($failure['message'] ?? '')));
+        $domain = strtolower(trim((string)($failure['failure_domain'] ?? '')));
+
+        if ($cause === 'shared_store_locked' || $cause === 'store_resource_locked') {
+            return 'store_contention';
+        }
+        if ($cause === 'process_timeout' || str_contains($message, 'timeout')) {
+            return 'timeout';
+        }
+        if (str_contains($message, 'duplicate entry')) {
+            return 'seed_drift';
+        }
+        if (str_contains($message, 'sql setup fallo') || str_contains($message, 'fallo aplicando sql')) {
+            return 'seed_sql_failure';
+        }
+        if (str_contains($message, 'debe') || str_contains($message, 'expected') || $domain === 'test') {
+            return 'assertion_failure';
+        }
+        if ($domain !== '') {
+            return $domain . '_failure';
+        }
+
+        return 'unknown_failure';
+    }
+
+    private static function normalizeMessageKey(string $message): string
+    {
+        $message = strtolower(trim($message));
+        if ($message === '') {
+            return 'no_message';
+        }
+        $message = (string)preg_replace('/\s+/', ' ', $message);
+        $message = (string)preg_replace('/\b\d+\b/', '#', $message);
+        return substr($message, 0, 120);
+    }
+
+    /**
+     * @param array<string,mixed> $failure
+     */
+    private static function moduleFromFailure(array $failure): string
+    {
+        $file = str_replace('\\', '/', trim((string)($failure['file'] ?? '')));
+        if ($file === '') {
+            return '';
+        }
+        $parts = array_values(array_filter(explode('/', $file), static fn(string $p): bool => $p !== ''));
+        if (count($parts) >= 3 && $parts[0] === 'test') {
+            return $parts[1] . '/' . $parts[2];
+        }
+        return count($parts) >= 2 ? ($parts[0] . '/' . $parts[1]) : $file;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $plan
+     * @return array<int,array<string,mixed>>
+     */
+    private static function dedupePlan(array $plan): array
+    {
+        $seen = [];
+        $out = [];
+        foreach ($plan as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $command = trim((string)($row['command'] ?? ''));
+            if ($command === '') {
+                continue;
+            }
+            if (isset($seen[$command])) {
+                continue;
+            }
+            $seen[$command] = true;
+            $out[] = $row;
+        }
+        return $out;
     }
 }

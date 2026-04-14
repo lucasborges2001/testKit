@@ -5,14 +5,6 @@ namespace Testkit\Core\Reporting;
 
 final class ConsoleReporter
 {
-    private const MAX_FAILURES = 8;
-    private const MAX_FAILURE_LINES = 4;
-    private const MAX_SLOW_TESTS = 5;
-    private const MAX_FRAGILITY = 5;
-    private const MAX_TRIAGE_GROUPS = 4;
-    private const MAX_TRIAGE_EXAMPLES = 1;
-    private const MAX_PERF_VIOLATIONS = 5;
-
     /**
      * @param array<string,mixed> $config
      */
@@ -31,6 +23,8 @@ final class ConsoleReporter
             . UI::gray('fail_fast=' . ((bool)$config['fail_fast'] ? '1' : '0'))
             . ' '
             . UI::gray('jobs=' . (string)$config['jobs'])
+            . ' '
+            . UI::gray('ui=' . self::uiVerbosity())
             . "\n";
 
         if ((bool)$config['coverage']) {
@@ -90,8 +84,10 @@ final class ConsoleReporter
 
         self::printDiagnostics($diagnostics);
         self::printDecision($result, $diagnostics);
+        self::printRunDelta($result);
         self::printWarnings($result);
         self::printFirstFailure($result);
+        self::printFailureClusters($result);
         self::printModuleSummary($result);
         self::printFailures($result);
         self::printTriage($result);
@@ -140,7 +136,10 @@ final class ConsoleReporter
         echo '  outcome: ' . self::renderOutcome(strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'))) . ' ' . UI::gray('phase=' . (string)($diagnostics['primary_phase'] ?? 'none') . ' cause=' . (string)($diagnostics['cause_code'] ?? 'none')) . "\n";
         echo '  report_root: ' . UI::gray((string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
+
         self::printDecision($meta, $diagnostics);
+        self::printRunDelta($meta);
+        self::printFailureClusters($meta);
     }
 
     /**
@@ -148,6 +147,10 @@ final class ConsoleReporter
      */
     private static function printWarnings(array $result): void
     {
+        if (!self::sectionVisible('warnings')) {
+            return;
+        }
+
         $warnings = StructuredWarnings::canonicalize($result['warnings'] ?? ($result['parallel_policy']['warnings'] ?? null));
         if ($warnings === []) {
             return;
@@ -190,6 +193,10 @@ final class ConsoleReporter
      */
     private static function printModuleSummary(array $result): void
     {
+        if (!self::sectionVisible('module_summary')) {
+            return;
+        }
+
         $summary = $result['module_summary'] ?? [];
         if (!is_array($summary) || !$summary) {
             return;
@@ -259,7 +266,7 @@ final class ConsoleReporter
             return;
         }
 
-        $visible = array_slice($failures, 0, self::MAX_FAILURES);
+        $visible = array_slice($failures, 0, self::maxFailures());
         UI::section('Failed Tests (' . count($failures) . ')');
 
         foreach ($visible as $failure) {
@@ -277,15 +284,20 @@ final class ConsoleReporter
             echo '  ' . UI::gray('... ' . $hidden . ' more failures hidden; use php scripts/report.php for full detail') . "\n";
         }
 
-        $first = $failures[0];
-        $firstFile = (string)($first['file'] ?? $first['test_id'] ?? '');
-        if ($firstFile !== '') {
-            $suiteId = (string)($result['suite_id'] ?? '');
-            $target = str_replace('_', '-', $suiteId);
-
+        $plan = is_array($result['rerun_plan'] ?? null) ? $result['rerun_plan'] : ReportSummary::rerunPlan($result);
+        if ($plan !== []) {
             UI::section('Next Step');
-            echo '  isolate first failing file: ' . UI::info("TEST_MATCH='{$firstFile}' php runTest.php {$target}") . "\n";
-            echo '  full aggregated report: ' . UI::info('php scripts/report.php') . "\n";
+            foreach (array_slice($plan, 0, self::maxNextSteps()) as $step) {
+                if (!is_array($step)) {
+                    continue;
+                }
+                $label = trim((string)($step['label'] ?? 'step'));
+                $command = trim((string)($step['command'] ?? ''));
+                if ($command === '') {
+                    continue;
+                }
+                echo '  ' . $label . ': ' . UI::info($command) . "\n";
+            }
         }
     }
 
@@ -301,7 +313,7 @@ final class ConsoleReporter
             }
 
             $allLines = preg_split('/\r\n|\r|\n/', $snippet) ?: [];
-            $visibleLines = array_slice($allLines, 0, self::MAX_FAILURE_LINES);
+            $visibleLines = array_slice($allLines, 0, self::maxFailureLines());
 
             foreach ($visibleLines as $line) {
                 echo '    ' . UI::gray('|') . ' ' . $line . "\n";
@@ -422,8 +434,83 @@ final class ConsoleReporter
     /**
      * @param array<string,mixed> $result
      */
+    private static function printRunDelta(array $result): void
+    {
+        $delta = is_array($result['run_delta'] ?? null) ? $result['run_delta'] : ReportSummary::runDelta($result);
+        if (!is_array($delta)) {
+            return;
+        }
+
+        $new = (int)($delta['new_failures_count'] ?? 0);
+        $resolved = (int)($delta['resolved_failures_count'] ?? 0);
+        $persistent = (int)($delta['persistent_failures_count'] ?? 0);
+        $previous = trim((string)($delta['previous_run_id'] ?? ''));
+        $hasSignal = $new > 0 || $resolved > 0 || $persistent > 0 || $previous !== '';
+        if (!$hasSignal) {
+            return;
+        }
+
+        UI::section('Run Delta');
+        if ($previous !== '') {
+            echo '  previous_run: ' . UI::gray($previous) . "\n";
+        }
+        echo '  new_failures: ' . ($new > 0 ? UI::failure((string)$new) : UI::gray((string)$new)) . "\n";
+        echo '  resolved_failures: ' . ($resolved > 0 ? UI::success((string)$resolved) : UI::gray((string)$resolved)) . "\n";
+        echo '  persistent_failures: ' . ($persistent > 0 ? UI::warning((string)$persistent) : UI::gray((string)$persistent)) . "\n";
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function printFailureClusters(array $result): void
+    {
+        $clusters = is_array($result['failure_clusters'] ?? null)
+            ? $result['failure_clusters']
+            : ReportSummary::failureClusters($result);
+        if (!is_array($clusters) || $clusters === []) {
+            return;
+        }
+
+        UI::section('Failure Clusters');
+        $visible = array_slice($clusters, 0, self::maxFailureClusters());
+        foreach ($visible as $cluster) {
+            if (!is_array($cluster)) {
+                continue;
+            }
+            $family = trim((string)($cluster['family'] ?? 'unknown'));
+            $count = (int)($cluster['count'] ?? 0);
+            $fingerprint = trim((string)($cluster['fingerprint'] ?? ''));
+            $cause = trim((string)($cluster['likely_shared_cause'] ?? ''));
+            echo '  - ' . UI::warning($family) . ' x' . $count;
+            if ($fingerprint !== '') {
+                echo ' ' . UI::gray('fp=' . $fingerprint);
+            }
+            if ($cause !== '') {
+                echo ' ' . UI::gray('cause=' . $cause);
+            }
+            echo "\n";
+
+            $files = is_array($cluster['affected_files'] ?? null) ? $cluster['affected_files'] : [];
+            if ($files !== []) {
+                echo '      files: ' . implode(', ', array_slice(array_map(static fn(mixed $v): string => (string)$v, $files), 0, 3)) . "\n";
+            }
+        }
+
+        $hidden = count($clusters) - count($visible);
+        if ($hidden > 0) {
+            echo '  ' . UI::gray('... ' . $hidden . ' more clusters hidden') . "\n";
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
     private static function printTriage(array $result): void
     {
+        if (!self::sectionVisible('triage')) {
+            return;
+        }
+
         $failures = ReportSummary::canonicalFailures($result);
         if ($failures === []) {
             return;
@@ -431,14 +518,14 @@ final class ConsoleReporter
 
         $summary = $result['triage_summary'] ?? null;
         if (!is_array($summary) || $summary === []) {
-            $summary = FailureClassifier::summarize($failures, self::MAX_TRIAGE_GROUPS);
+            $summary = FailureClassifier::summarize($failures, self::maxTriageGroups());
         }
 
         if ($summary === []) {
             return;
         }
 
-        $visible = array_slice($summary, 0, self::MAX_TRIAGE_GROUPS);
+        $visible = array_slice($summary, 0, self::maxTriageGroups());
 
         UI::section('Triage Summary');
         foreach ($visible as $row) {
@@ -453,7 +540,7 @@ final class ConsoleReporter
             echo '  - ' . UI::warning($label) . " x{$count}\n";
 
             $examples = is_array($row['examples'] ?? null) ? $row['examples'] : [];
-            foreach (array_slice($examples, 0, self::MAX_TRIAGE_EXAMPLES) as $example) {
+            foreach (array_slice($examples, 0, self::maxTriageExamples()) as $example) {
                 if (!is_array($example)) {
                     continue;
                 }
@@ -485,12 +572,16 @@ final class ConsoleReporter
      */
     private static function printSlow(array $result): void
     {
+        if (!self::sectionVisible('slow')) {
+            return;
+        }
+
         $slow = $result['slow_tests'] ?? [];
         if (!is_array($slow) || !$slow) {
             return;
         }
 
-        $visible = array_slice($slow, 0, self::MAX_SLOW_TESTS);
+        $visible = array_slice($slow, 0, self::maxSlowTests());
 
         UI::section('Slow Tests');
         foreach ($visible as $test) {
@@ -512,6 +603,10 @@ final class ConsoleReporter
      */
     private static function printFragility(array $result): void
     {
+        if (!self::sectionVisible('fragility')) {
+            return;
+        }
+
         $hints = $result['fragility_hints'] ?? [];
         if (!is_array($hints) || !$hints) {
             return;
@@ -538,7 +633,7 @@ final class ConsoleReporter
             }
         );
 
-        $visible = array_slice($flaky, 0, self::MAX_FRAGILITY);
+        $visible = array_slice($flaky, 0, self::maxFragility());
 
         UI::section('Fragility Hints');
         foreach ($visible as $hint) {
@@ -560,12 +655,16 @@ final class ConsoleReporter
      */
     private static function printPerfViolations(array $result): void
     {
+        if (!self::sectionVisible('perf')) {
+            return;
+        }
+
         $violations = $result['perf_violations'] ?? [];
         if (!is_array($violations) || !$violations) {
             return;
         }
 
-        $visible = array_slice($violations, 0, self::MAX_PERF_VIOLATIONS);
+        $visible = array_slice($violations, 0, self::maxPerfViolations());
 
         UI::section('Performance Threshold Violations');
         foreach ($visible as $entry) {
@@ -594,5 +693,113 @@ final class ConsoleReporter
         }
 
         return UI::failure($outcome);
+    }
+
+    private static function uiVerbosity(): string
+    {
+        $raw = getenv('TEST_UI_VERBOSITY');
+        if (!is_string($raw) || trim($raw) === '') {
+            $raw = getenv('TK_UI_VERBOSITY');
+        }
+        $level = strtolower(trim((string)$raw));
+        if (!in_array($level, ['minimal', 'normal', 'debug'], true)) {
+            return 'normal';
+        }
+
+        return $level;
+    }
+
+    private static function sectionVisible(string $section): bool
+    {
+        $verbosity = self::uiVerbosity();
+        if ($verbosity === 'debug') {
+            return true;
+        }
+
+        if ($verbosity === 'minimal') {
+            return !in_array($section, ['warnings', 'module_summary', 'triage', 'slow', 'fragility', 'perf'], true);
+        }
+
+        return true;
+    }
+
+    private static function maxFailures(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 4,
+            'debug' => 16,
+            default => 8,
+        };
+    }
+
+    private static function maxFailureLines(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 2,
+            'debug' => 8,
+            default => 4,
+        };
+    }
+
+    private static function maxSlowTests(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 0,
+            'debug' => 10,
+            default => 5,
+        };
+    }
+
+    private static function maxFragility(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 0,
+            'debug' => 10,
+            default => 5,
+        };
+    }
+
+    private static function maxTriageGroups(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 0,
+            'debug' => 8,
+            default => 4,
+        };
+    }
+
+    private static function maxTriageExamples(): int
+    {
+        return match (self::uiVerbosity()) {
+            'debug' => 2,
+            default => 1,
+        };
+    }
+
+    private static function maxPerfViolations(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 0,
+            'debug' => 10,
+            default => 5,
+        };
+    }
+
+    private static function maxFailureClusters(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 3,
+            'debug' => 8,
+            default => 5,
+        };
+    }
+
+    private static function maxNextSteps(): int
+    {
+        return match (self::uiVerbosity()) {
+            'minimal' => 2,
+            'debug' => 5,
+            default => 3,
+        };
     }
 }

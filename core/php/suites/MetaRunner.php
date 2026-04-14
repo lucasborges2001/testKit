@@ -91,6 +91,7 @@ final class MetaRunner
                     $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
                     $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
                     $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
+                    $suiteRow['rerun_plan'] = is_array($suiteReport['rerun_plan'] ?? null) ? $suiteReport['rerun_plan'] : [];
                 }
 
                 $suiteRows[] = $suiteRow;
@@ -135,7 +136,7 @@ final class MetaRunner
             ResultWriter::writeMeta($meta);
 
             if ($overallFail) {
-                self::printActionRequired($suiteRows, $suiteReports);
+                self::printActionRequired($meta);
             }
 
             return $overallFail ? 1 : 0;
@@ -239,32 +240,48 @@ final class MetaRunner
     }
 
     /**
-     * @param array<int,array<string,mixed>> $suiteRows
-     * @param array<int,array<string,mixed>> $suiteReports
+     * @param array<string,mixed> $meta
      */
-    private static function printActionRequired(array $suiteRows, array $suiteReports): void
+    private static function printActionRequired(array $meta): void
     {
-        $failedSuites = self::failedSuites($suiteRows);
-        $rerunCommand = self::firstRerunCommand($suiteReports);
+        $failedSuites = self::failedSuites($meta);
+        $delta = is_array($meta['run_delta'] ?? null) ? $meta['run_delta'] : ReportSummary::runDelta($meta);
+        $rerunPlan = is_array($meta['rerun_plan'] ?? null) ? $meta['rerun_plan'] : ReportSummary::rerunPlan($meta);
 
         echo "\n[Action Required]\n";
         if ($failedSuites !== []) {
             echo '  Suites con issues: ' . implode(', ', $failedSuites) . "\n";
         }
+        echo '  Delta: new=' . (int)($delta['new_failures_count'] ?? 0)
+            . ' resolved=' . (int)($delta['resolved_failures_count'] ?? 0)
+            . ' persistent=' . (int)($delta['persistent_failures_count'] ?? 0)
+            . "\n";
         echo "  Reporte detallado: php scripts/report.php\n";
-        if ($rerunCommand !== '') {
-            echo '  Aislar primer fallo: ' . $rerunCommand . "\n";
+
+        foreach (array_slice($rerunPlan, 0, 2) as $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+            $label = trim((string)($step['label'] ?? 'step'));
+            $command = trim((string)($step['command'] ?? ''));
+            if ($command === '') {
+                continue;
+            }
+            echo '  ' . $label . ': ' . $command . "\n";
         }
     }
 
     /**
-     * @param array<int,array<string,mixed>> $suiteRows
+     * @param array<string,mixed> $meta
      * @return array<int,string>
      */
-    private static function failedSuites(array $suiteRows): array
+    private static function failedSuites(array $meta): array
     {
         $failed = [];
-        foreach ($suiteRows as $row) {
+        foreach ((array)($meta['suites'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
             $code = (int)($row['exit_code'] ?? 1);
             if ($code === 0 || $code === 2) {
                 continue;
@@ -274,30 +291,6 @@ final class MetaRunner
         }
 
         return $failed;
-    }
-
-    /**
-     * @param array<int,array<string,mixed>> $suiteReports
-     */
-    private static function firstRerunCommand(array $suiteReports): string
-    {
-        foreach ($suiteReports as $suiteReport) {
-            $failures = ReportSummary::canonicalFailures($suiteReport);
-            if ($failures === []) {
-                continue;
-            }
-
-            $first = $failures[0];
-            $firstFile = trim((string)($first['file'] ?? $first['test_id'] ?? ''));
-            $suiteId = trim((string)($suiteReport['suite_id'] ?? ''));
-            if ($firstFile === '' || $suiteId === '') {
-                continue;
-            }
-
-            return "TEST_MATCH='{$firstFile}' php runTest.php " . str_replace('_', '-', $suiteId);
-        }
-
-        return '';
     }
 
     /**
