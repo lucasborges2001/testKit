@@ -12,15 +12,16 @@
 declare(strict_types=1);
 
 $tests = [
-    'ProcessRunner timeout'           => __DIR__ . '/test_process_timeout.php',
-    'ProcessRunner polling no deadlock' => __DIR__ . '/test_polling_deadlock.php',
-    'ProcessRunner finish no deadlock'  => __DIR__ . '/test_sequential_deadlock.php',
-    'ProcessRunner interleaved output'  => __DIR__ . '/test_interleaved_output.php',
-    'SuiteExecutor concurrent jobs'     => __DIR__ . '/test_concurrent_jobs.php',
-    'Lock stale detection'              => __DIR__ . '/test_lock_stale.php',
-    'Lock valid not broken'             => __DIR__ . '/test_lock_valid.php',
-    'Store resource lock'               => __DIR__ . '/test_store_resource_lock.php',
-    'Manifest atomic write'             => __DIR__ . '/test_manifest_write.php',
+    'ProcessRunner timeout'              => __DIR__ . '/test_process_timeout.php',
+    'ProcessRunner polling no deadlock'  => __DIR__ . '/test_polling_deadlock.php',
+    'ProcessRunner finish no deadlock'   => __DIR__ . '/test_sequential_deadlock.php',
+    'ProcessRunner interleaved output'   => __DIR__ . '/test_interleaved_output.php',
+    'SuiteExecutor concurrent jobs'      => __DIR__ . '/test_concurrent_jobs.php',
+    'Lock stale detection'               => __DIR__ . '/test_lock_stale.php',
+    'Lock valid not broken'              => __DIR__ . '/test_lock_valid.php',
+    'Store resource lock'                => __DIR__ . '/test_store_resource_lock.php',
+    'Manifest atomic write'              => __DIR__ . '/test_manifest_write.php',
+    'Reporting contract stable'          => __DIR__ . '/test_reporting_contract.php',
 ];
 
 $pass   = 0;
