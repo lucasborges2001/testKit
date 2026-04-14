@@ -5,10 +5,12 @@ require_once __DIR__ . '/../core/php/store/bootstrap.php';
 require_once __DIR__ . '/../core/php/common/Lock.php';
 require_once __DIR__ . '/../core/php/seeding/SeedPipeline.php';
 require_once __DIR__ . '/../core/php/seeding/BaselineManifest.php';
+require_once __DIR__ . '/../core/php/seeding/SeedFailure.php';
 require_once __DIR__ . '/../core/php/suites/ContractWorldBootstrap.php';
 
 use Testkit\Core\Common\Lock;
 use Testkit\Core\Seeding\BaselineManifest;
+use Testkit\Core\Seeding\SeedFailure;
 use Testkit\Core\Seeding\SeedPipeline;
 use Testkit\Core\Store\StoreMaintenance;
 use Testkit\Core\Store\StoreRegistry;
@@ -52,8 +54,6 @@ try {
 
         case 'bootstrap':
         case 'prepare-baseline':
-            // Delega al owner canónico de la política operativa (strategy, naming, per-worker, baseline clone).
-            // $respectSkipEnv=false: el CLI bootstrap es un comando explícito; TESTKIT_SKIP_STORE_BOOTSTRAP no aplica.
             ContractWorldBootstrap::prepare('cli', $projectRoot, $driver, false);
             exit(0);
 
@@ -89,7 +89,7 @@ try {
             );
     }
 } catch (Throwable $e) {
-    fwrite(STDERR, '[store_router] ' . $e->getMessage() . "\n");
+    fwrite(STDERR, render_store_router_error($e));
     exit(1);
 } finally {
     $lease?->release();
@@ -100,4 +100,16 @@ function safe_lock_segment(string $value): string
     $value = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower(trim($value))) ?: '';
     $value = trim($value, '._-');
     return $value !== '' ? $value : 'default';
+}
+
+/**
+ * @param Throwable $error
+ */
+function render_store_router_error(Throwable $error): string
+{
+    if ($error instanceof SeedFailure) {
+        return '[store_router] ' . $error->getMessage() . "\n";
+    }
+
+    return '[store_router] ' . trim($error->getMessage()) . "\n";
 }

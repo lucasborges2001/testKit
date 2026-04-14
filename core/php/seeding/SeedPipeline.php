@@ -14,6 +14,7 @@ require_once __DIR__ . '/BaselineManifest.php';
 require_once __DIR__ . '/BackupkitArtifactResolver.php';
 require_once __DIR__ . '/MigrationCatalog.php';
 require_once __DIR__ . '/MigrationStateResolver.php';
+require_once __DIR__ . '/SeedFailure.php';
 
 final class SeedPipeline
 {
@@ -24,17 +25,62 @@ final class SeedPipeline
         $seedDir = $projectRoot . '/test/seeds/' . $driver;
         $baselineMode = self::baselineMode();
         $adapter = StoreRegistry::fromDriver($driver);
-        $databaseName = trim((string)$adapter->resolveDatabaseName());
+
+        try {
+            $databaseName = trim((string)$adapter->resolveDatabaseName());
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resolver el nombre de base para el seed.', [
+                'stage' => 'database_name',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'seed_dir' => self::realPathOrOriginal($seedDir),
+                'project_root' => self::realPathOrOriginal($projectRoot),
+                'hint' => 'Definí correctamente las variables de DB en test/.env.test o DB_ENV_PATH antes de bootstrapping.',
+            ]);
+        }
+
         $manifestPath = BaselineManifest::pathFor($projectRoot, $driver, $databaseName);
-        $resolvedSnapshot = $baselineMode === 'snapshot' ? BackupkitArtifactResolver::resolveFromEnv() : null;
+
+        try {
+            $resolvedSnapshot = $baselineMode === 'snapshot' ? BackupkitArtifactResolver::resolveFromEnv() : null;
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resolver el snapshot baseline para el seed.', [
+                'stage' => 'snapshot_resolve',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => $databaseName,
+                'label' => 'snapshot baseline',
+                'seed_dir' => self::realPathOrOriginal($seedDir),
+                'hint' => 'Definí TEST_BASELINE_SNAPSHOT_FILE o metadata/report de backupkit válido para modo snapshot.',
+            ]);
+        }
 
         self::traceBootstrapContext($driver, $projectRoot, $seedDir, $baselineMode, $databaseName, $manifestPath, $resolvedSnapshot);
 
         if (!is_dir($seedDir)) {
-            throw new RuntimeException("No existe directorio de seeds: {$seedDir}");
+            throw new SeedFailure('No existe el directorio de seeds requerido para el bootstrap.', [
+                'stage' => 'seed_dir',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => $databaseName,
+                'file' => self::realPathOrOriginal($seedDir),
+                'hint' => 'Creá test/seeds/' . $driver . ' o corregí TESTKIT_PROJECT_ROOT/TK_REPO_ROOT.',
+            ]);
         }
 
-        $manifestPlan = self::buildManifestPlan($driver, $seedDir, $projectRoot, $baselineMode, $databaseName, $manifestPath, $resolvedSnapshot);
+        try {
+            $manifestPlan = self::buildManifestPlan($driver, $seedDir, $projectRoot, $baselineMode, $databaseName, $manifestPath, $resolvedSnapshot);
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo construir el plan del baseline de seed.', [
+                'stage' => 'manifest_plan',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => $databaseName,
+                'label' => $baselineMode,
+                'hint' => 'Revisá configuración de baseline, migraciones y materialización del estado previo al seed.',
+            ]);
+        }
+
         if (self::canReuseCurrentBaseline($driver, $databaseName, $manifestPath, $manifestPlan)) {
             echo "Baseline reutilizado desde manifest\n";
             return 0;
@@ -86,112 +132,246 @@ final class SeedPipeline
     {
         $files = self::listFlatFiles($seedDir);
         if ($files === []) {
-            throw new RuntimeException("No hay seeds SQL en {$seedDir} ni en {$seedDir}/seeds");
+            throw new SeedFailure('No hay archivos SQL para seed en modo flat.', [
+                'stage' => 'flat_discovery',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'file' => self::realPathOrOriginal($seedDir),
+                'hint' => 'Agregá .sql en ' . self::realPathOrOriginal($seedDir) . ' o en el subdirectorio seeds/.',
+            ]);
         }
 
         $adapter = StoreRegistry::fromDriver($driver);
-        $pdo = $adapter->connect();
+        try {
+            $pdo = $adapter->connect();
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para ejecutar el seed flat.', [
+                'stage' => 'connect',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'flat',
+                'db_name' => self::dbConnectionSummary($driver)['db'] ?? '',
+                'hint' => 'Revisá host, puerto, usuario y password de la conexión usada por testkit.',
+            ]);
+        }
+
         Trace::log('seed.flat.files', [
             'count' => count($files),
             'files' => self::normalizePaths($files),
         ]);
+
         foreach ($files as $file) {
-            self::applySqlFile($pdo, $file);
+            self::applySqlFile($pdo, $file, 'flat', [
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'flat',
+            ]);
         }
 
         echo 'Seeds aplicadas: ' . count($files) . "\n";
         return 0;
     }
 
-private static function runLayered(string $driver, string $seedDir, string $projectRoot): int
-{
-    $fixtures = self::parseCsvEnv('TEST_SEED_FIXTURES');
-    if ($fixtures !== []) {
-        throw new RuntimeException(
-            'TEST_SEED_FIXTURES no forma parte del lifecycle de testkit en modo layered. '
-            . 'La infraestructura solo aplica schema/base/migrations/validations; '
-            . 'los escenarios deben construirse desde test/_support con builders del proyecto.'
-        );
+    private static function runLayered(string $driver, string $seedDir, string $projectRoot): int
+    {
+        $fixtures = self::parseCsvEnv('TEST_SEED_FIXTURES');
+        if ($fixtures !== []) {
+            throw new SeedFailure('TEST_SEED_FIXTURES no forma parte del lifecycle de testkit en modo layered.', [
+                'stage' => 'layered_contract',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'layered',
+                'hint' => 'La infraestructura solo aplica schema/base/migrations/validations; los escenarios deben construirse desde test/_support.',
+            ]);
+        }
+
+        $adapter = StoreRegistry::fromDriver($driver);
+        try {
+            $pdo = $adapter->connect();
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para bootstrap layered.', [
+                'stage' => 'connect',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'layered',
+                'db_name' => self::dbConnectionSummary($driver)['db'] ?? '',
+                'hint' => 'Revisá credenciales y disponibilidad de la base antes de aplicar schema/base.',
+            ]);
+        }
+
+        try {
+            [$migrations, $rawMigrations, $skipPostValidations, $migrationState] = self::migrationPlan($pdo, $seedDir, 'layered');
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resolver el plan de migraciones para baseline layered.', [
+                'stage' => 'migration_state',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'layered',
+                'hint' => 'Revisá TEST_SEED_MIGRATIONS y el catálogo en test/seeds/<driver>/migrations.',
+            ]);
+        }
+
+        Trace::log('seed.layered.plan', [
+            'driver' => $driver,
+            'project_root' => $projectRoot,
+            'seed_dir' => self::realPathOrOriginal($seedDir),
+            'db_env_path' => (string)(getenv('DB_ENV_PATH') ?: ''),
+            'db' => self::dbConnectionSummary($driver),
+            'raw_TEST_SEED_MIGRATIONS' => $rawMigrations,
+            'parsed_TEST_SEED_MIGRATIONS' => $migrations,
+            'migration_state' => $migrationState,
+            'skip_validations_after_extras' => $skipPostValidations,
+            'TEST_MATCH' => (string)(getenv('TEST_MATCH') ?: ''),
+            'TEST_SCOPE' => (string)(getenv('TEST_SCOPE') ?: ''),
+            'TEST_TARGET' => (string)(getenv('TEST_TARGET') ?: ''),
+        ]);
+
+        try {
+            $adapter->reset($pdo);
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resetear la DB antes de aplicar el baseline layered.', [
+                'stage' => 'reset',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'layered reset',
+                'hint' => 'Verificá privilegios para dropear objetos o residuos de una corrida previa.',
+            ]);
+        }
+
+        self::applySqlDir($pdo, $seedDir . '/schema', 'schema', 'schema', [
+            'driver' => $driver,
+            'db_driver' => $driver,
+        ]);
+        self::applySqlDir($pdo, $seedDir . '/base', 'base', 'base', [
+            'driver' => $driver,
+            'db_driver' => $driver,
+        ]);
+        self::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
+        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
+
+        echo "Seed pipeline por capas aplicado correctamente\n";
+        return 0;
     }
 
-    $adapter = StoreRegistry::fromDriver($driver);
-    $pdo = $adapter->connect();
+    /**
+     * @param array<string,mixed>|null $resolvedSnapshot
+     */
+    private static function runSnapshot(string $driver, string $seedDir, string $projectRoot, ?array $resolvedSnapshot): int
+    {
+        $adapter = StoreRegistry::fromDriver($driver);
 
-    [$migrations, $rawMigrations, $skipPostValidations, $migrationState] = self::migrationPlan($pdo, $seedDir, 'layered');
+        try {
+            $pdo = $adapter->connect();
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para bootstrap snapshot.', [
+                'stage' => 'connect',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'snapshot',
+                'db_name' => self::dbConnectionSummary($driver)['db'] ?? '',
+                'hint' => 'Revisá credenciales y que la base objetivo exista o pueda provisionarse.',
+            ]);
+        }
 
-    Trace::log('seed.layered.plan', [
-        'driver' => $driver,
-        'project_root' => $projectRoot,
-        'seed_dir' => self::realPathOrOriginal($seedDir),
-        'db_env_path' => (string)(getenv('DB_ENV_PATH') ?: ''),
-        'db' => self::dbConnectionSummary($driver),
-        'raw_TEST_SEED_MIGRATIONS' => $rawMigrations,
-        'parsed_TEST_SEED_MIGRATIONS' => $migrations,
-        'migration_state' => $migrationState,
-        'skip_validations_after_extras' => $skipPostValidations,
-        'TEST_MATCH' => (string)(getenv('TEST_MATCH') ?: ''),
-        'TEST_SCOPE' => (string)(getenv('TEST_SCOPE') ?: ''),
-        'TEST_TARGET' => (string)(getenv('TEST_TARGET') ?: ''),
-    ]);
+        try {
+            $resolvedSnapshot ??= BackupkitArtifactResolver::resolveFromEnv();
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resolver el artifact snapshot durante el bootstrap.', [
+                'stage' => 'snapshot_resolve',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'snapshot',
+                'hint' => 'Validá path del dump o metadata/report de backupkit antes de restaurar.',
+            ]);
+        }
 
-    $adapter->reset($pdo);
+        $snapshotFile = trim((string)($resolvedSnapshot['path'] ?? ''));
+        if ($snapshotFile === '') {
+            throw new SeedFailure('TEST_BASELINE_MODE=snapshot requiere un artifact snapshot resoluble.', [
+                'stage' => 'snapshot_resolve',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'snapshot',
+                'hint' => 'Definí TEST_BASELINE_SNAPSHOT_FILE o una referencia válida a backupkit.',
+            ]);
+        }
 
-    self::applySqlDir($pdo, $seedDir . '/schema', 'schema');
-    self::applySqlDir($pdo, $seedDir . '/base', 'base');
-    self::applyRequestedMigrations($pdo, $seedDir, $migrations);
-    self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
+        try {
+            $adapter->reset($pdo);
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resetear la DB antes de restaurar el snapshot.', [
+                'stage' => 'reset',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'snapshot reset',
+                'file' => self::realPathOrOriginal($snapshotFile),
+                'hint' => 'Revisá privilegios de borrado de objetos o residuos incompatibles en la base destino.',
+            ]);
+        }
 
-    echo "Seed pipeline por capas aplicado correctamente
-";
-    return 0;
-}
+        try {
+            $adapter->restoreSnapshot($snapshotFile);
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo restaurar el snapshot baseline.', [
+                'stage' => 'snapshot_restore',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'snapshot restore',
+                'file' => self::realPathOrOriginal($snapshotFile),
+                'hint' => 'Revisá integridad del dump, binarios mysql/gzip y permisos del usuario sobre la base destino.',
+            ]);
+        }
 
-/**
- * @param array<string,mixed>|null $resolvedSnapshot
- */
-private static function runSnapshot(string $driver, string $seedDir, string $projectRoot, ?array $resolvedSnapshot): int
-{
-    $adapter = StoreRegistry::fromDriver($driver);
-    $pdo = $adapter->connect();
-    $resolvedSnapshot ??= BackupkitArtifactResolver::resolveFromEnv();
-    $snapshotFile = trim((string)($resolvedSnapshot['path'] ?? ''));
+        try {
+            [$migrations, $rawMigrations, $skipPostValidations, $migrationState] = self::migrationPlan($pdo, $seedDir, 'snapshot');
+        } catch (\Throwable $e) {
+            throw SeedFailure::wrap($e, 'No se pudo resolver el estado de migraciones después de restaurar el snapshot.', [
+                'stage' => 'migration_state',
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'db_name' => self::currentDatabaseName($pdo),
+                'label' => 'snapshot',
+                'file' => self::realPathOrOriginal($snapshotFile),
+                'hint' => 'Definí una fuente confiable de estado (TEST_MIGRATION_APPLIED, TEST_MIGRATION_STATE_TABLE o state.json).',
+            ]);
+        }
 
-    if ($snapshotFile === '') {
-        throw new RuntimeException(
-            'TEST_BASELINE_MODE=snapshot requiere snapshot resoluble desde TEST_BASELINE_SNAPSHOT_FILE o backupkit metadata/report.'
-        );
+        Trace::log('seed.snapshot.plan', [
+            'driver' => $driver,
+            'project_root' => $projectRoot,
+            'seed_dir' => self::realPathOrOriginal($seedDir),
+            'snapshot_file' => self::realPathOrOriginal($snapshotFile),
+            'snapshot_source' => $resolvedSnapshot,
+            'db' => self::dbConnectionSummary($driver),
+            'raw_TEST_SEED_MIGRATIONS' => $rawMigrations,
+            'parsed_TEST_SEED_MIGRATIONS' => $migrations,
+            'migration_state' => $migrationState,
+            'skip_validations_after_extras' => $skipPostValidations,
+        ]);
+
+        self::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
+        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
+
+        echo "Seed pipeline snapshot aplicado correctamente\n";
+        return 0;
     }
 
-    $adapter->reset($pdo);
-    $adapter->restoreSnapshot($snapshotFile);
-
-    [$migrations, $rawMigrations, $skipPostValidations, $migrationState] = self::migrationPlan($pdo, $seedDir, 'snapshot');
-
-    Trace::log('seed.snapshot.plan', [
-        'driver' => $driver,
-        'project_root' => $projectRoot,
-        'seed_dir' => self::realPathOrOriginal($seedDir),
-        'snapshot_file' => self::realPathOrOriginal($snapshotFile),
-        'snapshot_source' => $resolvedSnapshot,
-        'db' => self::dbConnectionSummary($driver),
-        'raw_TEST_SEED_MIGRATIONS' => $rawMigrations,
-        'parsed_TEST_SEED_MIGRATIONS' => $migrations,
-        'migration_state' => $migrationState,
-        'skip_validations_after_extras' => $skipPostValidations,
-    ]);
-
-    self::applyRequestedMigrations($pdo, $seedDir, $migrations);
-    self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations);
-
-    echo "Seed pipeline snapshot aplicado correctamente
-";
-    return 0;
-}
-
-private static function applyPostValidations(PDO $pdo, string $seedDir, array $migrations, bool $skipPostValidations): void
+    /**
+     * @param array<int,string> $migrations
+     */
+    private static function applyPostValidations(PDO $pdo, string $seedDir, array $migrations, bool $skipPostValidations, string $driver): void
     {
         if (!($migrations !== [] && $skipPostValidations)) {
-            self::applySqlDirIfExists($pdo, $seedDir . '/validations', 'validations');
+            self::applySqlDirIfExists($pdo, $seedDir . '/validations', 'validations', 'validations', [
+                'driver' => $driver,
+                'db_driver' => $driver,
+            ]);
             return;
         }
 
@@ -201,67 +381,86 @@ private static function applyPostValidations(PDO $pdo, string $seedDir, array $m
         ]);
     }
 
-    private static function applyRequestedMigrations(PDO $pdo, string $seedDir, array $migrations): void
+    /**
+     * @param array<int,string> $migrations
+     */
+    private static function applyRequestedMigrations(PDO $pdo, string $seedDir, array $migrations, string $driver): void
     {
         foreach ($migrations as $migration) {
-            $migrationDir = self::resolveMigrationDir($seedDir, $migration);
-            self::applySqlDir($pdo, $migrationDir, 'migration ' . $migration);
+            try {
+                $migrationDir = self::resolveMigrationDir($seedDir, $migration);
+            } catch (\Throwable $e) {
+                throw SeedFailure::wrap($e, 'No se pudo resolver el directorio de migración solicitado.', [
+                    'stage' => 'migration',
+                    'driver' => $driver,
+                    'db_driver' => $driver,
+                    'label' => 'migration ' . $migration,
+                    'hint' => 'Revisá que el directorio exista dentro de test/seeds/<driver>/migrations.',
+                ]);
+            }
+
+            self::applySqlDir($pdo, $migrationDir, 'migration ' . $migration, 'migration', [
+                'driver' => $driver,
+                'db_driver' => $driver,
+                'label' => 'migration ' . $migration,
+                'migration' => $migration,
+            ]);
         }
     }
 
-/**
- * @return array{0: array<int,string>, 1: string, 2: bool, 3: array<string,mixed>}
- */
-private static function migrationPlan(PDO $pdo, string $seedDir, string $baselineMode): array
-{
-    $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
-    $requested = MigrationCatalog::normalizeSelectedExecutables($seedDir, self::parseCsvEnv('TEST_SEED_MIGRATIONS'));
-    $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
-    $autoPending = self::envBool('TEST_MIGRATION_AUTO_PENDING', $baselineMode === 'snapshot');
-    if ($baselineMode === 'layered' && $autoPending) {
-        throw new RuntimeException(
-            'TEST_MIGRATION_AUTO_PENDING no aplica en TEST_BASELINE_MODE=layered. ' .
-            'La DB se resetea antes del seed y el baseline resultante debe derivarse ' .
-            'solo desde schema/base y TEST_SEED_MIGRATIONS explícitas.'
-        );
-    }
+    /**
+     * @return array{0: array<int,string>, 1: string, 2: bool, 3: array<string,mixed>}
+     */
+    private static function migrationPlan(PDO $pdo, string $seedDir, string $baselineMode): array
+    {
+        $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
+        $requested = MigrationCatalog::normalizeSelectedExecutables($seedDir, self::parseCsvEnv('TEST_SEED_MIGRATIONS'));
+        $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
+        $autoPending = self::envBool('TEST_MIGRATION_AUTO_PENDING', $baselineMode === 'snapshot');
+        if ($baselineMode === 'layered' && $autoPending) {
+            throw new RuntimeException(
+                'TEST_MIGRATION_AUTO_PENDING no aplica en TEST_BASELINE_MODE=layered. '
+                . 'La DB se resetea antes del seed y el baseline resultante debe derivarse '
+                . 'solo desde schema/base y TEST_SEED_MIGRATIONS explícitas.'
+            );
+        }
 
-    if ($baselineMode === 'layered') {
-        $migrationState = MigrationStateResolver::resolveLayeredBaseline($seedDir, $requested);
-        $planned = array_values((array)($migrationState['applied'] ?? []));
+        if ($baselineMode === 'layered') {
+            $migrationState = MigrationStateResolver::resolveLayeredBaseline($seedDir, $requested);
+            $planned = array_values((array)($migrationState['applied'] ?? []));
+            Trace::log('seed.migration.state', [
+                'baseline_mode' => $baselineMode,
+                'requested' => $requested,
+                'planned' => $planned,
+                'state' => $migrationState,
+            ]);
+            return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
+        }
+
+        $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
+        $planned = $requested;
+
+        if ($planned === [] && $autoPending) {
+            if ($baselineMode === 'snapshot') {
+                MigrationStateResolver::assertHasReliableStateSource($seedDir);
+            }
+            $planned = array_values((array)($migrationState['pending'] ?? []));
+            $rawMigrations = implode(',', $planned);
+        }
+
         Trace::log('seed.migration.state', [
             'baseline_mode' => $baselineMode,
             'requested' => $requested,
             'planned' => $planned,
             'state' => $migrationState,
         ]);
+
         return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
     }
 
-    $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
-    $planned = $requested;
-
-    if ($planned === [] && $autoPending) {
-        if ($baselineMode === 'snapshot') {
-            MigrationStateResolver::assertHasReliableStateSource($seedDir);
-        }
-        $planned = array_values((array)($migrationState['pending'] ?? []));
-        $rawMigrations = implode(',', $planned);
-    }
-
-    Trace::log('seed.migration.state', [
-        'baseline_mode' => $baselineMode,
-        'requested' => $requested,
-        'planned' => $planned,
-        'state' => $migrationState,
-    ]);
-
-    return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
-}
-
-/**
- * @return array<string,mixed>
- */
+    /**
+     * @return array<string,mixed>
+     */
     private static function buildManifestPlan(
         string $driver,
         string $seedDir,
@@ -493,7 +692,10 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         ];
     }
 
-    private static function applySqlDirIfExists(PDO $pdo, string $dir, string $label): void
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function applySqlDirIfExists(PDO $pdo, string $dir, string $label, string $stage = 'sql', array $context = []): void
     {
         if (!is_dir($dir)) {
             Trace::log('sql.dir.skip_missing', [
@@ -503,13 +705,22 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
             return;
         }
 
-        self::applySqlDir($pdo, $dir, $label);
+        self::applySqlDir($pdo, $dir, $label, $stage, $context);
     }
 
-    private static function applySqlDir(PDO $pdo, string $dir, string $label): void
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function applySqlDir(PDO $pdo, string $dir, string $label, string $stage = 'sql', array $context = []): void
     {
         if (!is_dir($dir)) {
-            throw new RuntimeException("No existe directorio SQL: {$dir}");
+            throw new SeedFailure('No existe el directorio SQL requerido para esta fase del seed.', array_merge($context, [
+                'stage' => $stage,
+                'label' => $label,
+                'db_name' => self::currentDatabaseName($pdo),
+                'file' => self::realPathOrOriginal($dir),
+                'hint' => 'Revisá la estructura de test/seeds y que el directorio esperado exista antes de bootstrapping.',
+            ]));
         }
 
         $files = self::listSqlFiles($dir);
@@ -527,15 +738,28 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
 
         echo "==> {$label}\n";
         foreach ($files as $file) {
-            self::applySqlFile($pdo, $file);
+            self::applySqlFile($pdo, $file, $stage, array_merge($context, [
+                'label' => $label,
+            ]));
         }
     }
 
-    private static function applySqlFile(PDO $pdo, string $file): void
+    /**
+     * @param array<string,mixed> $context
+     */
+    private static function applySqlFile(PDO $pdo, string $file, string $stage = 'sql', array $context = []): void
     {
+        $baseContext = array_merge($context, [
+            'stage' => $stage,
+            'file' => self::realPathOrOriginal($file),
+            'db_name' => self::currentDatabaseName($pdo),
+        ]);
+
         $sql = file_get_contents($file);
         if ($sql === false) {
-            throw new RuntimeException("No se pudo leer {$file}");
+            throw new SeedFailure('No se pudo leer el archivo SQL del seed.', array_merge($baseContext, [
+                'hint' => 'Verificá permisos de lectura y que el archivo exista dentro del contenedor/entorno donde corre testkit.',
+            ]));
         }
 
         if (trim($sql) === '') {
@@ -546,9 +770,9 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
         }
 
         if (preg_match('/^\s*DELIMITER\s+/mi', $sql) === 1) {
-            throw new RuntimeException(
-                'El archivo SQL contiene DELIMITER y no puede ejecutarse desde testkit [' . basename($file) . ']'
-            );
+            throw new SeedFailure('El archivo SQL contiene DELIMITER y no puede ejecutarse desde testkit.', array_merge($baseContext, [
+                'hint' => 'Convertí procedimientos/triggers a un formato compatible o materializalos fuera del runner SQL plano.',
+            ]));
         }
 
         $statements = self::splitSqlStatements($sql);
@@ -565,23 +789,23 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
                 $executed = $index + 1;
             }
         } catch (\Throwable $e) {
+            $failedIndex = $executed + 1;
+            $statement = isset($statements[$executed]) ? (string)$statements[$executed] : '';
+            $errorContext = array_merge($baseContext, [
+                'statement_index' => $failedIndex,
+                'statement_count' => count($statements),
+                'statement_excerpt' => self::statementExcerpt($statement),
+                'hint' => self::hintForSqlFailure($stage, $label = (string)($baseContext['label'] ?? ''), $e->getMessage()),
+            ], self::sqlErrorContext($e));
+
             Trace::log('sql.file.fail', [
                 'file' => self::realPathOrOriginal($file),
-                'statement_index' => $executed + 1,
+                'statement_index' => $failedIndex,
                 'statement_count' => count($statements),
                 'error' => $e->getMessage(),
             ]);
-            throw new RuntimeException(
-                sprintf(
-                    'Fallo aplicando SQL [%s] en statement %d/%d: %s',
-                    $file,
-                    $executed + 1,
-                    count($statements),
-                    $e->getMessage()
-                ),
-                0,
-                $e
-            );
+
+            throw SeedFailure::wrap($e, 'Falló la ejecución de una sentencia SQL del seed.', $errorContext);
         }
 
         Trace::log('sql.file.ok', [
@@ -807,5 +1031,106 @@ private static function migrationPlan(PDO $pdo, string $seedDir, string $baselin
     private static function normalizePaths(array $paths): array
     {
         return array_map([self::class, 'realPathOrOriginal'], $paths);
+    }
+
+    private static function currentDatabaseName(PDO $pdo): string
+    {
+        foreach (['SELECT DATABASE()', 'SELECT current_database()'] as $sql) {
+            try {
+                $value = $pdo->query($sql)?->fetchColumn();
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            } catch (\Throwable) {
+                // noop
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function sqlErrorContext(\Throwable $error): array
+    {
+        $context = [];
+
+        if ($error instanceof \PDOException) {
+            $errorInfo = is_array($error->errorInfo ?? null) ? $error->errorInfo : [];
+            $sqlState = trim((string)($errorInfo[0] ?? ''));
+            $driverCode = trim((string)($errorInfo[1] ?? ''));
+            $driverMessage = trim((string)($errorInfo[2] ?? ''));
+
+            if ($sqlState !== '') {
+                $context['sqlstate'] = $sqlState;
+            }
+            if ($driverCode !== '') {
+                $context['driver_code'] = $driverCode;
+            }
+            if ($driverMessage !== '') {
+                $context['driver_message'] = $driverMessage;
+            }
+        }
+
+        $fallbackCode = trim((string)$error->getCode());
+        if ($fallbackCode !== '' && !isset($context['sqlstate'])) {
+            $context['sqlstate'] = $fallbackCode;
+        }
+
+        return $context;
+    }
+
+    private static function statementExcerpt(string $statement, int $maxLen = 220): string
+    {
+        $statement = trim((string)preg_replace('/\s+/', ' ', trim($statement)));
+        if ($statement === '') {
+            return '';
+        }
+
+        if (mb_strlen($statement) <= $maxLen) {
+            return $statement;
+        }
+
+        return mb_substr($statement, 0, $maxLen - 3) . '...';
+    }
+
+    private static function hintForSqlFailure(string $stage, string $label, string $errorMessage): string
+    {
+        $normalized = strtolower($errorMessage);
+
+        if (str_contains($normalized, 'unknown column') || str_contains($normalized, 'doesn\'t exist')) {
+            return 'La sentencia referencia una columna u objeto inexistente. Revisá el orden entre schema/base/migrations y el baseline desde el que parte la DB.';
+        }
+
+        if (str_contains($normalized, 'duplicate') || str_contains($normalized, 'already exists')) {
+            return 'El seed intenta crear algo que ya existe. Revisá idempotencia del SQL o residuos de una corrida previa al reset.';
+        }
+
+        if (str_contains($normalized, 'foreign key') || str_contains($normalized, 'constraint fails')) {
+            return 'Hay una violación de integridad. Revisá orden de inserts, datos base requeridos y relaciones creadas en schema.';
+        }
+
+        if ($stage === 'schema') {
+            return 'El fallo ocurrió en schema. Revisá DDL, compatibilidad con el engine y dependencia entre objetos creados.';
+        }
+
+        if ($stage === 'base') {
+            return 'El fallo ocurrió en base. Revisá datos iniciales, columnas esperadas por el schema y dependencias entre inserts.';
+        }
+
+        if ($stage === 'migration') {
+            return 'El fallo ocurrió dentro de una migración opcional o pendiente. Revisá el estado de partida del baseline y qué migraciones ya estaban absorbidas.';
+        }
+
+        if ($stage === 'validations') {
+            return 'El fallo ocurrió en validations. Revisá que el estado final esperado del baseline coincida con schema/base/migrations aplicadas.';
+        }
+
+        if ($label !== '') {
+            return 'Revisá la fase ' . $label . ' y el contrato estructural esperado antes de correr tests funcionales.';
+        }
+
+        return 'Revisá la sentencia SQL fallida, el estado real de la DB y el orden de ejecución del seed.';
     }
 }
