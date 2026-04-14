@@ -89,6 +89,7 @@ final class ConsoleReporter
         }
 
         self::printDiagnostics($diagnostics);
+        self::printDecision($result, $diagnostics);
         self::printWarnings($result);
         self::printFirstFailure($result);
         self::printModuleSummary($result);
@@ -139,6 +140,7 @@ final class ConsoleReporter
         echo '  outcome: ' . self::renderOutcome(strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'))) . ' ' . UI::gray('phase=' . (string)($diagnostics['primary_phase'] ?? 'none') . ' cause=' . (string)($diagnostics['cause_code'] ?? 'none')) . "\n";
         echo '  report_root: ' . UI::gray((string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
+        self::printDecision($meta, $diagnostics);
     }
 
     /**
@@ -359,6 +361,61 @@ final class ConsoleReporter
                 echo ' owner_run=' . $owner;
             }
             echo "\n";
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $diagnostics
+     */
+    private static function printDecision(array $result, array $diagnostics): void
+    {
+        $timeline = is_array($result['phase_timeline'] ?? null)
+            ? $result['phase_timeline']
+            : ReportSummary::phaseTimeline($result, $diagnostics);
+        $actions = is_array($result['recommended_actions'] ?? null)
+            ? $result['recommended_actions']
+            : ReportSummary::recommendedActions($result, $diagnostics);
+        $agentSummary = is_array($result['agent_summary'] ?? null)
+            ? $result['agent_summary']
+            : ReportSummary::agentSummary($result, $diagnostics);
+
+        $reached = 'none';
+        foreach ($timeline as $phaseRow) {
+            if (!is_array($phaseRow)) {
+                continue;
+            }
+            $status = trim((string)($phaseRow['status'] ?? ''));
+            if ($status === '' || $status === 'not_started') {
+                continue;
+            }
+            $reached = (string)($phaseRow['phase'] ?? $reached);
+        }
+
+        UI::section('Decision');
+        echo '  reached: ' . $reached . "\n";
+        echo '  root_cause: ' . (string)($diagnostics['cause_code'] ?? 'none') . "\n";
+
+        $problem = trim((string)($agentSummary['primary_problem'] ?? ''));
+        if ($problem !== '') {
+            echo '  primary_problem: ' . $problem . "\n";
+        }
+
+        $focus = is_array($agentSummary['suggested_focus'] ?? null) ? $agentSummary['suggested_focus'] : [];
+        if ($focus !== []) {
+            echo '  suggested_focus: ' . implode(', ', array_map(static fn(mixed $value): string => (string)$value, $focus)) . "\n";
+        }
+
+        $firstAction = $actions[0] ?? null;
+        if (is_array($firstAction)) {
+            $command = trim((string)($firstAction['command'] ?? ''));
+            $reason = trim((string)($firstAction['reason'] ?? ''));
+            if ($command !== '') {
+                echo '  suggested_command: ' . UI::info($command) . "\n";
+            }
+            if ($reason !== '') {
+                echo '  why: ' . UI::gray($reason) . "\n";
+            }
         }
     }
 
