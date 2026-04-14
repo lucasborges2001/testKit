@@ -28,8 +28,7 @@ final class MetaRunner
 
         $selected = self::resolveTarget($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract
-");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract\n");
             return 3;
         }
 
@@ -136,9 +135,7 @@ final class MetaRunner
             ResultWriter::writeMeta($meta);
 
             if ($overallFail) {
-                echo "\n[Action Required]\n";
-                echo "Alguna suite falló. Revisá los logs de arriba o corré el reporte detallado:\n";
-                echo "  php scripts/report.php\n";
+                self::printActionRequired($suiteRows, $suiteReports);
             }
 
             return $overallFail ? 1 : 0;
@@ -239,6 +236,68 @@ final class MetaRunner
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suiteRows
+     * @param array<int,array<string,mixed>> $suiteReports
+     */
+    private static function printActionRequired(array $suiteRows, array $suiteReports): void
+    {
+        $failedSuites = self::failedSuites($suiteRows);
+        $rerunCommand = self::firstRerunCommand($suiteReports);
+
+        echo "\n[Action Required]\n";
+        if ($failedSuites !== []) {
+            echo '  Suites con issues: ' . implode(', ', $failedSuites) . "\n";
+        }
+        echo "  Reporte detallado: php scripts/report.php\n";
+        if ($rerunCommand !== '') {
+            echo '  Aislar primer fallo: ' . $rerunCommand . "\n";
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suiteRows
+     * @return array<int,string>
+     */
+    private static function failedSuites(array $suiteRows): array
+    {
+        $failed = [];
+        foreach ($suiteRows as $row) {
+            $code = (int)($row['exit_code'] ?? 1);
+            if ($code === 0 || $code === 2) {
+                continue;
+            }
+
+            $failed[] = (string)($row['suite_id'] ?? 'suite');
+        }
+
+        return $failed;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suiteReports
+     */
+    private static function firstRerunCommand(array $suiteReports): string
+    {
+        foreach ($suiteReports as $suiteReport) {
+            $failures = ReportSummary::canonicalFailures($suiteReport);
+            if ($failures === []) {
+                continue;
+            }
+
+            $first = $failures[0];
+            $firstFile = trim((string)($first['file'] ?? $first['test_id'] ?? ''));
+            $suiteId = trim((string)($suiteReport['suite_id'] ?? ''));
+            if ($firstFile === '' || $suiteId === '') {
+                continue;
+            }
+
+            return "TEST_MATCH='{$firstFile}' php runTest.php " . str_replace('_', '-', $suiteId);
+        }
+
+        return '';
     }
 
     /**
