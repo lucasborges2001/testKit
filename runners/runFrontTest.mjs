@@ -41,6 +41,8 @@ const requireTests = (process.env.TEST_JS_REQUIRE_TESTS || process.env.TEST_REQU
 const jobs = Math.max(1, parseInt(process.env.TEST_JOBS || "1", 10) || 1);
 const useLoader = (process.env.TEST_USE_PUBLIC_LOADER || "1") === "1";
 const streamRawOutput = (process.env.TEST_JS_STREAM_RAW || "0") === "1";
+const externalReporter = (process.env.TESTKIT_EXTERNAL_REPORTER || "0") === "1";
+const suppressOwnConsole = externalReporter && !streamRawOutput;
 const showPassingCases = (process.env.TEST_JS_SHOW_PASS_CASES || "0") === "1";
 const showPerTestHead = streamRawOutput || (process.env.TEST_JS_SHOW_TEST_HEADS || "0") === "1";
 const slowThresholdMs = Math.max(1, parseInt(process.env.TEST_SLOW_THRESHOLD_MS || "1500", 10) || 1500);
@@ -740,16 +742,18 @@ const suiteStartedMs = performance.now();
 if (!testEntries.length) {
   const msg = `No se encontraron tests JS en ${testsDir} (scope=${scope}, category=${category}, match=${match || ""}).`;
 
-  banner("FRONT / JS");
-  console.log(bold(`Running 0 tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
-  console.log(dim(`repoRoot:    ${repoRoot}`));
-  console.log(dim(`testsDir:    ${testsDir}`));
-  console.log(dim(`reportRoot:  ${computedReportRoot}`));
+  if (!suppressOwnConsole) {
+    banner("FRONT / JS");
+    console.log(bold(`Running 0 tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
+    console.log(dim(`repoRoot:    ${repoRoot}`));
+    console.log(dim(`testsDir:    ${testsDir}`));
+    console.log(dim(`reportRoot:  ${computedReportRoot}`));
+
+    if (requireTests) console.error(msg);
+    else console.log(gray(`SKIP: ${msg}`));
+  }
 
   const exitCode = requireTests ? PVT_EXIT_FAIL : PVT_EXIT_SKIP;
-  if (requireTests) console.error(msg);
-  else console.log(gray(`SKIP: ${msg}`));
-
   const report = buildReport({
     startedAt: suiteStartedAt, startedMs: suiteStartedMs,
     tests: [], passed: 0, failed: 0, skipped: 0, exitCode,
@@ -766,20 +770,24 @@ const bootstrapDefault = path.join(repoRoot, "test", "front", "_support", "boots
 const bootstrapPath = process.env.TK_FRONT_BOOTSTRAP || bootstrapDefault;
 const bootstrapUrl = fs.existsSync(bootstrapPath) ? pathToFileURL(bootstrapPath).href : null;
 
-banner("FRONT / JS");
-console.log(bold(`Running ${testEntries.length} tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
-console.log(dim(`repoRoot:    ${repoRoot}`));
-console.log(dim(`testsDir:    ${testsDir}`));
-console.log(dim(`reportRoot:  ${computedReportRoot}`));
-if (computedModuleScope) console.log(dim(`module:      ${computedModuleScope}`));
-if (bootstrapUrl) console.log(dim(`bootstrap:   ${bootstrapPath}`));
-if (useLoader) console.log(dim(`loader:      ${loaderPath}`));
-if (match) console.log(dim(`match:       ${match}`));
-console.log("");
+if (!suppressOwnConsole) {
+  banner("FRONT / JS");
+  console.log(bold(`Running ${testEntries.length} tests JS (scope=${scope}, category=${category}, failFast=${failFast ? "1" : "0"}, jobs=${jobs})`));
+  console.log(dim(`repoRoot:    ${repoRoot}`));
+  console.log(dim(`testsDir:    ${testsDir}`));
+  console.log(dim(`reportRoot:  ${computedReportRoot}`));
+  if (computedModuleScope) console.log(dim(`module:      ${computedModuleScope}`));
+  if (bootstrapUrl) console.log(dim(`bootstrap:   ${bootstrapPath}`));
+  if (useLoader) console.log(dim(`loader:      ${loaderPath}`));
+  if (match) console.log(dim(`match:       ${match}`));
+  console.log("");
+}
 
 if (listOnly) {
-  for (const t of testEntries) {
-    console.log(t.rel);
+  if (!suppressOwnConsole) {
+    for (const t of testEntries) {
+      console.log(t.rel);
+    }
   }
   const listed = testEntries.map((t) => ({
     rel: t.rel,
@@ -865,6 +873,10 @@ function buildEntry(baseEntry, code, durationMs, stdout, stderr) {
 }
 
 function printCompactOutcome(result) {
+  if (suppressOwnConsole) {
+    return;
+  }
+
   if (streamRawOutput) {
     if (showPerTestHead) console.log(testHead(result.rel));
     if (result.stdout) process.stdout.write(result.stdout + (result.stdout.endsWith("\n") ? "" : "\n"));
@@ -957,12 +969,14 @@ if (jobs <= 1) {
   }
 
   await Promise.all(Array.from({ length: jobs }, (_, i) => worker(i + 1)));
-  if (stop) {
+  if (stop && !suppressOwnConsole) {
     console.error(red("FAIL-FAST: abortando lanzamiento de nuevos tests (algunos pueden seguir ejecutandose)."));
   }
 }
 
-console.log(gray(`Summary JS: ${counts({ pass: counters.passed, fail: counters.failed, skip: counters.skipped })}`));
+if (!suppressOwnConsole) {
+  console.log(gray(`Summary JS: ${counts({ pass: counters.passed, fail: counters.failed, skip: counters.skipped })}`));
+}
 
 const exitCode = counters.failed > 0 ? PVT_EXIT_FAIL : (counters.passed === 0 && counters.skipped > 0 ? PVT_EXIT_SKIP : PVT_EXIT_PASS);
 const report = buildReport({

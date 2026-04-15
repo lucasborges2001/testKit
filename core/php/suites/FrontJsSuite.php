@@ -11,6 +11,7 @@ use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Execution\ProcessRunner;
 use Testkit\Core\Execution\SuiteExecutor;
+use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\HistoryRepository;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
@@ -88,6 +89,11 @@ final class FrontJsSuite
                 fwrite(STDERR, 'WARN[' . $code . '] ' . $summary . PHP_EOL);
             }
 
+            ConsoleReporter::printSuiteStart($config, count($discovered));
+            if ((bool)($config['list_only'] ?? false)) {
+                ConsoleReporter::printList($discovered);
+            }
+
             $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
             if (!is_file($runner)) {
                 throw new \RuntimeException('Falta runner JS: ' . $runner);
@@ -117,6 +123,7 @@ final class FrontJsSuite
                 $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
                 $env['TESTKIT_SELECTED_TESTS_FILE'] = $selectedFile;
                 $env['TESTKIT_FRONT_JS_RESULT_FILE'] = $resultFile;
+                $env['TESTKIT_EXTERNAL_REPORTER'] = '1';
                 $env['TEST_SCOPE'] = (string)$config['scope'];
                 $env['TEST_CATEGORY'] = (string)$config['category'];
                 $env['TEST_MATCH'] = (string)$config['match'];
@@ -152,6 +159,7 @@ final class FrontJsSuite
 
             $currentPhase = 'reporting';
             $report = self::decorateNodeReport($report, $config, $policy, $warnings, $admission, $runId, $metaRunId);
+            ConsoleReporter::printSuiteResult($report);
             self::safeWriteSuite($report, 'front_js.decorateNodeReport');
 
             return (int)($done['code'] ?? 1);
@@ -178,6 +186,7 @@ final class FrontJsSuite
             );
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
             $result = ReportSummary::enrichReport($result);
+            ConsoleReporter::printSuiteResult($result);
             self::safeWriteSuite($result, 'front_js.operational_failure');
             return SuiteExecutor::EXIT_ERROR;
         } finally {
@@ -384,7 +393,7 @@ final class FrontJsSuite
             $suffix = substr((string)sha1(uniqid('', true)), 0, 6);
         }
 
-        return gmdate('Ymd\THis\Z') . '_' . $suffix;
+        return gmdate('Ymd\\THis\\Z') . '_' . $suffix;
     }
 
     /**
