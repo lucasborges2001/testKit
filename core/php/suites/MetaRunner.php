@@ -26,7 +26,7 @@ final class MetaRunner
             putenv('TEST_CATEGORY=' . $target);
         }
 
-        $selected = self::resolveTarget($target);
+        $selected = TargetResolver::resolve($target);
         if (!$selected) {
             fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract\n");
             return 3;
@@ -117,6 +117,7 @@ final class MetaRunner
                 $metaStartedAt
             );
 
+            $meta['suites'] = $suiteRows;
             $meta['run_id'] = $runId;
             $meta['meta_run_id'] = $runId;
             $meta['run_kind'] = 'meta';
@@ -134,9 +135,6 @@ final class MetaRunner
             $currentPhase = 'reporting';
             ConsoleReporter::printMeta($meta);
 
-            // Desde este punto ya existe un meta canónico calculado e impreso.
-            // Cualquier fallo auxiliar (persistencia, manifest, acciones sugeridas)
-            // debe degradar a warning y NO reingresar al catch global.
             self::safeWriteMeta($meta, 'meta.run');
 
             if ($overallFail) {
@@ -145,7 +143,7 @@ final class MetaRunner
 
             return $overallFail ? 1 : 0;
         } catch (\Throwable $e) {
-            $meta = self::buildOperationalFailureMeta(
+            $meta = MetaOperationalFailureBuilder::build(
                 target: $target,
                 category: Env::string('TEST_CATEGORY', 'all'),
                 reportRoot: Paths::aggregateMetaReportRoot(),
@@ -162,57 +160,6 @@ final class MetaRunner
         } finally {
             $resourceLease?->release();
         }
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function resolveTarget(string $target): array
-    {
-        $map = [
-            'all' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'back' => ['back_php', 'back_python'],
-            'front' => ['front_php', 'front_js'],
-            'public_html' => ['front_php', 'front_js'],
-            'back-php' => ['back_php'],
-            'back-py' => ['back_python'],
-            'back-python' => ['back_python'],
-            'python' => ['back_python'],
-            'py' => ['back_python'],
-            'front-php' => ['front_php'],
-            'front-js' => ['front_js'],
-            'php' => ['back_php', 'front_php'],
-            'js' => ['front_js'],
-            'smoke' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'perf' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'stress' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'contract' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'critical' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'slow' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'migration-contract' => ['migration_contract'],
-            'migration' => ['migration_contract'],
-            'migrations' => ['migration_contract'],
-        ];
-
-        $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
-        $envVal = Env::string($envKey, '');
-
-        if ($envVal !== '') {
-            $parts = array_filter(array_map('trim', explode(',', $envVal)));
-            $suites = [];
-            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'migration_contract'];
-
-            foreach ($parts as $suite) {
-                if (!in_array($suite, $validSuites, true)) {
-                    fwrite(STDERR, "Error en {$envKey}: suite '{$suite}' no reconocida. Valores validos: " . implode('|', $validSuites) . "\n");
-                    exit(3);
-                }
-                $suites[] = $suite;
-            }
-            return array_values(array_unique($suites));
-        }
-
-        return $map[$target] ?? [];
     }
 
     private static function runSuite(string $suiteId): int
@@ -246,213 +193,6 @@ final class MetaRunner
     /**
      * @param array<string,mixed> $meta
      */
-    private static function printActionRequired(array $meta): void
-    {
-        $failedSuites = self::failedSuites($meta);
-        $delta = is_array($meta['regression_delta'] ?? null)
-            ? $meta['regression_delta']
-            : ReportSummary::regressionDelta($meta);
-        $actions = is_array($meta['recommended_actions'] ?? null)
-            ? array_values(array_filter($meta['recommended_actions'], 'is_array'))
-            : ReportSummary::recommendedActions($meta);
-        $firstFailure = is_array($meta['first_failure'] ?? null)
-            ? $meta['first_failure']
-            : ReportSummary::firstFailure($meta);
-
-        $newFailures = count(array_filter((array)($delta['new_failures'] ?? []), 'is_string'));
-        $resolvedFailures = count(array_filter((array)($delta['resolved_failures'] ?? []), 'is_string'));
-        $statusTransitions = count(array_filter((array)($delta['status_transitions'] ?? []), 'is_array'));
-
-        echo "\n[Action Required]\n";
-        if ($failedSuites !== []) {
-            echo '  Suites con issues: ' . implode(', ', $failedSuites) . "\n";
-        }
-        echo '  Delta: new=' . $newFailures
-            . ' resolved=' . $resolvedFailures
-            . ' transitions=' . $statusTransitions
-            . "\n";
-        echo "  Reporte detallado: php scripts/report.php\n";
-
-        $rerunCommand = self::rerunFilteredCommand($firstFailure);
-        if ($rerunCommand !== null) {
-            echo '  rerun filtered: ' . $rerunCommand['command'];
-            if ($rerunCommand['reason'] !== '') {
-                echo ' (' . $rerunCommand['reason'] . ')';
-            }
-            echo "\n";
-        }
-
-        $rendered = 0;
-        foreach ($actions as $action) {
-            if (!is_array($action)) {
-                continue;
-            }
-
-            $kind = trim((string)($action['kind'] ?? 'action'));
-            if (in_array($kind, ['rerun_filtered', 'aggregate_report'], true)) {
-                continue;
-            }
-
-            $command = trim((string)($action['command'] ?? ''));
-            if ($command === '') {
-                continue;
-            }
-
-            $label = $kind !== '' ? str_replace('_', ' ', $kind) : 'action';
-            $reason = trim((string)($action['reason'] ?? ''));
-
-            echo '  ' . $label . ': ' . $command;
-            if ($reason !== '') {
-                echo ' (' . $reason . ')';
-            }
-            echo "\n";
-
-            $rendered++;
-            if ($rendered >= 2) {
-                break;
-            }
-        }
-    }
-
-    /**
-     * @param array<string,mixed> $meta
-     * @return array<int,string>
-     */
-    private static function failedSuites(array $meta): array
-    {
-        $failed = [];
-        foreach ((array)($meta['suites'] ?? []) as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $code = (int)($row['exit_code'] ?? 1);
-            if ($code === 0 || $code === 2) {
-                continue;
-            }
-
-            $failed[] = (string)($row['suite_id'] ?? 'suite');
-        }
-
-        return $failed;
-    }
-
-    /**
-     * @return array<string,mixed>
-     */
-    private static function buildOperationalFailureMeta(
-        string $target,
-        string $category,
-        string $reportRoot,
-        int $durationMs,
-        string $startedAt,
-        string $runId,
-        array $admission,
-        string $phase,
-        \Throwable $error
-    ): array {
-        Paths::ensureDir($reportRoot);
-
-        $failurePhase = in_array((string)($admission['reason'] ?? ''), ['shared_store_locked', 'store_resource_locked'], true)
-            ? 'store_setup'
-            : $phase;
-        $failureDomain = $failurePhase === 'store_setup' ? 'store' : ($failurePhase === 'reporting' ? 'reporting' : 'infra');
-        $causeCode = (string)($admission['reason'] ?? '');
-        if ($causeCode === '') {
-            $causeCode = $failurePhase === 'reporting' ? 'report_write_failed' : 'runner_exception';
-        }
-
-        $failure = ReportSummary::buildThrowableFailure($error, [
-            'test_id' => 'meta.run',
-            'test_name' => 'meta.run',
-            'case' => 'meta.run',
-            'suite_id' => 'meta',
-            'suite' => 'meta',
-            'scope' => Env::string('TEST_SCOPE', 'all'),
-            'category' => $category,
-            'kind' => in_array((string)($admission['reason'] ?? ''), ['shared_store_locked', 'store_resource_locked'], true) ? 'environment_conflict' : 'setup_failure',
-            'phase' => $failurePhase,
-            'failure_domain' => $failureDomain,
-            'cause_code' => $causeCode,
-            'artifact_path' => Paths::relativeToRepo($reportRoot),
-        ]);
-
-        $meta = [
-            'target' => $target,
-            'category' => $category,
-            'started_at' => $startedAt,
-            'duration_ms' => $durationMs,
-            'report_root' => $reportRoot,
-            'report_scope_rel' => Paths::relativeToRepo($reportRoot),
-            'selected_module_scope' => '',
-            'selected_test_count' => 0,
-            'suite_status_counts' => [],
-            'outcome_status_counts' => [],
-            'summary' => [
-                'total' => 0,
-                'passed' => 0,
-                'failed' => 0,
-                'skipped' => 0,
-                'duration_ms' => $durationMs,
-            ],
-            'failures' => [$failure],
-            'failure_contract' => [
-                'canonical' => 'failures',
-                'legacy_fallback' => 'suites[].has_failures',
-            ],
-            'first_failure' => ReportSummary::summarizeFailure($failure),
-            'evidence_valid' => false,
-            'evidence_invalid_reason' => $causeCode,
-            'failed_files' => [],
-            'top_failure_messages' => ReportSummary::topFailureMessages([$failure], 5),
-            'suite_ids' => [],
-            'has_failures' => true,
-            'suites' => [],
-            'run_id' => $runId,
-            'meta_run_id' => $runId,
-            'run_kind' => 'meta',
-            'concurrency_admission' => $admission,
-            'filters' => [
-                'target' => $target,
-                'scope' => Env::string('TEST_SCOPE', 'all'),
-                'category' => $category,
-                'match' => Env::string('TEST_MATCH', ''),
-            ],
-        ];
-
-        return ReportSummary::enrichReport($meta);
-    }
-
-
-    /**
-     * @param array<string,mixed>|null $firstFailure
-     * @return array{command:string,reason:string}|null
-     */
-    private static function rerunFilteredCommand(?array $firstFailure): ?array
-    {
-        if (!is_array($firstFailure)) {
-            return null;
-        }
-
-        $file = trim((string)($firstFailure['file'] ?? ''));
-        $suiteId = trim((string)($firstFailure['suite_id'] ?? ''));
-        if ($file === '' || $suiteId === '') {
-            return null;
-        }
-
-        return [
-            'command' => "TEST_MATCH='" . self::shellSingleQuote($file) . "' php runTest.php " . str_replace('_', '-', $suiteId),
-            'reason' => 'aislar el primer archivo fallido',
-        ];
-    }
-
-    private static function shellSingleQuote(string $value): string
-    {
-        return str_replace("'", "'\''", $value);
-    }
-
-    /**
-     * @param array<string,mixed> $meta
-     */
     private static function safeWriteMeta(array $meta, string $context): void
     {
         try {
@@ -470,7 +210,7 @@ final class MetaRunner
     private static function safePrintActionRequired(array $meta): void
     {
         try {
-            self::printActionRequired($meta);
+            MetaActionRequiredRenderer::render($meta);
         } catch (\Throwable $e) {
             $runId = trim((string)($meta['run_id'] ?? ''));
             $scope = $runId !== '' ? ' run=' . $runId : '';
