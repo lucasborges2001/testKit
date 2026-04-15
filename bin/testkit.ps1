@@ -290,9 +290,9 @@ function Run-Doctor {
   $testOutDir = Join-Path $ProjectRoot 'test'
   New-Item -ItemType Directory -Force -Path $testOutDir | Out-Null
   if (Test-Path $testOutDir) {
-    Write-Host "[OK] $testOutDir writable"
+    Write-Host "[OK] $testOutDir exists or was created"
   } else {
-    Write-Host "[FAIL] $testOutDir no es escribible"
+    Write-Host "[FAIL] no se pudo crear o resolver $testOutDir"
     $ok = $false
   }
 
@@ -320,7 +320,7 @@ if ($Args.Count -gt 0 -and $Args[0] -eq "doctor") {
 
 $envFile = Pick-EnvFile
 if (-not $envFile) {
-  Write-Error "Falta env de tests. Copiá test/.env.test.example -> test/.env.test (preferido) o bien creá .env.test en el root del repo."
+  Write-Error "Falta env de tests. Creá <project>/test/.env.test o <project>/.env.test. Podés usar docs/examples/.env.test.example como referencia."
   exit 1
 }
 

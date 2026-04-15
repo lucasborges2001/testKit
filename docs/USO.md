@@ -1,213 +1,254 @@
-# Uso de testkit
+# Uso operativo de testkit
 
 ## 1) Alcance de esta guía
 
-Esta guía cubre la operación normal de `testkit`.
+Esta guía cubre la operación diaria:
 
-No define ownership ni límites contractuales profundos. Para eso, leer primero [`CONTRATO.md`](CONTRATO.md).
+- primer arranque
+- comandos seguros
+- diagnóstico inicial
+- lectura correcta de fallos comunes
 
-## 2) Flujo mínimo recomendado
+No redefine ownership ni contrato de plataforma. Para eso, leer [`CONTRATO.md`](CONTRATO.md). Para troubleshooting detallado, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
-1. Definir `TESTKIT_PROJECT_ROOT`.
-2. Crear `test/.env.test` en el proyecto.
-3. Correr `doctor`.
-4. Levantar el stack requerido.
-5. Ejecutar un target.
-6. Leer reportes y artefactos.
+## 2) Quick start real
 
-Linux/macOS:
+Supuestos mínimos:
+
+- `testkit` está clonado como repo completo
+- el proyecto bajo prueba existe en disco
+- el env de tests vive dentro del repo del proyecto:
+  - preferido: `<project>/test/.env.test`
+  - aceptado: `<project>/.env.test`
+
+### Linux/macOS
 
 ```bash
-export TESTKIT_PROJECT_ROOT=/ruta/proyecto
+export TESTKIT_PROJECT_ROOT=/path/to/project
+
 ./bin/testkit doctor
 ./bin/testkit up -d
-./bin/testkit run --rm testkit php runTest.php
+./bin/testkit run --rm testkit php runTest.php back-php
+./bin/testkit inspect latest
 ```
 
-PowerShell:
+### PowerShell
 
 ```powershell
-$env:TESTKIT_PROJECT_ROOT='D:\Proyecto'
+$env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
+
 .\bin\testkit.ps1 doctor
 .\bin\testkit.ps1 up -d
-.\bin\testkit.ps1 run --rm testkit php runTest.php
+.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+.\bin\testkit.ps1 inspect latest
 ```
 
-## 3) Doctor
+Observaciones duras:
 
-`doctor` verifica el contrato operativo mínimo antes de correr:
+- el primer target no tiene que ser `all`; conviene empezar por una suite concreta
+- el primer intento operativo seguro es secuencial
+- `doctor` no reemplaza una corrida real; solo valida el contrato mínimo visible antes de entrar al runner
 
-- `TESTKIT_PROJECT_ROOT` y `TESTKIT_ROOT`
-- existencia del env de tests dentro del repo montado
-- presencia de `docker`
-- contrato mínimo del store para MySQL según `TEST_STORE_PROVISION`
+## 3) Secuencia segura para el primer diagnóstico
 
-Regla importante:
+1. correr `doctor`
+2. si falla, corregir el primer `[FAIL]`
+3. levantar el stack con `up -d`
+4. correr una sola suite con la ruta simple:
+   - `TEST_JOBS=1`
+   - `TEST_DB_STRATEGY=shared`
+5. recién después probar filtros, `per_worker`, snapshot o suites agregadas
 
-- `TEST_STORE_PROVISION=managed` exige credenciales runtime y admin
-- `TEST_STORE_PROVISION=external` exige solo credenciales runtime
-
-## 4) Targets comunes
-
-Corrida completa:
+Ejemplo seguro:
 
 ```bash
-php runTest.php
+TEST_JOBS=1 TEST_DB_STRATEGY=shared ./bin/testkit run --rm testkit php runTest.php back-php
 ```
 
-Suites:
+Ejemplo peligroso:
 
 ```bash
-php runTest.php back
-php runTest.php back-php
-php runTest.php back-py
-php runTest.php front
-php runTest.php front-php
-php runTest.php front-js
-php runTest.php migration-contract
+./bin/testkit run --rm testkit php runTest.php back-php &
+./bin/testkit run --rm testkit php runTest.php back-php &
 ```
 
-Filtros:
+Eso no es un uso soportado del store compartido.
+
+## 4) Qué revisar primero cuando algo falla
+
+### 4.1) `doctor`
+
+Comando base:
 
 ```bash
-TEST_SCOPE=integration TEST_MATCH=auth php runTest.php back
-TEST_CATEGORY=critical php runTest.php all
+./bin/testkit doctor
 ```
 
-## 5) Variables operativas que importan de verdad
-
-Selección:
-
-- `TEST_SCOPE`
-- `TEST_CATEGORY`
-- `TEST_MATCH`
-
-Ejecución:
-
-- `TEST_JOBS`
-- `TEST_FAIL_FAST`
-- `TEST_META_FAIL_FAST`
-- `TEST_CHILD_FAIL_FAST`
-
-Store/bootstrap:
-
-- `TEST_STORE_PROVISION`
-- `TEST_DB_STRATEGY`
-- `TEST_DB_WORKER_SUFFIX_FORMAT`
-- `TEST_BASELINE_MODE`
-
-Reporting:
-
-- `TEST_REPORT_KEEP`
-- `TEST_RUNS_INDEX_KEEP`
-
-No hace falta setear todo. El punto es entender cuáles cambian realmente el modo de ejecución.
-
-## 6) Store y baseline
-
-### 6.1) layered
-
-Es el modo por defecto.
-
-Pipeline estructural:
-
-1. reset
-2. `schema/`
-3. `base/`
-4. migraciones explícitas si fueron pedidas
-5. `validations/`
-
-### 6.2) snapshot
-
-Usa un dump lógico como punto de partida y luego aplica migraciones/validaciones.
-
-Requiere una fuente de snapshot resoluble por env.
-
-Ejemplo:
+Dump útil de configuración efectiva:
 
 ```bash
-TEST_BASELINE_MODE=snapshot \
-TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz \
-php runTest.php back-php
+./bin/testkit doctor --dump
 ```
 
-### 6.3) migration-contract
+Qué te dice de forma confiable:
 
-Uso correcto:
+- si encontró el env
+- si el env quedó dentro del repo montado
+- qué `TESTKIT_STACK` va a usar
+- si `TESTKIT_ROOT` parece un repo completo
+- si `TESTKIT_PROJECT_ROOT` existe
+- si faltan variables mínimas del store
+- si Docker está en PATH
+
+Qué no te garantiza:
+
+- que el bootstrap estructural cierre
+- que el snapshot sea restaurable
+- que una suite concreta no tenga conflictos de concurrencia
+- que el proyecto haya definido seeds, migraciones o tests correctos
+
+### 4.2) `inspect`
+
+Después de una corrida, `inspect` da rutas de diagnóstico más cortas que leer JSON a mano.
+
+Última corrida conocida:
 
 ```bash
-TEST_BASELINE_MODE=snapshot \
-TEST_BASELINE_SNAPSHOT_FILE=/workspace/project/test/seeds/mysql/baseline/latest.sql.gz \
-TEST_DB_STRATEGY=shared \
-php runTest.php migration-contract
+./bin/testkit inspect latest
 ```
 
-No usarlo para:
-
-- reemplazar tests funcionales
-- throughput normal
-- esconder un pipeline de seeds frágil
-
-## 7) Reportes y artefactos
-
-`testkit` escribe artefactos operativos dentro del repo del proyecto.
-
-Ubicaciones principales:
-
-- `.testkit/reports/`
-- `.testkit/history/`
-- `.testkit/baselines/`
-- `test/coverage/` cuando coverage está activo
-
-Reporte humano:
+Primera falla canónica:
 
 ```bash
-php scripts/report.php
+./bin/testkit inspect failure
 ```
 
-Reporte de profiling DB, si está habilitado:
+Estado de baseline y migraciones:
 
 ```bash
-php scripts/query_report.php
+./bin/testkit inspect seed-state
 ```
 
-## 8) Reglas operativas que no conviene violar
-
-### 8.1) Un runner top-level por vez
-
-Modelo recomendado:
-
-- un runner top-level
-- paralelismo intra-suite con `TEST_JOBS`
-
-No usar como throughput normal:
+Locks y política de concurrencia:
 
 ```bash
-php runTest.php back-php &
-php runTest.php front-php &
+./bin/testkit inspect concurrency
 ```
 
-### 8.2) Estrategia de DB
+Usarlo cuando ya existe una corrida. No sirve como reemplazo de `doctor`.
 
-- `shared`: soportado
-- `per_worker`: ruta cerrada para paralelismo intra-suite con DB real
-- `clean`: no implementado
+## 5) Comandos operativos y lectura correcta
 
-Ejemplo soportado:
+| Necesidad | Comando | Lectura correcta |
+|---|---|---|
+| validar setup mínimo | `doctor` | contrato mínimo del wrapper, no del baseline completo |
+| ver configuración efectiva | `doctor --dump` | cómo quedó resuelto env/root/stack |
+| levantar servicios | `up -d` | `docker compose` del stack elegido |
+| correr una suite concreta | `php runTest.php back-php` | una sola suite, no todo el proyecto |
+| correr resumen agregado | `php runTest.php all` | varias suites bajo un solo runner top-level |
+| ver última corrida | `inspect latest` | resumen canónico de la última corrida resuelta |
+| ver primera falla | `inspect failure` | lectura rápida del primer problema canónico |
+| ver baseline/migración | `inspect seed-state` | útil para snapshot y `migration-contract` |
+| ver locks/concurrencia | `inspect concurrency` | útil para contention o dudas sobre `per_worker` |
+| leer reporte humano consolidado | `php scripts/report.php` | salida para personas, no contrato estable de automatización |
+
+## 6) Qué comportamiento sí es esperado
+
+### `no_tests`
+
+Esperado cuando:
+
+- la suite existe, pero los filtros no dejan nada
+- `TEST_SCOPE`, `TEST_CATEGORY` o `TEST_MATCH` quedaron demasiado restrictivos
+
+Qué revisar:
 
 ```bash
-TEST_JOBS=4 TEST_DB_STRATEGY=per_worker php runTest.php back-php
+./bin/testkit inspect latest
 ```
 
-## 9) Límites operativos vigentes
+y después afinar filtros.
 
-- `per_worker` no aísla corridas top-level distintas.
-- snapshot restore y clone-per-worker están cerrados principalmente para MySQL.
-- coverage y triage no reemplazan el diagnóstico del proyecto.
-- `testkit` no arma escenarios de negocio por vos.
+No asumir:
+
+- que significa bug del runner
+- que significa que no hay archivos de tests en el repo
+
+### `all_skipped`
+
+Esperado cuando:
+
+- la selección entró
+- los tests decidieron skip en runtime
+
+Qué revisar:
+
+- condiciones de skip del proyecto
+- dependencias o prerequisitos declarados por los tests
+
+No confundir con:
+
+- `no_tests`
+- `bootstrap_error`
+
+### contention / locks
+
+Esperado cuando:
+
+- ya hay otra corrida top-level usando el mismo store base
+- se intentó throughput lanzando dos `runTest.php` sobre el mismo proyecto/store
+
+Qué revisar:
+
+```bash
+./bin/testkit inspect concurrency
+```
+
+No tratarlo como bug por defecto. Es la defensa normal contra uso concurrente no soportado.
+
+### `TEST_DB_STRATEGY=clean` rechazado
+
+Esperado. No existe como modo operativo soportado.
+
+### `migration-contract` rechazado fuera de snapshot/shared/MySQL
+
+Esperado. No es una suite general; es un gate técnico acotado.
+
+## 7) Qué comportamiento indica contrato roto o bug probable
+
+Tomarlo como sospechoso si pasa cualquiera de estos casos:
+
+- `doctor` dice que encontró un env válido y luego el wrapper vuelve a decir que no existe o que quedó fuera del repo
+- un target documentado como válido es rechazado como inválido
+- una corrida simple y secuencial (`TEST_JOBS=1`, `TEST_DB_STRATEGY=shared`) entra en errores de paralelismo sin que exista otra corrida
+- `inspect latest` no puede leer reportes canónicos después de una corrida que sí escribió artifacts
+- `doctor` o el wrapper sugieren paths de ejemplo que no existen en el repo
+- el runner intenta vender como “parallel-safe” un modelo que sigue compitiendo por el mismo store base
+
+En esos casos, ya no estás solo ante un mal setup; hay una desalineación entre contrato y comportamiento.
+
+## 8) Cosas que no conviene sobreinterpretar
+
+- `TEST_LIST=1` imprime selección, pero no debe venderse como dry-run puro del lifecycle de store; según la suite, el bootstrap puede ocurrir igual.
+- `doctor` no prueba restore de snapshot ni migraciones.
+- `scripts/report.php` no es el contrato estable para automatización.
+- `per_worker` no habilita varios runners top-level en paralelo.
+- `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
+
+## 9) Patrones seguros vs peligrosos
+
+| Caso | Estado |
+|---|---|
+| una sola corrida top-level, secuencial, `shared` | seguro |
+| una sola corrida top-level, `per_worker`, `TEST_JOBS>1` | seguro si la suite necesita aislamiento DB intra-suite |
+| una sola corrida top-level, `migration-contract` sobre snapshot MySQL | seguro |
+| dos corridas top-level sobre el mismo store base | no soportado |
+| usar `TEST_LIST=1` como si evitara todo bootstrap | lectura incorrecta |
+| usar `all` como primer diagnóstico | posible, pero innecesariamente ruidoso |
+| usar `back-php` o `front-js` como primer diagnóstico | recomendado |
 
 ## 10) Qué leer después
 
-- [`CONTRATO.md`](CONTRATO.md) para ownership y límites
-- [`ARQUITECTURA.md`](ARQUITECTURA.md) para fronteras internas
-- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) para el detalle de reporting/coverage
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) para síntomas concretos y pasos de corrección
+- [`ARQUITECTURA.md`](ARQUITECTURA.md) para locks, bootstrap, baseline y concurrencia
+- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) para lectura de reportes y diagnostics

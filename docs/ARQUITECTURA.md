@@ -2,123 +2,356 @@
 
 ## 1) Propósito
 
-`testkit` separa plataforma de testing y proyecto integrador.
+`testkit` separa tres capas que no conviene mezclar:
 
-La plataforma centraliza ejecución, bootstrap y reporting. El proyecto conserva tests, seeds y lógica de dominio.
+- selección de ejecución
+- lifecycle estructural del store
+- tests y reglas de negocio del proyecto
 
-## 2) Estructura interna
+La plataforma decide cómo se corre y cómo se materializa el baseline.
+El proyecto decide qué SQL, qué tests y qué escenarios de dominio existen.
+
+## 2) Componentes que importan en esta fase
 
 ```text
 testkit/
-├─ bin/
-├─ compose*.yaml
-├─ core/php/
-│  ├─ common/        # env, paths, utilidades base
-│  ├─ config/        # lectura de parámetros y contrato de suites
-│  ├─ discovery/     # resolución de tests, tags y filtros
-│  ├─ execution/     # procesos, pool y resultados
-│  ├─ reporting/     # reportes JSON, resumen, historial
-│  ├─ coverage/      # merge y diagnóstico de coverage
-│  ├─ seeding/       # baseline layered/snapshot y manifest
-│  ├─ store/         # adapters y operaciones de store
-│  └─ suites/        # suites por tecnología y suites técnicas
-├─ runners/
-├─ scripts/
-├─ templates/
-└─ utils/
+├─ core/php/suites/
+│  ├─ MetaRunner.php              # target top-level -> suites
+│  ├─ ContractWorldBootstrap.php  # política operativa de bootstrap
+│  └─ *Suite.php                  # suites concretas
+├─ core/php/discovery/
+│  ├─ TestDiscovery.php           # discovery + filtros
+│  └─ TestTagger.php              # tags por path/nombre/metadata
+├─ core/php/seeding/
+│  ├─ SeedPipeline.php            # baseline layered/snapshot
+│  ├─ MigrationCatalog.php        # catálogo de migraciones ejecutables
+│  ├─ MigrationStateResolver.php  # estado applied/pending
+│  └─ BaselineManifest.php        # manifest reusable del baseline
+├─ core/php/store/
+│  ├─ StoreRegistry.php           # selección de adapter por driver
+│  ├─ StoreMaintenance.php        # provision/reset/clone/restore
+│  ├─ MysqlStoreAdapter.php       # ruta cerrada principal
+│  └─ PgsqlStoreAdapter.php       # soporte parcial
+└─ core/php/execution/
+   └─ ParallelGuard.php           # admisión y locks de concurrencia
 ```
 
-## 3) Frontera con el proyecto
+## 3) Flujo real de una corrida
 
-### 3.1) Lo que pertenece a testkit
+Pipeline de alto nivel:
+
+1. `bin/testkit` o `bin/testkit.ps1` resuelven repo, env y compose.
+2. `runTest.php` entrega el target al `MetaRunner`.
+3. `MetaRunner` traduce target a una lista de suites.
+4. cada suite resuelve discovery y filtros.
+5. la suite llama a `ContractWorldBootstrap::prepare()`.
+6. `ContractWorldBootstrap` decide estrategia de store.
+7. `StoreMaintenance` delega en el adapter del driver.
+8. `SeedPipeline` materializa el baseline.
+9. la suite ejecuta los tests resultantes.
+10. reporting escribe artefactos bajo el repo del proyecto.
+
+La frontera relevante de esta fase empieza en el paso 5.
+
+## 4) Frontera con el proyecto
+
+### 4.1) Lo que pertenece a testkit
 
 `testkit` es dueño de:
 
-- runners y selección de targets
-- discovery compartido
-- bootstrap estructural
-- naming de DB/store para workers y baseline
-- adapters de store y restricciones operativas
-- formato de reportes del framework
+- la política de bootstrap
+- el naming de DB base, baseline y worker
+- provision, reset, restore y clone cuando el adapter los soporta
+- el orden del seed pipeline
+- los locks de concurrencia
+- el manifest del baseline materializado
 
-### 3.2) Lo que pertenece al proyecto
+### 4.2) Lo que pertenece al proyecto
 
 El proyecto es dueño de:
 
-- tests de dominio
+- `test/seeds/<driver>/schema`
+- `test/seeds/<driver>/base`
+- `test/seeds/<driver>/migrations`
+- `test/seeds/<driver>/validations`
 - `test/_support`
-- SQL de `schema`, `base`, `migrations` y `validations`
-- servicios y dependencias propias del proyecto
-- criterios funcionales que definen éxito o falla del negocio
+- tests y escenarios de negocio
 
-La frontera importante es esta: `testkit` ejecuta y prepara infraestructura; el proyecto define qué debe validarse.
+El proyecto provee el contenido del baseline. `testkit` provee el lifecycle que lo materializa.
 
-## 4) Lifecycle de una corrida
+## 5) `ContractWorldBootstrap`: owner del bootstrap
 
-Una corrida típica atraviesa estas capas:
+`ContractWorldBootstrap` es el punto de entrada canónico del lifecycle de store.
 
-1. `bin/testkit` o `bin/testkit.ps1` resuelven repo, env y compose.
-2. `runTest.php` selecciona target y suites.
-3. cada suite arma su configuración, discovery y ejecución.
-4. si la suite necesita store real, `ContractWorldBootstrap` aplica la política de bootstrap.
-5. `SeedPipeline` materializa el baseline (`layered` o `snapshot`).
-6. `reporting` escribe artefactos bajo el repo del proyecto.
+Responsabilidades:
 
-## 5) Lifecycle de store
+- normalizar `TEST_DB_STRATEGY`
+- rechazar `clean`
+- decidir si el bootstrap corre una vez o por worker
+- decidir si se usa baseline + clone-per-worker
+- mutar temporalmente el nombre de DB por worker cuando aplica
 
-`testkit` controla el lifecycle estructural del store:
+Pseudoflujo:
 
-- provision
-- reset
-- materialización de baseline
-- clone por worker cuando aplica
-- reportes técnicos del bootstrap
+```text
+prepare()
+├─ normaliza strategy
+├─ strategy=clean          -> error explícito
+├─ strategy=shared         -> bootstrapStore(base)
+└─ strategy=per_worker
+   ├─ clone-per-worker=0   -> bootstrapStore(worker_db_1..N)
+   └─ clone-per-worker=1   -> bootstrap baseline -> clone a workers
+```
 
-El proyecto no debe redefinir ese lifecycle desde helpers de dominio.
+Observación importante:
 
-Lo que sí debe hacer el proyecto:
+- `per_worker` sigue siendo una política intra-suite
+- no es un scheduler de múltiples corridas top-level independientes
 
-- proveer el SQL estructural
-- decidir qué migraciones existen
-- construir escenarios funcionales después del baseline
+## 6) Provision del store
 
-## 6) Artefactos y ownership
+`StoreMaintenance` es un façade fino. El comportamiento real vive en el adapter del driver.
 
-Los artefactos operativos del framework viven dentro del repo del proyecto, principalmente en `.testkit/`.
-
-Eso mantiene dos propiedades:
-
-- el estado operacional queda junto al proyecto auditado
-- `testkit` no se apropia de resultados que describen a otro repositorio
-
-Coverage sigue bajo `test/coverage/` porque es una salida consumida directamente por el proyecto.
-
-## 7) Alcance real por motor
-
-### MySQL
+## 6.1) MySQL
 
 Ruta principal cerrada:
 
-- provision
-- reset
-- restore snapshot
-- clone database
-- suites que dependen de ese lifecycle, incluido `migration-contract`
+- `provision()`
+- `reset()`
+- `clean()`
+- `databaseExists()`
+- `dropDatabase()`
+- `cloneDatabase()`
+- `restoreSnapshot()`
 
-### PostgreSQL
+Además, MySQL implementa una distinción explícita entre:
 
-Soporte parcial de infraestructura:
+- credenciales runtime
+- credenciales admin para flows `managed`
 
-- puede existir como store de pruebas
-- snapshot restore y clone no forman parte del contrato cerrado de esta fase
+## 6.2) PostgreSQL
 
-### Redis
+Ruta parcial:
 
-`testkit` puede levantar el servicio en compose, pero no tiene lifecycle estructural equivalente al de DB SQL dentro del core PHP.
+- `provision()`
+- `reset()`
+- `clean()`
+- `databaseExists()`
+- `dropDatabase()`
 
-## 8) Decisiones de diseño vigentes
+No implementa:
 
-- La plataforma es opinionated: prefiere contrato explícito antes que inferencia flexible.
-- El bootstrap estructural vive en `testkit`, no en `test/_support`.
-- `migration-contract` es una suite técnica de bootstrap y migración; no una suite funcional.
-- Heurísticas de reporting sirven para triage, no para reemplazar diagnóstico real.
+- `cloneDatabase()`
+- `restoreSnapshot()`
+
+Por eso, el lifecycle cerrado de baseline snapshot y clone-per-worker no se extiende a PostgreSQL en esta versión.
+
+## 7) `TEST_STORE_PROVISION` dentro de la arquitectura
+
+El contrato `managed|external` hoy debe leerse como parte del camino cerrado MySQL.
+
+### `managed`
+
+Habilita a `testkit` a:
+
+- crear la DB cuando falta
+- invalidar una baseline materializada
+- recrear DBs auxiliares
+- clonar baseline a workers
+
+### `external`
+
+Le dice al framework:
+
+- la DB ya existe
+- no asumas create/drop como parte del contrato
+
+Consecuencia arquitectónica:
+
+- `external` puede convivir con `shared`
+- `external` no cierra el camino de `clone-per-worker`
+- `per_worker` sin clone solo es viable si el entorno externo ya proveyó las DB derivadas que el naming del framework espera
+
+Eso último puede funcionar en entornos muy controlados, pero no es la ruta operativa cerrada que documenta `testkit`.
+
+## 8) `SeedPipeline`: owner del baseline
+
+`SeedPipeline` decide cómo se materializa la DB final antes de ejecutar tests.
+
+Tiene dos modos cerrados:
+
+- `layered`
+- `snapshot`
+
+## 8.1) `layered`
+
+El baseline se construye desde el árbol estructural del proyecto.
+
+Flujo interno:
+
+1. resolver driver, DB y manifest plan
+2. opcionalmente reutilizar baseline si el manifest coincide y la DB existe
+3. abrir conexión
+4. resolver plan de migraciones para baseline layered
+5. resetear la DB
+6. aplicar `schema/`
+7. aplicar `base/`
+8. aplicar migraciones ejecutables del baseline
+9. aplicar `validations/`
+10. escribir manifest
+
+Punto fino importante:
+
+- en `layered`, el baseline final no se deduce del estado previo de la DB
+- se deduce del catálogo estructural y de las migraciones pedidas para esa corrida
+
+## 8.2) `snapshot`
+
+El baseline se construye a partir de un dump restaurado.
+
+Flujo interno:
+
+1. resolver artifact snapshot
+2. opcionalmente reutilizar baseline si el manifest coincide y la DB existe
+3. abrir conexión
+4. resetear la DB
+5. restaurar dump lógico
+6. resolver estado de migraciones del snapshot
+7. aplicar migraciones explícitas o pendientes calculadas
+8. aplicar `validations/`
+9. escribir manifest
+
+Punto fino importante:
+
+- en `snapshot`, inferir pendientes sin fuente confiable de estado sería peligroso
+- por eso `MigrationStateResolver` falla de forma explícita si intentás auto-pending sin fuente válida
+
+## 9) Catálogo de migraciones y estado
+
+El baseline no mira “carpetas sueltas” sin contrato.
+
+La capa estructural usa:
+
+- `MigrationCatalog` para clasificar migraciones como:
+  - `active_migration`
+  - `optional_migration`
+  - `historical_absorbed_change`
+- `MigrationStateResolver` para producir:
+  - `available`
+  - `applied`
+  - `pending`
+  - `target`
+
+Lectura correcta:
+
+- `layered` decide el baseline desde catálogo + selección explícita
+- `snapshot` decide los pendientes desde el estado observado o declarado del dump restaurado
+
+## 10) Clone-per-worker dentro del diseño
+
+Cuando `TEST_DB_STRATEGY=per_worker` y `TEST_BASELINE_CLONE_PER_WORKER=1`:
+
+1. se resuelve un nombre de DB baseline
+2. opcionalmente se invalida el baseline previo
+3. se materializa una sola DB baseline
+4. se clona esa DB a `w01`, `w02`, etc.
+
+Eso reduce costo de bootstrap repetido.
+
+No cambia el modelo de concurrencia.
+
+No cambia el ownership.
+
+No cambia la semántica de los tests.
+
+## 11) `migration-contract` dentro del diseño
+
+`migration_contract` es una suite técnica cuyo trabajo es auditar el baseline restaurado y migrado.
+
+Su flujo es deliberadamente chico:
+
+1. validar precondiciones contractuales
+2. resolver snapshot
+3. ejecutar `ContractWorldBootstrap::prepare()` en modo compartido
+4. cargar el manifest escrito por `SeedPipeline`
+5. escribir un reporte suite-level técnico
+
+Lo que verifica no es “si el producto funciona”, sino “si el baseline restaurado puede bootstrapearse, migrarse y dejar evidencia estructural consistente”.
+
+Por eso:
+
+- requiere `snapshot`
+- requiere `shared`
+- requiere MySQL
+- no acepta `per_worker`
+
+## 12) Concurrencia y admisión
+
+`ParallelGuard` modela dos problemas distintos.
+
+## 12.1) Seguridad intra-suite
+
+Pregunta:
+
+- ¿esta suite puede usar `TEST_JOBS>1` con la estrategia actual?
+
+Regla:
+
+- si hay tests DB-sensibles y runtime DB real, `TEST_JOBS>1` exige `per_worker`
+- si la suite declara política secuencial, se rechaza el paralelismo
+
+## 12.2) Exclusividad top-level
+
+Pregunta:
+
+- ¿puedo lanzar otra corrida top-level sobre el mismo store base?
+
+Regla:
+
+- si la corrida muta el store compartido, se toma lock por `driver/db`
+- una segunda corrida concurrente sobre el mismo recurso se rechaza
+
+Consecuencia importante:
+
+- `per_worker` aísla workers dentro de una suite
+- no habilita multi-runner top-level sobre el mismo proyecto/store
+
+## 13) Qué garantiza y qué no garantiza el lifecycle
+
+## 13.1) Sí garantiza
+
+- un orden estructural explícito para bootstrap
+- admisión temprana de combinaciones peligrosas de `TEST_JOBS` + `TEST_DB_STRATEGY`
+- restore y clone cuando el adapter los implementa
+- evidencia técnica del baseline materializado mediante manifest y reportes
+
+## 13.2) No garantiza
+
+- aislamiento fuera de la DB
+- corrección de tests frágiles
+- compatibilidad de snapshot/clone en motores no implementados
+- throughput con varios top-level runners sobre el mismo recurso
+- diagnóstico funcional de negocio
+
+## 14) Riesgos que quedan afuera del control de la plataforma
+
+Aunque la DB quede aislada por worker, siguen quedando afuera:
+
+- archivos compartidos
+- sockets y puertos
+- APIs externas
+- colas o brokers
+- cron, tiempo y relojes
+- orden global entre procesos
+
+Ese borde no es un bug documental: es el límite real del diseño.
+
+## 15) Decisiones vigentes
+
+- `shared` es el camino simple y secuencial.
+- `clean` no existe como estrategia soportada.
+- `per_worker` es la única ruta cerrada para paralelismo intra-suite con DB sensible.
+- `clone-per-worker` es una optimización de baseline, no un modelo nuevo de concurrencia.
+- `snapshot` existe para validar restore + migraciones reales, no para reemplazar el baseline normal del proyecto.
+- `migration-contract` es un gate técnico de infraestructura, no una suite funcional.
+- la ruta cerrada completa de baseline/clone/migration-contract hoy es MySQL.

@@ -62,6 +62,7 @@ final class ContractWorldBootstrap
             $baseDb = self::resolveBaseDatabaseName($driver);
 
             if (Env::bool('TEST_BASELINE_CLONE_PER_WORKER', false)) {
+                self::assertBaselineCloneSupported($driver);
                 self::bootstrapWorkersFromBaseline($driver, $repoRoot, $baseDb, $jobs);
                 return;
             }
@@ -259,5 +260,34 @@ final class ContractWorldBootstrap
     {
         putenv($key);
         unset($_ENV[$key], $_SERVER[$key]);
+    }
+
+    private static function assertBaselineCloneSupported(string $driver): void
+    {
+        if ($driver !== 'mysql') {
+            throw new RuntimeException(
+                'TEST_BASELINE_CLONE_PER_WORKER solo está cerrado para MySQL en esta versión. '
+                . 'Driver recibido: ' . $driver . '.'
+            );
+        }
+
+        $provisionMode = self::normalizeProvisionMode(Env::string('TEST_STORE_PROVISION', 'managed'));
+        if ($provisionMode !== 'managed') {
+            throw new RuntimeException(
+                'TEST_BASELINE_CLONE_PER_WORKER requiere TEST_STORE_PROVISION=managed. '
+                . 'Clone-per-worker crea, invalida y clona DBs auxiliares; con TEST_STORE_PROVISION=' . $provisionMode
+                . ' ese lifecycle no forma parte del contrato operativo soportado.'
+            );
+        }
+    }
+
+    private static function normalizeProvisionMode(string $mode): string
+    {
+        $mode = strtolower(trim($mode));
+        if (!in_array($mode, ['managed', 'external'], true)) {
+            return 'managed';
+        }
+
+        return $mode;
     }
 }
