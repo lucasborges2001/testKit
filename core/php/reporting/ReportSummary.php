@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
-use Throwable;
 use Testkit\Core\Common\Paths;
 
 final class ReportSummary
@@ -18,11 +17,11 @@ final class ReportSummary
     }
 
     /**
-     * @param Throwable $e
+     * @param \Throwable $e
      * @param array<string,mixed> $context
      * @return array<string,mixed>
      */
-    public static function buildThrowableFailure(Throwable $e, array $context = []): array
+    public static function buildThrowableFailure(\Throwable $e, array $context = []): array
     {
         return FailureNormalizer::buildThrowableFailure($e, $context);
     }
@@ -245,72 +244,7 @@ final class ReportSummary
      */
     public static function diagnostics(array $report): array
     {
-        $failures = self::canonicalFailures($report);
-        $statusCounts = [
-            'pass' => self::metric($report, 'pass', 'passed'),
-            'fail' => self::metric($report, 'fail', 'failed'),
-            'skip' => self::metric($report, 'skip', 'skipped'),
-            'timeout' => (int)($report['timeout'] ?? ($report['status_counts']['timeout'] ?? 0)),
-            'infra_error' => 0,
-            'contention' => 0,
-        ];
-        $phaseCounts = [];
-        $causeCounts = [];
-
-        foreach ($failures as $failure) {
-            $status = strtolower(trim((string)($failure['status'] ?? 'fail')));
-            if ($status === 'timeout') {
-                $statusCounts['timeout']++;
-            }
-
-            $phase = trim((string)($failure['phase'] ?? FailureNormalizer::phaseFromKind((string)($failure['kind'] ?? ''))));
-            if ($phase !== '') {
-                $phaseCounts[$phase] = (int)($phaseCounts[$phase] ?? 0) + 1;
-            }
-
-            $cause = trim((string)($failure['cause_code'] ?? FailureNormalizer::causeCodeFromKind((string)($failure['kind'] ?? ''))));
-            if ($cause !== '') {
-                $causeCounts[$cause] = (int)($causeCounts[$cause] ?? 0) + 1;
-            }
-
-            $domain = trim((string)($failure['failure_domain'] ?? FailureNormalizer::domainFromKind((string)($failure['kind'] ?? ''))));
-            if ($status !== 'timeout' && in_array($domain, ['infra', 'bootstrap', 'store', 'discovery', 'reporting', 'runner'], true)) {
-                $statusCounts['infra_error']++;
-            }
-
-            if ($cause === 'shared_store_locked' || $cause === 'store_resource_locked') {
-                $statusCounts['contention']++;
-            }
-        }
-
-        $admission = is_array($report['concurrency_admission'] ?? null) ? $report['concurrency_admission'] : [];
-        $admissionReason = trim((string)($admission['reason'] ?? ''));
-        $primaryFailure = $failures !== [] ? $failures[0] : null;
-        $primaryKind = is_array($primaryFailure) ? (string)($primaryFailure['kind'] ?? '') : '';
-        $primaryPhase = is_array($primaryFailure) ? (string)($primaryFailure['phase'] ?? FailureNormalizer::phaseFromKind($primaryKind)) : '';
-        $failureDomain = is_array($primaryFailure) ? (string)($primaryFailure['failure_domain'] ?? FailureNormalizer::domainFromKind($primaryKind)) : '';
-        $causeCode = is_array($primaryFailure) ? (string)($primaryFailure['cause_code'] ?? FailureNormalizer::causeCodeFromKind($primaryKind)) : '';
-
-        $outcomeStatus = self::determineOutcomeStatus($report, $statusCounts, $failureDomain, $primaryPhase, $causeCode, $admissionReason);
-
-        return [
-            'outcome_status' => $outcomeStatus,
-            'failure_domain' => $failureDomain !== '' ? $failureDomain : 'none',
-            'primary_phase' => $primaryPhase !== '' ? $primaryPhase : 'none',
-            'cause_code' => $causeCode !== '' ? $causeCode : ($admissionReason !== '' ? $admissionReason : 'none'),
-            'status_counts' => $statusCounts,
-            'phase_failure_counts' => $phaseCounts,
-            'cause_counts' => $causeCounts,
-            'has_timeout' => $statusCounts['timeout'] > 0,
-            'has_contention' => $statusCounts['contention'] > 0 || in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true),
-            'resource' => (string)($admission['resource'] ?? ''),
-            'lock_key' => (string)($admission['lock_key'] ?? ''),
-            'lock_scope' => (string)($admission['lock_scope'] ?? ''),
-            'lock_owner_run_id' => $admission['lock_owner_run_id'] ?? null,
-            'lock_owner_meta_run_id' => $admission['lock_owner_meta_run_id'] ?? null,
-            'lock_owner_hostname' => $admission['lock_owner_hostname'] ?? null,
-            'lock_acquired_at' => $admission['lock_acquired_at'] ?? null,
-        ];
+        return OutcomeDiagnostics::diagnostics($report);
     }
 
     /**
@@ -320,42 +254,7 @@ final class ReportSummary
      */
     public static function phaseTimeline(array $report, ?array $diagnostics = null): array
     {
-        $diagnostics ??= self::diagnostics($report);
-        $primaryPhase = (string)($diagnostics['primary_phase'] ?? 'none');
-        $outcome = (string)($diagnostics['outcome_status'] ?? 'passed');
-        $testsTotal = self::testsTotal($report);
-        $hasExecution = $testsTotal > 0 || self::metric($report, 'pass', 'passed') > 0 || self::metric($report, 'fail', 'failed') > 0 || self::metric($report, 'skip', 'skipped') > 0;
-        $listOnly = (bool)($report['list_only'] ?? false);
-
-        $rows = [];
-        foreach (['discovery', 'admission', 'bootstrap', 'execution', 'reporting'] as $phase) {
-            $status = 'ok';
-
-            if ($primaryPhase === $phase) {
-                $status = 'fail';
-            } elseif ($phase === 'execution' && in_array($outcome, ['failed', 'partial', 'timeout'], true)) {
-                $status = 'fail';
-            } elseif ($phase === 'execution' && !$hasExecution) {
-                $status = $listOnly ? 'listed' : 'not_started';
-            } elseif ($phase === 'bootstrap' && in_array($primaryPhase, ['store_setup', 'bootstrap'], true)) {
-                $status = 'fail';
-            } elseif ($phase === 'admission' && $outcome === 'contention') {
-                $status = 'fail';
-            } elseif ($phase === 'reporting' && $outcome === 'reporting_error') {
-                $status = 'fail';
-            } elseif ($phase === 'execution' && $listOnly) {
-                $status = 'listed';
-            }
-
-            $rows[] = [
-                'name' => $phase,
-                'status' => $status,
-                'duration_ms' => $phase === 'execution' ? (int)($report['duration_ms'] ?? 0) : null,
-                'is_primary_failure' => $primaryPhase === $phase || ($phase === 'bootstrap' && in_array($primaryPhase, ['store_setup', 'bootstrap'], true)),
-            ];
-        }
-
-        return $rows;
+        return OutcomeDiagnostics::phaseTimeline($report, $diagnostics);
     }
 
     /**
@@ -364,24 +263,7 @@ final class ReportSummary
      */
     public static function selectionManifest(array $report): array
     {
-        $selection = $report['selection_manifest'] ?? null;
-        if (is_array($selection)) {
-            $selection['selected_test_files'] = array_values(array_filter((array)($selection['selected_test_files'] ?? []), 'is_string'));
-            return $selection;
-        }
-
-        return [
-            'suite_id' => (string)($report['suite_id'] ?? ''),
-            'scope' => (string)($report['scope'] ?? ($report['filters']['scope'] ?? 'all')),
-            'category' => (string)($report['category'] ?? ($report['filters']['category'] ?? 'all')),
-            'match' => (string)($report['match'] ?? ($report['filters']['match'] ?? '')),
-            'list_only' => (bool)($report['list_only'] ?? false),
-            'selected_test_count' => (int)($report['selected_test_count'] ?? $report['tests_total'] ?? 0),
-            'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
-            'selected_common_dir' => (string)($report['selected_common_dir'] ?? ''),
-            'selected_test_files' => array_values(array_filter((array)($report['selected_test_files'] ?? []), 'is_string')),
-            'source' => 'report_summary_fallback',
-        ];
+        return SelectionManifestBuilder::build($report);
     }
 
     /**
@@ -390,36 +272,7 @@ final class ReportSummary
      */
     public static function regressionDelta(array $report): array
     {
-        $delta = $report['regression_delta'] ?? null;
-        if (!is_array($delta)) {
-            $delta = [];
-        }
-
-        $transitions = [];
-        foreach ((array)($delta['status_transitions'] ?? []) as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-
-            $test = trim((string)($row['test'] ?? ''));
-            $from = trim((string)($row['from'] ?? ''));
-            $to = trim((string)($row['to'] ?? ''));
-            if ($test === '' || $from === '' || $to === '') {
-                continue;
-            }
-
-            $transitions[] = [
-                'test' => $test,
-                'from' => $from,
-                'to' => $to,
-            ];
-        }
-
-        return [
-            'new_failures' => array_values(array_filter((array)($delta['new_failures'] ?? []), 'is_string')),
-            'resolved_failures' => array_values(array_filter((array)($delta['resolved_failures'] ?? []), 'is_string')),
-            'status_transitions' => $transitions,
-        ];
+        return RegressionDeltaBuilder::build($report);
     }
 
     /**
@@ -428,36 +281,7 @@ final class ReportSummary
      */
     public static function normalizedArtifacts(array $report): array
     {
-        $items = [];
-
-        $push = static function (array &$items, string $kind, mixed $path): void {
-            if (!is_string($path) || trim($path) === '') {
-                return;
-            }
-
-            $path = str_replace('\\', '/', trim($path));
-            $items[] = [
-                'kind' => $kind,
-                'path' => $path,
-                'exists' => null,
-            ];
-        };
-
-        $push($items, 'report_root', $report['report_root'] ?? null);
-        $push($items, 'history_file', $report['history_file'] ?? null);
-        $push($items, 'manifest_path', $report['manifest_path'] ?? null);
-        $push($items, 'snapshot_file', $report['snapshot_file'] ?? null);
-        $push($items, 'coverage_json', $report['coverage_json'] ?? null);
-        $push($items, 'coverage_lcov', $report['coverage_lcov'] ?? null);
-
-        $reportLinks = $report['report_links'] ?? null;
-        if (is_array($reportLinks)) {
-            foreach ($reportLinks as $kind => $path) {
-                $push($items, 'report_link:' . (string)$kind, $path);
-            }
-        }
-
-        return $items;
+        return ArtifactNormalizer::normalize($report);
     }
 
     /**
@@ -583,7 +407,6 @@ final class ReportSummary
     }
 
     /**
-     * @param array<string,mixed> $report
      * @param array<int,string> $roots
      * @return array<string,mixed>|null
      */
@@ -648,59 +471,6 @@ final class ReportSummary
     }
 
     /**
-     * @param array<string,mixed> $report
-     * @param array<string,int> $statusCounts
-     */
-    private static function determineOutcomeStatus(
-        array $report,
-        array $statusCounts,
-        string $failureDomain,
-        string $primaryPhase,
-        string $causeCode,
-        string $admissionReason
-    ): string {
-        if ((bool)($report['list_only'] ?? false)) {
-            return 'listed';
-        }
-
-        if (in_array($admissionReason, ['shared_store_locked', 'store_resource_locked'], true) || in_array($causeCode, ['shared_store_locked', 'store_resource_locked'], true)) {
-            return 'contention';
-        }
-
-        $testsTotal = self::testsTotal($report);
-        if ($testsTotal === 0) {
-            return 'no_tests';
-        }
-
-        if ($statusCounts['timeout'] > 0) {
-            return 'timeout';
-        }
-
-        if (in_array($primaryPhase, ['discovery', 'bootstrap', 'store_setup', 'reporting'], true) || in_array($failureDomain, ['infra', 'bootstrap', 'store', 'discovery', 'reporting', 'runner'], true)) {
-            return match ($primaryPhase) {
-                'discovery' => 'discovery_error',
-                'bootstrap', 'store_setup' => 'bootstrap_error',
-                'reporting' => 'reporting_error',
-                default => 'infra_error',
-            };
-        }
-
-        if ($statusCounts['fail'] > 0) {
-            return 'failed';
-        }
-
-        if ($statusCounts['skip'] > 0 && $statusCounts['pass'] === 0) {
-            return 'skipped';
-        }
-
-        if ($statusCounts['skip'] > 0) {
-            return 'partial';
-        }
-
-        return 'passed';
-    }
-
-    /**
      * @return array<string,mixed>|null
      */
     private static function loadReportFile(string $file): ?array
@@ -738,29 +508,5 @@ final class ReportSummary
         }
 
         return 0;
-    }
-
-    /**
-     * @param array<string,mixed> $report
-     */
-    private static function testsTotal(array $report): int
-    {
-        if (array_key_exists('tests_total', $report)) {
-            return (int)$report['tests_total'];
-        }
-
-        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
-        if (array_key_exists('total', $summary)) {
-            return (int)$summary['total'];
-        }
-
-        $selected = (int)($report['selected_test_count'] ?? 0);
-        if ($selected > 0) {
-            return $selected;
-        }
-
-        return self::metric($report, 'pass', 'passed')
-            + self::metric($report, 'fail', 'failed')
-            + self::metric($report, 'skip', 'skipped');
     }
 }
