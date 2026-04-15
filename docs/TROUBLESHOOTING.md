@@ -1,13 +1,19 @@
 # Troubleshooting operativo
 
-## 1) Cómo usar esta guía
+## 1) Qué responde esta guía
 
-La regla es simple:
+Usar esta guía cuando ya tenés un síntoma y necesitás una ruta de diagnóstico concreta:
 
 1. identificá el síntoma exacto
-2. corré el comando de diagnóstico asociado
+2. corré el comando asociado
 3. corregí primero la causa contractual más cercana
 4. no avances a filtros, paralelismo o snapshot mientras el setup base siga roto
+
+No usarla como quick start ni como contrato general.
+Para eso, leer:
+
+- [`USO.md`](USO.md)
+- [`CONTRATO.md`](CONTRATO.md)
 
 ## 2) Comandos de referencia
 

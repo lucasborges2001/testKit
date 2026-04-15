@@ -1,57 +1,64 @@
 # testkit
 
-`testkit` is an opinionated shared testing platform for projects that adopt its contract.
+`testkit` is a shared testing platform for projects that adopt its contract.
 
-It provides reusable runners, discovery, store bootstrap and reports. It does not ship domain tests and it does not decide business rules for the host project.
+It centralizes runners, discovery, store lifecycle and report formats. It does not ship domain tests and it does not decide business rules for the host project.
 
-## What “shared testing platform” means here
+## Start here
 
-In this repository, “shared testing platform” means:
+Read by question, not by file order:
 
-- the same execution layer can be reused by more than one project
-- suite selection, discovery, bootstrap and report formats are centralized in `testkit`
-- the host project still owns its tests, seed SQL, fixtures, helpers and domain assertions
+| Question | Document |
+|---|---|
+| What does a project need to adopt `testkit`? What does `testkit` own? What is out of scope? | [`docs/CONTRATO.md`](docs/CONTRATO.md) |
+| How do I run it safely for the first time? Which commands are normal? | [`docs/USO.md`](docs/USO.md) |
+| Setup failed. Which command should I run next? | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
+| How is execution wired internally? How do bootstrap, baseline and locks fit together? | [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
+| Which report fields are stable? What is heuristic? How should coverage be read? | [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) |
 
-It is shared infrastructure, not a shared test suite.
+Suggested reading order for a new adopter:
+
+1. `CONTRATO.md`
+2. `USO.md`
+3. `TROUBLESHOOTING.md`
+4. `ARQUITECTURA.md`
+5. `REPORTING_COVERAGE.md`
 
 ## Quick start
 
-Linux/macOS:
+Use one concrete suite first. Do not start with `all`.
+
+### Linux/macOS
 
 ```bash
 export TESTKIT_PROJECT_ROOT=/path/to/project
+
 ./bin/testkit doctor
 ./bin/testkit up -d
-./bin/testkit run --rm testkit php runTest.php
+./bin/testkit run --rm testkit php runTest.php back-php
+./bin/testkit inspect latest
 ```
 
-PowerShell:
+### PowerShell
 
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
+
 .\bin\testkit.ps1 doctor
 .\bin\testkit.ps1 up -d
-.\bin\testkit.ps1 run --rm testkit php runTest.php
+.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+.\bin\testkit.ps1 inspect latest
 ```
-
-## Main documentation
-
-- [`docs/CONTRATO.md`](docs/CONTRATO.md)
-- [`docs/USO.md`](docs/USO.md)
-- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md)
-- [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md)
 
 ## Current support limits
 
-- The main closed path is MySQL.
-- `TEST_DB_STRATEGY=clean` is rejected. It is not an operational mode today.
-- `per_worker` isolates workers inside one suite. It does not make concurrent top-level runs safe.
-- `migration-contract` is a narrow technical suite. It requires:
-  - `TEST_BASELINE_MODE=snapshot`
-  - a snapshot source resolvable from env
-  - `TEST_DB_STRATEGY=shared`
-  - MySQL
-- Fragility hints and failure families are heuristics. They help triage; they are not a source of truth.
+This repository does not try to hide its current limits. The detailed contract lives in [`docs/CONTRATO.md`](docs/CONTRATO.md). In particular:
+
+- the main closed path is MySQL
+- `TEST_DB_STRATEGY=clean` is rejected
+- `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
+- `migration-contract` is a narrow technical suite, not a general functional suite
+- fragility hints, failure families and similar triage signals are heuristics, not source of truth
 
 ## Artifact ownership
 

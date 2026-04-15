@@ -1,15 +1,29 @@
 # Contrato de adopción de testkit
 
-## 1) Propósito
+## 1) Qué responde este documento
 
 Este documento fija el contrato mínimo entre `testkit` y el proyecto integrador.
 
-Su objetivo es dejar explícito:
+Usarlo para responder estas preguntas:
 
 - qué necesita un proyecto para adoptar `testkit`
 - qué controla `testkit`
 - qué sigue siendo responsabilidad del proyecto
 - qué casos no están soportados o no están garantizados
+
+No usarlo para:
+
+- quick start operativo
+- troubleshooting paso a paso
+- arquitectura interna detallada
+- lectura de reportes o coverage
+
+Para eso, leer:
+
+- [`USO.md`](USO.md)
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
+- [`ARQUITECTURA.md`](ARQUITECTURA.md)
+- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md)
 
 ## 2) Adopción mínima
 
@@ -155,7 +169,7 @@ Sirven para priorizar análisis, no para cerrar diagnóstico.
 
 ## 8) Criterio de lectura
 
-Si una necesidad del proyecto contradice este documento, no hay que “reinterpretar” el contrato.
+Si una necesidad del proyecto contradice este documento, no hay que reinterpretar el contrato.
 
 Hay dos opciones válidas:
 

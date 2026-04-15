@@ -1,15 +1,27 @@
 # Uso operativo de testkit
 
-## 1) Alcance de esta guía
+## 1) Qué responde esta guía
 
-Esta guía cubre la operación diaria:
+Usar esta guía para la operación normal:
 
 - primer arranque
-- comandos seguros
-- diagnóstico inicial
-- lectura correcta de fallos comunes
+- comandos base
+- secuencia segura de ejecución
+- lectura operativa mínima de lo que pasó
 
-No redefine ownership ni contrato de plataforma. Para eso, leer [`CONTRATO.md`](CONTRATO.md). Para troubleshooting detallado, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+No usarla para:
+
+- definir ownership y límites del contrato
+- explicar la arquitectura interna
+- troubleshooting síntoma por síntoma
+- describir en detalle el contrato de reportes
+
+Para eso, leer:
+
+- [`CONTRATO.md`](CONTRATO.md)
+- [`ARQUITECTURA.md`](ARQUITECTURA.md)
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
+- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md)
 
 ## 2) Quick start real
 
@@ -74,9 +86,24 @@ Ejemplo peligroso:
 
 Eso no es un uso soportado del store compartido.
 
-## 4) Qué revisar primero cuando algo falla
+## 4) Comandos base
 
-### 4.1) `doctor`
+| Necesidad | Comando | Lectura correcta |
+|---|---|---|
+| validar setup mínimo | `doctor` | contrato mínimo del wrapper, no del baseline completo |
+| ver configuración efectiva | `doctor --dump` | cómo quedó resuelto env/root/stack |
+| levantar servicios | `up -d` | `docker compose` del stack elegido |
+| correr una suite concreta | `php runTest.php back-php` | una sola suite, no todo el proyecto |
+| correr resumen agregado | `php runTest.php all` | varias suites bajo un solo runner top-level |
+| ver última corrida | `inspect latest` | resumen canónico de la última corrida resuelta |
+| ver primera falla | `inspect failure` | lectura rápida del primer problema canónico |
+| ver baseline/migración | `inspect seed-state` | útil para snapshot y `migration-contract` |
+| ver locks/concurrencia | `inspect concurrency` | útil para contention o dudas sobre `per_worker` |
+| leer reporte humano consolidado | `php scripts/report.php` | salida para personas, no contrato estable de automatización |
+
+## 5) Lectura operativa mínima
+
+### `doctor`
 
 Comando base:
 
@@ -84,7 +111,7 @@ Comando base:
 ./bin/testkit doctor
 ```
 
-Dump útil de configuración efectiva:
+Dump útil:
 
 ```bash
 ./bin/testkit doctor --dump
@@ -107,127 +134,32 @@ Qué no te garantiza:
 - que una suite concreta no tenga conflictos de concurrencia
 - que el proyecto haya definido seeds, migraciones o tests correctos
 
-### 4.2) `inspect`
+### `inspect`
 
 Después de una corrida, `inspect` da rutas de diagnóstico más cortas que leer JSON a mano.
 
-Última corrida conocida:
-
 ```bash
 ./bin/testkit inspect latest
-```
-
-Primera falla canónica:
-
-```bash
 ./bin/testkit inspect failure
-```
-
-Estado de baseline y migraciones:
-
-```bash
 ./bin/testkit inspect seed-state
-```
-
-Locks y política de concurrencia:
-
-```bash
 ./bin/testkit inspect concurrency
 ```
 
-Usarlo cuando ya existe una corrida. No sirve como reemplazo de `doctor`.
-
-## 5) Comandos operativos y lectura correcta
-
-| Necesidad | Comando | Lectura correcta |
-|---|---|---|
-| validar setup mínimo | `doctor` | contrato mínimo del wrapper, no del baseline completo |
-| ver configuración efectiva | `doctor --dump` | cómo quedó resuelto env/root/stack |
-| levantar servicios | `up -d` | `docker compose` del stack elegido |
-| correr una suite concreta | `php runTest.php back-php` | una sola suite, no todo el proyecto |
-| correr resumen agregado | `php runTest.php all` | varias suites bajo un solo runner top-level |
-| ver última corrida | `inspect latest` | resumen canónico de la última corrida resuelta |
-| ver primera falla | `inspect failure` | lectura rápida del primer problema canónico |
-| ver baseline/migración | `inspect seed-state` | útil para snapshot y `migration-contract` |
-| ver locks/concurrencia | `inspect concurrency` | útil para contention o dudas sobre `per_worker` |
-| leer reporte humano consolidado | `php scripts/report.php` | salida para personas, no contrato estable de automatización |
+Usarlo cuando ya existe una corrida. No reemplaza `doctor`.
 
 ## 6) Qué comportamiento sí es esperado
 
-### `no_tests`
+| Situación | Lectura correcta |
+|---|---|
+| `suite_status=no_tests` | la selección quedó vacía; no implica bug por sí sola |
+| `suite_status=all_skipped` | la selección entró, pero los tests decidieron skip en runtime |
+| contention / locks | ya existe otra corrida top-level sobre el mismo store base |
+| `TEST_DB_STRATEGY=clean` rechazado | comportamiento esperado; no es un modo soportado |
+| `migration-contract` rechazado fuera de snapshot/shared/MySQL | comportamiento esperado; es una suite técnica acotada |
 
-Esperado cuando:
+Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
-- la suite existe, pero los filtros no dejan nada
-- `TEST_SCOPE`, `TEST_CATEGORY` o `TEST_MATCH` quedaron demasiado restrictivos
-
-Qué revisar:
-
-```bash
-./bin/testkit inspect latest
-```
-
-y después afinar filtros.
-
-No asumir:
-
-- que significa bug del runner
-- que significa que no hay archivos de tests en el repo
-
-### `all_skipped`
-
-Esperado cuando:
-
-- la selección entró
-- los tests decidieron skip en runtime
-
-Qué revisar:
-
-- condiciones de skip del proyecto
-- dependencias o prerequisitos declarados por los tests
-
-No confundir con:
-
-- `no_tests`
-- `bootstrap_error`
-
-### contention / locks
-
-Esperado cuando:
-
-- ya hay otra corrida top-level usando el mismo store base
-- se intentó throughput lanzando dos `runTest.php` sobre el mismo proyecto/store
-
-Qué revisar:
-
-```bash
-./bin/testkit inspect concurrency
-```
-
-No tratarlo como bug por defecto. Es la defensa normal contra uso concurrente no soportado.
-
-### `TEST_DB_STRATEGY=clean` rechazado
-
-Esperado. No existe como modo operativo soportado.
-
-### `migration-contract` rechazado fuera de snapshot/shared/MySQL
-
-Esperado. No es una suite general; es un gate técnico acotado.
-
-## 7) Qué comportamiento indica contrato roto o bug probable
-
-Tomarlo como sospechoso si pasa cualquiera de estos casos:
-
-- `doctor` dice que encontró un env válido y luego el wrapper vuelve a decir que no existe o que quedó fuera del repo
-- un target documentado como válido es rechazado como inválido
-- una corrida simple y secuencial (`TEST_JOBS=1`, `TEST_DB_STRATEGY=shared`) entra en errores de paralelismo sin que exista otra corrida
-- `inspect latest` no puede leer reportes canónicos después de una corrida que sí escribió artifacts
-- `doctor` o el wrapper sugieren paths de ejemplo que no existen en el repo
-- el runner intenta vender como “parallel-safe” un modelo que sigue compitiendo por el mismo store base
-
-En esos casos, ya no estás solo ante un mal setup; hay una desalineación entre contrato y comportamiento.
-
-## 8) Cosas que no conviene sobreinterpretar
+## 7) Cosas que no conviene sobreinterpretar
 
 - `TEST_LIST=1` imprime selección, pero no debe venderse como dry-run puro del lifecycle de store; según la suite, el bootstrap puede ocurrir igual.
 - `doctor` no prueba restore de snapshot ni migraciones.
@@ -235,7 +167,7 @@ En esos casos, ya no estás solo ante un mal setup; hay una desalineación entre
 - `per_worker` no habilita varios runners top-level en paralelo.
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
 
-## 9) Patrones seguros vs peligrosos
+## 8) Patrones seguros vs peligrosos
 
 | Caso | Estado |
 |---|---|
@@ -247,8 +179,11 @@ En esos casos, ya no estás solo ante un mal setup; hay una desalineación entre
 | usar `all` como primer diagnóstico | posible, pero innecesariamente ruidoso |
 | usar `back-php` o `front-js` como primer diagnóstico | recomendado |
 
-## 10) Qué leer después
+## 9) Qué leer después
 
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) para síntomas concretos y pasos de corrección
-- [`ARQUITECTURA.md`](ARQUITECTURA.md) para locks, bootstrap, baseline y concurrencia
-- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) para lectura de reportes y diagnostics
+| Si tu pregunta es... | Leer |
+|---|---|
+| qué exige y qué no garantiza la plataforma | [`CONTRATO.md`](CONTRATO.md) |
+| por qué apareció un error concreto y qué revisar | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
+| cómo funcionan bootstrap, baseline y locks | [`ARQUITECTURA.md`](ARQUITECTURA.md) |
+| cómo leer reportes, estados y coverage | [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) |
