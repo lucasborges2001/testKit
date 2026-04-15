@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Seeding;
 
+require_once __DIR__ . '/SeedConsoleNarrative.php';
 require_once __DIR__ . '/SeedDatabaseLifecycle.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
@@ -66,7 +67,7 @@ final class LayeredSeedMaterializer implements SeedMaterializer
         ]);
         SeedMigrationWorkflow::applyPlan($pdo, $context, $migrationPlan);
 
-        echo "Seed pipeline por capas aplicado correctamente\n";
+        SeedConsoleNarrative::printCompletion($context, 'Seed pipeline por capas aplicado correctamente');
         return 0;
     }
 }

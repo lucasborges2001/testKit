@@ -6,12 +6,14 @@ namespace Testkit\Core\Suites;
 use RuntimeException;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Seeding\BaselineManifest;
+use Testkit\Core\Seeding\SeedConsoleNarrative;
 use Testkit\Core\Seeding\SeedPipeline;
 use Testkit\Core\Store\StoreMaintenance;
 use Testkit\Core\Store\StoreRegistry;
 
 require_once __DIR__ . '/../seeding/SeedPipeline.php';
 require_once __DIR__ . '/../seeding/BaselineManifest.php';
+require_once __DIR__ . '/../seeding/SeedConsoleNarrative.php';
 
 final class ContractWorldBootstrap
 {
@@ -47,14 +49,12 @@ final class ContractWorldBootstrap
             );
         }
 
-        fwrite(
-            STDERR,
-            sprintf(
-                "[testkit] bootstrap suite=%s driver=%s strategy=%s\n",
-                $suiteId,
-                $driver,
-                $strategy
-            )
+        SeedConsoleNarrative::beginSuiteBootstrap(
+            $suiteId,
+            $driver,
+            $strategy,
+            Env::string('TEST_BASELINE_MODE', 'layered'),
+            self::currentDatabaseKey($driver)
         );
 
         if ($strategy === 'per_worker') {
@@ -289,5 +289,26 @@ final class ContractWorldBootstrap
         }
 
         return $mode;
+    }
+
+    private static function currentDatabaseKey(string $driver): string
+    {
+        $keys = $driver === 'pgsql'
+            ? ['PG_DB', 'TEST_PG_DB', 'DB_NAME']
+            : ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE'];
+
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if (!is_string($value)) {
+                continue;
+            }
+
+            $value = trim($value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 }

@@ -22,6 +22,7 @@ $tests = [
     'Store resource lock'                => __DIR__ . '/test_store_resource_lock.php',
     'Manifest atomic write'              => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'          => __DIR__ . '/test_reporting_contract.php',
+    'Bootstrap visual dedupe'            => __DIR__ . '/test_bootstrap_visual_dedupe.php',
 ];
 
 $pass   = 0;

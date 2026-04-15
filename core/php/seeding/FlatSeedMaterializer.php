@@ -5,6 +5,7 @@ namespace Testkit\Core\Seeding;
 
 use Testkit\Core\Common\Trace;
 
+require_once __DIR__ . '/SeedConsoleNarrative.php';
 require_once __DIR__ . '/SeedDatabaseLifecycle.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
@@ -46,7 +47,7 @@ final class FlatSeedMaterializer implements SeedMaterializer
             ]);
         }
 
-        echo 'Seeds aplicadas: ' . count($files) . "\n";
+        SeedConsoleNarrative::printCompletion($context, 'Seeds aplicadas: ' . count($files));
         return 0;
     }
 }

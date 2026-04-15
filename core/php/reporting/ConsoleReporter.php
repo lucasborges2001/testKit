@@ -75,6 +75,7 @@ final class ConsoleReporter
         $phase = (string)($diagnostics['primary_phase'] ?? 'none');
         $domain = (string)($diagnostics['failure_domain'] ?? 'none');
         $cause = (string)($diagnostics['cause_code'] ?? 'none');
+        $compactPassed = self::shouldUseCompactPassView($result, $diagnostics);
 
         $p = UI::success('PASS=' . $pass);
         $f = $fail > 0 ? UI::failure('FAIL=' . $fail) : UI::gray('FAIL=' . $fail);
@@ -90,18 +91,32 @@ final class ConsoleReporter
             echo '  evidence: ' . UI::failure('invalid') . ' ' . UI::gray('reason=' . $reason) . "\n";
         }
 
-        self::printDiagnostics($diagnostics);
+        self::printDiagnostics($diagnostics, $compactPassed);
         self::printWarnings($result);
         self::printSelectionSummary($result);
-        self::printFirstFailure($result);
-        self::printDecision($result, $diagnostics);
-        self::printRecommendedActions($result, $diagnostics);
-        self::printRegressionDelta($result);
-        self::printModuleSummary($result);
-        self::printFailures($result);
-        self::printTriage($result);
+
+        if (!$compactPassed) {
+            self::printFirstFailure($result);
+            self::printDecision($result, $diagnostics);
+            self::printRecommendedActions($result, $diagnostics);
+            self::printRegressionDelta($result);
+        }
+
+        if (self::shouldPrintModuleSummary($result, $compactPassed)) {
+            self::printModuleSummary($result);
+        }
+
+        if (!$compactPassed) {
+            self::printFailures($result);
+            self::printTriage($result);
+        }
+
         self::printSlow($result);
-        self::printFragility($result);
+
+        if (!$compactPassed) {
+            self::printFragility($result);
+        }
+
         self::printPerfViolations($result);
     }
 
@@ -462,12 +477,19 @@ final class ConsoleReporter
     /**
      * @param array<string,mixed> $diagnostics
      */
-    private static function printDiagnostics(array $diagnostics): void
+    private static function printDiagnostics(array $diagnostics, bool $compactPassed = false): void
     {
         $phaseCounts = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
         $causeCounts = is_array($diagnostics['cause_counts'] ?? null) ? $diagnostics['cause_counts'] : [];
         $resource = trim((string)($diagnostics['resource'] ?? ''));
         $lockKey = trim((string)($diagnostics['lock_key'] ?? ''));
+        $lockOwnerRunId = trim((string)($diagnostics['lock_owner_run_id'] ?? ''));
+        $lockOwnerMetaRunId = trim((string)($diagnostics['lock_owner_meta_run_id'] ?? ''));
+        $lockOwnerHost = trim((string)($diagnostics['lock_owner_hostname'] ?? ''));
+
+        if ($compactPassed && !self::hasActionableDiagnostics($diagnostics)) {
+            return;
+        }
 
         if ($phaseCounts === [] && $causeCounts === [] && $resource === '' && $lockKey === '') {
             return;
@@ -497,9 +519,14 @@ final class ConsoleReporter
 
         if ($lockKey !== '') {
             echo '  lock: ' . $lockKey;
-            $owner = trim((string)($diagnostics['lock_owner_run_id'] ?? ''));
-            if ($owner !== '') {
-                echo ' owner_run=' . $owner;
+            if ($lockOwnerRunId !== '') {
+                echo ' owner_run=' . $lockOwnerRunId;
+            }
+            if ($lockOwnerMetaRunId !== '') {
+                echo ' owner_meta=' . $lockOwnerMetaRunId;
+            }
+            if ($lockOwnerHost !== '') {
+                echo ' owner_host=' . $lockOwnerHost;
             }
             echo "\n";
         }
@@ -667,6 +694,76 @@ final class ConsoleReporter
         if ($hidden > 0) {
             echo '  ' . UI::gray('... ' . $hidden . ' more perf violations hidden') . "\n";
         }
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $diagnostics
+     */
+    private static function shouldUseCompactPassView(array $result, array $diagnostics): bool
+    {
+        $outcome = strtoupper(trim((string)($diagnostics['outcome_status'] ?? '')));
+        $fail = (int)($result['fail'] ?? 0);
+        $skip = (int)($result['skip'] ?? 0);
+        $timeout = (int)($result['timeout'] ?? ($result['status_counts']['timeout'] ?? 0));
+        $perfViolations = is_array($result['perf_violations'] ?? null) ? count($result['perf_violations']) : 0;
+        $evidenceValid = (bool)($result['evidence_valid'] ?? true);
+
+        return in_array($outcome, ['PASSED', 'PASS', 'OK'], true)
+            && $fail === 0
+            && $skip === 0
+            && $timeout === 0
+            && $perfViolations === 0
+            && $evidenceValid;
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private static function shouldPrintModuleSummary(array $result, bool $compactPassed): bool
+    {
+        $summary = $result['module_summary'] ?? [];
+        if (!is_array($summary) || $summary === []) {
+            return false;
+        }
+
+        if (!$compactPassed) {
+            return true;
+        }
+
+        foreach ($summary as $stat) {
+            if (!is_array($stat)) {
+                continue;
+            }
+
+            if ((int)($stat['fail'] ?? 0) > 0 || (int)($stat['skip'] ?? 0) > 0 || (int)($stat['timeout'] ?? 0) > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $diagnostics
+     */
+    private static function hasActionableDiagnostics(array $diagnostics): bool
+    {
+        $phaseCounts = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
+        $causeCounts = is_array($diagnostics['cause_counts'] ?? null) ? $diagnostics['cause_counts'] : [];
+
+        if ($phaseCounts !== [] || $causeCounts !== []) {
+            return true;
+        }
+
+        foreach (['lock_owner_run_id', 'lock_owner_meta_run_id', 'lock_owner_hostname'] as $field) {
+            if (trim((string)($diagnostics[$field] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        $cause = trim((string)($diagnostics['cause_code'] ?? ''));
+        return in_array($cause, ['shared_store_locked', 'store_resource_locked'], true);
     }
 
     private static function renderOutcome(string $outcome): string

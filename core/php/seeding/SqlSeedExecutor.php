@@ -108,16 +108,20 @@ final class SqlSeedExecutor
         ]);
 
         if ($files === []) {
-            echo "==> {$label}: sin archivos SQL\n";
+            if (!SeedConsoleNarrative::isCompact()) {
+                echo "==> {$label}: sin archivos SQL\n";
+            }
             return;
         }
 
-        $suffix = count($files) === 1 ? '1 sql' : count($files) . ' sql';
-        echo "==> {$label} ({$suffix})\n";
+        if (!SeedConsoleNarrative::isCompact()) {
+            $suffix = count($files) === 1 ? '1 sql' : count($files) . ' sql';
+            echo "==> {$label} ({$suffix})\n";
 
-        if (self::seedVerbose()) {
-            foreach ($files as $file) {
-                echo "==> {$file}\n";
+            if (self::seedVerbose()) {
+                foreach ($files as $file) {
+                    echo "==> {$file}\n";
+                }
             }
         }
 
