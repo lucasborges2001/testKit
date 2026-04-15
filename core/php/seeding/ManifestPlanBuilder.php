@@ -3,73 +3,51 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Seeding;
 
-use RuntimeException;
-use Testkit\Core\Store\StoreRegistry;
-
-require_once __DIR__ . '/../store/bootstrap.php';
-require_once __DIR__ . '/MigrationPlanResolver.php';
+require_once __DIR__ . '/SeedManifestPlanInput.php';
+require_once __DIR__ . '/SeedRuntimeContext.php';
 
 final class ManifestPlanBuilder
 {
     /**
-     * @param array<string,mixed>|null $resolvedSnapshot
      * @return array<string,mixed>
      */
     public static function build(
-        string $driver,
-        string $seedDir,
-        string $projectRoot,
-        string $baselineMode,
-        string $databaseName,
+        SeedRuntimeContext $context,
         string $manifestPath,
-        ?array $resolvedSnapshot
+        SeedManifestPlanInput $manifestInput
     ): array {
-        $migrationState = null;
-
-        try {
-            $adapter = StoreRegistry::fromDriver($driver);
-            $pdo = $adapter->connect();
-            $migrationPlan = MigrationPlanResolver::resolve($pdo, $seedDir, $baselineMode);
-            $migrations = $migrationPlan->migrations();
-            $skipPostValidations = $migrationPlan->skipPostValidations();
-            $migrationState = $migrationPlan->migrationState();
-        } catch (\Throwable $e) {
-            if ($baselineMode === 'snapshot' && $e instanceof RuntimeException) {
-                throw $e;
-            }
-
-            $migrations = self::parseCsvEnv('TEST_SEED_MIGRATIONS');
-            $skipPostValidations = self::envBool('TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS', false);
-        }
+        $requestedMigrations = $manifestInput->requestedMigrations();
 
         $plan = [
-            'driver' => $driver,
-            'db_name' => $databaseName,
-            'baseline_mode' => $baselineMode,
-            'project_root' => self::realPathOrOriginal($projectRoot),
-            'seed_dir' => self::realPathOrOriginal($seedDir),
-            'manifest_path' => self::realPathOrOriginal($manifestPath),
-            'resolved_snapshot' => $resolvedSnapshot,
-            'requested_migrations' => $migrations,
-            'migration_state' => is_array($migrationState) ? $migrationState : null,
-            'skip_validations_after_extras' => $skipPostValidations,
+            'driver' => $context->driver(),
+            'db_name' => $context->databaseName(),
+            'baseline_mode' => $context->baselineMode(),
+            'project_root' => $context->realPathOrOriginal($context->projectRoot()),
+            'seed_dir' => $context->realPathOrOriginal($context->seedDir()),
+            'manifest_path' => $context->realPathOrOriginal($manifestPath),
+            'resolved_snapshot' => $context->resolvedSnapshot(),
+            'requested_migrations' => $requestedMigrations,
+            'migration_state' => $manifestInput->migrationState(),
+            'skip_validations_after_extras' => $manifestInput->skipPostValidations(),
             'layers' => [
-                'schema' => self::directoryDescriptor($seedDir . '/schema'),
-                'base' => self::directoryDescriptor($seedDir . '/base'),
-                'validations' => self::directoryDescriptor($seedDir . '/validations'),
+                'schema' => self::directoryDescriptor($context->seedDir() . '/schema'),
+                'base' => self::directoryDescriptor($context->seedDir() . '/base'),
+                'validations' => self::directoryDescriptor($context->seedDir() . '/validations'),
             ],
         ];
 
-        if ($baselineMode === 'snapshot') {
-            $snapshotFile = trim((string)($resolvedSnapshot['path'] ?? ''));
+        if ($context->baselineMode() === 'snapshot') {
+            $snapshotFile = trim((string)($context->resolvedSnapshot()['path'] ?? ''));
             $plan['snapshot'] = self::fileDescriptor($snapshotFile);
-            $plan['snapshot_resolved_source'] = is_array($resolvedSnapshot) ? $resolvedSnapshot : [];
+            $plan['snapshot_resolved_source'] = is_array($context->resolvedSnapshot()) ? $context->resolvedSnapshot() : [];
         }
 
-        if ($migrations !== []) {
+        if ($requestedMigrations !== []) {
             $plan['migration_dirs'] = [];
-            foreach ($migrations as $migration) {
-                $plan['migration_dirs'][$migration] = self::directoryDescriptor($seedDir . '/migrations/' . $migration);
+            foreach ($requestedMigrations as $migration) {
+                $plan['migration_dirs'][$migration] = self::directoryDescriptor(
+                    $context->seedDir() . '/migrations/' . $migration
+                );
             }
         }
 
@@ -155,30 +133,5 @@ final class ManifestPlanBuilder
     {
         $real = realpath($path);
         return $real !== false ? str_replace('\\', '/', $real) : str_replace('\\', '/', $path);
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function parseCsvEnv(string $name): array
-    {
-        $raw = trim((string)(getenv($name) ?: ''));
-        if ($raw === '') {
-            return [];
-        }
-
-        $parts = array_map('trim', explode(',', $raw));
-        $parts = array_values(array_filter($parts, static fn(string $value): bool => $value !== ''));
-        return array_values(array_unique($parts));
-    }
-
-    private static function envBool(string $name, bool $default = false): bool
-    {
-        $raw = getenv($name);
-        if ($raw === false) {
-            return $default;
-        }
-
-        return in_array(strtolower(trim((string)$raw)), ['1', 'true', 'yes', 'on'], true);
     }
 }

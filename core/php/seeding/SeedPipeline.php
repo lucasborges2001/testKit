@@ -11,20 +11,14 @@ require_once __DIR__ . '/BaselineManifestWriter.php';
 require_once __DIR__ . '/BaselineModeResolver.php';
 require_once __DIR__ . '/BaselineReuseDecider.php';
 require_once __DIR__ . '/BackupkitArtifactResolver.php';
-require_once __DIR__ . '/FlatSeedMaterializer.php';
-require_once __DIR__ . '/LayeredSeedMaterializer.php';
 require_once __DIR__ . '/ManifestPlanBuilder.php';
-require_once __DIR__ . '/MigrationCatalog.php';
-require_once __DIR__ . '/MigrationPlanResolver.php';
-require_once __DIR__ . '/MigrationStateResolver.php';
 require_once __DIR__ . '/SeedBootstrapTracer.php';
 require_once __DIR__ . '/SeedFailure.php';
+require_once __DIR__ . '/SeedManifestPlanInput.php';
+require_once __DIR__ . '/SeedManifestPlanInputResolver.php';
 require_once __DIR__ . '/SeedMaterializer.php';
 require_once __DIR__ . '/SeedMaterializerResolver.php';
 require_once __DIR__ . '/SeedRuntimeContext.php';
-require_once __DIR__ . '/SnapshotSeedMaterializer.php';
-require_once __DIR__ . '/SqlFailureHintResolver.php';
-require_once __DIR__ . '/SqlSeedExecutor.php';
 
 final class SeedPipeline
 {
@@ -89,15 +83,8 @@ final class SeedPipeline
         }
 
         try {
-            $manifestPlan = ManifestPlanBuilder::build(
-                $context->driver(),
-                $context->seedDir(),
-                $context->projectRoot(),
-                $context->baselineMode(),
-                $context->databaseName(),
-                $manifestPath,
-                $context->resolvedSnapshot()
-            );
+            $manifestInput = SeedManifestPlanInputResolver::resolve($context);
+            $manifestPlan = ManifestPlanBuilder::build($context, $manifestPath, $manifestInput);
         } catch (\Throwable $e) {
             throw SeedFailure::wrap($e, 'No se pudo construir el plan del baseline de seed.', [
                 'stage' => 'manifest_plan',

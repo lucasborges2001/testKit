@@ -34,6 +34,8 @@ require_once __DIR__ . '/seeding/SqlSeedExecutor.php';
 require_once __DIR__ . '/seeding/SuiteSeedState.php';
 require_once __DIR__ . '/seeding/SeedBootstrapTracer.php';
 require_once __DIR__ . '/seeding/SeedDatabaseLifecycle.php';
+require_once __DIR__ . '/seeding/SeedManifestPlanInput.php';
+require_once __DIR__ . '/seeding/SeedManifestPlanInputResolver.php';
 require_once __DIR__ . '/seeding/SeedMaterializer.php';
 require_once __DIR__ . '/seeding/SeedMaterializerResolver.php';
 require_once __DIR__ . '/seeding/SeedMigrationPlan.php';
