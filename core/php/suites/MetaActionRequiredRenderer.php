@@ -26,6 +26,7 @@ final class MetaActionRequiredRenderer
         $newFailures = count(array_filter((array)($delta['new_failures'] ?? []), 'is_string'));
         $resolvedFailures = count(array_filter((array)($delta['resolved_failures'] ?? []), 'is_string'));
         $statusTransitions = count(array_filter((array)($delta['status_transitions'] ?? []), 'is_array'));
+        $suiteReruns = self::suiteRerunCommands($meta);
 
         echo "\n[Action Required]\n";
         if ($failedSuites !== []) {
@@ -37,13 +38,24 @@ final class MetaActionRequiredRenderer
             . "\n";
         echo "  Reporte detallado: php scripts/report.php\n";
 
-        $rerunCommand = self::rerunFilteredCommand($firstFailure);
-        if ($rerunCommand !== null) {
-            echo '  rerun filtered: ' . $rerunCommand['command'];
-            if ($rerunCommand['reason'] !== '') {
-                echo ' (' . $rerunCommand['reason'] . ')';
+        if ($suiteReruns !== []) {
+            echo "  rerun by suite:\n";
+            foreach ($suiteReruns as $rerun) {
+                echo '    - ' . $rerun['suite_id'] . ': ' . $rerun['command'];
+                if ($rerun['reason'] !== '') {
+                    echo ' (' . $rerun['reason'] . ')';
+                }
+                echo "\n";
             }
-            echo "\n";
+        } else {
+            $rerunCommand = self::rerunFilteredCommand($firstFailure);
+            if ($rerunCommand !== null) {
+                echo '  rerun filtered: ' . $rerunCommand['command'];
+                if ($rerunCommand['reason'] !== '') {
+                    echo ' (' . $rerunCommand['reason'] . ')';
+                }
+                echo "\n";
+            }
         }
 
         $rendered = 0;
@@ -99,6 +111,51 @@ final class MetaActionRequiredRenderer
         }
 
         return $failed;
+    }
+
+    /**
+     * @param array<string,mixed> $meta
+     * @return array<int,array{suite_id:string,command:string,reason:string}>
+     */
+    private static function suiteRerunCommands(array $meta): array
+    {
+        $rows = [];
+        foreach ((array)($meta['suites'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $code = (int)($row['exit_code'] ?? 1);
+            if ($code === 0 || $code === 2) {
+                continue;
+            }
+
+            $suiteId = trim((string)($row['suite_id'] ?? ''));
+            if ($suiteId === '') {
+                continue;
+            }
+
+            $command = '';
+            $reason = '';
+            $rerunPlan = is_array($row['rerun_plan'] ?? null) ? array_values(array_filter($row['rerun_plan'], 'is_array')) : [];
+            if ($rerunPlan !== []) {
+                $command = trim((string)($rerunPlan[0]['command'] ?? ''));
+                $reason = trim((string)($rerunPlan[0]['reason'] ?? ''));
+            }
+
+            if ($command === '') {
+                $command = 'php runTest.php ' . str_replace('_', '-', $suiteId);
+                $reason = $reason !== '' ? $reason : 'rerun suite with issues';
+            }
+
+            $rows[] = [
+                'suite_id' => $suiteId,
+                'command' => $command,
+                'reason' => $reason,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
