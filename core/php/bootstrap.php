@@ -28,6 +28,9 @@ require_once __DIR__ . '/seeding/SuiteSeedState.php';
 
 require_once __DIR__ . '/reporting/UI.php';
 require_once __DIR__ . '/reporting/StructuredWarnings.php';
+require_once __DIR__ . '/reporting/FailureExcerpt.php';
+require_once __DIR__ . '/reporting/FailureNormalizer.php';
+require_once __DIR__ . '/reporting/FailureGrouping.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
 require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';
