@@ -1,14 +1,10 @@
-# Arquitectura de TestKit
+# Arquitectura de testkit
 
-## 1) Criterio estructural
+## 1) Propósito
 
-Criterios estructurales del proyecto:
+`testkit` separa plataforma de testing y proyecto integrador.
 
-- archivos chicos
-- responsabilidades separadas
-- dependencias explicitas
-- convenciones claras
-- complejidad util, no cosmetica
+La plataforma centraliza ejecución, bootstrap y reporting. El proyecto conserva tests, seeds y lógica de dominio.
 
 ## 2) Estructura interna
 
@@ -17,183 +13,112 @@ testkit/
 ├─ bin/
 ├─ compose*.yaml
 ├─ core/php/
-│  ├─ common/        # paths/env/bootstrap
-│  ├─ config/        # lectura de config/thresholds
-│  ├─ discovery/     # discovery + tags + filtros
-│  ├─ execution/     # procesos, pool, resultados
-│  ├─ reporting/     # consola, historial, json reports
-│  ├─ coverage/      # merge + diagnostico de coverage
-│  ├─ seeding/       # baseline planning + layered/snapshot orchestration
-│  ├─ store/         # adapters + maintenance + clone/restore ops
-│  └─ suites/        # back_php, back_python, front_php, front_js, migration_contract, meta
-├─ runners/          # entrypoints finos
-├─ scripts/          # utilidades operativas/reportes
-├─ templates/        # esqueletos genericos
-└─ utils/            # helpers compartidos para tests
+│  ├─ common/        # env, paths, utilidades base
+│  ├─ config/        # lectura de parámetros y contrato de suites
+│  ├─ discovery/     # resolución de tests, tags y filtros
+│  ├─ execution/     # procesos, pool y resultados
+│  ├─ reporting/     # reportes JSON, resumen, historial
+│  ├─ coverage/      # merge y diagnóstico de coverage
+│  ├─ seeding/       # baseline layered/snapshot y manifest
+│  ├─ store/         # adapters y operaciones de store
+│  └─ suites/        # suites por tecnología y suites técnicas
+├─ runners/
+├─ scripts/
+├─ templates/
+└─ utils/
 ```
 
-## 3) Responsabilidades por capa
+## 3) Frontera con el proyecto
 
-- `common`: rutas y entorno base.
-- `config`: parametros de ejecucion y thresholds.
-- `discovery`: identifica tests y metadata (scope/tags/categoria). `front_js` consume la selección precomputada por esta misma capa cuando corre vía `FrontJsSuite`.
-- `execution`: corre tests (secuencial/paralelo) y clasifica resultados.
-- `reporting`: reportes utiles para decidir acciones.
-- `coverage`: cobertura por archivo/modulo + zonas criticas sin cobertura.
-- `seeding`: resuelve el baseline (`layered` o `snapshot`) y arma el pipeline estructural.
-- `store`: contratos por motor, provision, reset, clean, restore y clone.
-- `suites`: orquestacion por tecnologia/suite.
-- `scripts`: lifecycle operativo del entorno y de los stores.
+### 3.1) Lo que pertenece a testkit
 
-## 3.1) Frontera con el proyecto
+`testkit` es dueño de:
 
-- `testkit` decide entorno, workers, naming de DB/store y pipeline estructural de seeds.
-- `testkit` puede materializar una baseline desde `schema/base` o desde un snapshot restaurado.
-- `test/seeds` define `schema`, `base`, migraciones y validaciones estructurales; opcionalmente puede referenciar un artefacto snapshot si el proyecto quiere probar upgrades reales.
-- `test/_support` queda para builders, helpers, asserts y composición de escenarios del proyecto.
-- Los escenarios de negocio no entran por el lifecycle de `testkit`.
+- runners y selección de targets
+- discovery compartido
+- bootstrap estructural
+- naming de DB/store para workers y baseline
+- adapters de store y restricciones operativas
+- formato de reportes del framework
 
-## 4) Entry points
+### 3.2) Lo que pertenece al proyecto
 
-- `runTest.php` -> meta runner
-- `runners/runTest.php` -> seleccion de targets
-- `runners/runTestBack.php` -> suite `back_php`
-- `runners/runTestBackPython.php` -> suite `back_python`
-- `runners/runFrontTest.php` -> suite `front_php`
-- `runners/runFrontTest.mjs` -> suite `front_js`
-- `php runTest.php migration-contract` -> suite `migration_contract`
+El proyecto es dueño de:
 
-## 5) Contratos de salida
+- tests de dominio
+- `test/_support`
+- SQL de `schema`, `base`, `migrations` y `validations`
+- servicios y dependencias propias del proyecto
+- criterios funcionales que definen éxito o falla del negocio
 
-- Exit codes:
-  - `0`: pass
-  - `1`: fail
-  - `2`: skip
-  - `3`: error de runner/config
+La frontera importante es esta: `testkit` ejecuta y prepara infraestructura; el proyecto define qué debe validarse.
 
-- Artefactos (propiedad del proyecto anfitrión, bajo `.testkit/` en el repo del proyecto):
-  - `.testkit/reports/<suite>_latest.json` — reporte más reciente por suite
-  - `.testkit/reports/runs/<run_id>/` — corridas aisladas por run_id (cuando se usa MetaRunner)
-  - `.testkit/reports/latest_run.json` — manifiesto de la última corrida completada
-  - `.testkit/history/<suite>.json` — historial para detección de fragilidad
-  - `.testkit/baselines/<driver>/<db>.manifest.json` — manifest de baseline reutilizable
-  - `test/coverage/<suite>/` — artefactos de coverage por suite
-  - `test/querylog.jsonl` — query profiling (si `TEST_DB_PROFILE=1`)
+## 4) Lifecycle de una corrida
 
-## 5.1) Contrato de reporte por suite
+Una corrida típica atraviesa estas capas:
 
-Además de los contadores históricos (`pass/fail/skip`), cada suite expone:
+1. `bin/testkit` o `bin/testkit.ps1` resuelven repo, env y compose.
+2. `runTest.php` selecciona target y suites.
+3. cada suite arma su configuración, discovery y ejecución.
+4. si la suite necesita store real, `ContractWorldBootstrap` aplica la política de bootstrap.
+5. `SeedPipeline` materializa el baseline (`layered` o `snapshot`).
+6. `reporting` escribe artefactos bajo el repo del proyecto.
 
-- `report_contract_version`
-- `suite_status`
-- `no_tests_reason`
-- `runner_capabilities`
+## 5) Lifecycle de store
 
-El objetivo es que el consumidor no tenga que inferir estados semánticos solo desde `exit_code`.
+`testkit` controla el lifecycle estructural del store:
 
-## 6) Extensibilidad
+- provision
+- reset
+- materialización de baseline
+- clone por worker cuando aplica
+- reportes técnicos del bootstrap
 
-Para agregar una suite nueva:
+El proyecto no debe redefinir ese lifecycle desde helpers de dominio.
 
-1. Crear clase en `core/php/suites/`.
-2. Reusar `SuiteOrchestrator` + `TestDiscovery` + `SuiteExecutor`.
-3. Registrar target en `MetaRunner`.
-4. Documentar comando/variables en `docs/USO.md`.
+Lo que sí debe hacer el proyecto:
 
-Para agregar una categoria:
+- proveer el SQL estructural
+- decidir qué migraciones existen
+- construir escenarios funcionales después del baseline
 
-1. Usar tag en nombre/ruta o metadata `TAGS:`.
-2. Ejecutar con `TEST_CATEGORY=<tag>` o target dedicado.
+## 6) Artefactos y ownership
 
-Para agregar una estrategia de baseline:
+Los artefactos operativos del framework viven dentro del repo del proyecto, principalmente en `.testkit/`.
 
-1. Extender `SeedPipeline` con un nuevo modo explícito.
-2. Mantener `layered` como comportamiento por defecto.
-3. Evitar meter lógica de negocio dentro de adapters o del bootstrap de suite.
+Eso mantiene dos propiedades:
 
-## 7) Decisiones importantes
+- el estado operacional queda junto al proyecto auditado
+- `testkit` no se apropia de resultados que describen a otro repositorio
 
-- El meta-runner soporta PHP, Python y JS bajo convenciones de layout estándar.
-- El sistema es una plataforma de opinión fuerte (opinionated) que requiere adherencia a su estructura de `test/`.
-- Coverage se usa como diagnostico accionable.
-- Fragilidad se detecta por historial local, no por una sola corrida.
-- Runners y scripts se mantienen finos; la logica vive en `core/php`.
-- El pipeline layered de seeds vive en `testkit`, no en `_support`.
-- La validación de migraciones contra estado realista no debe mezclar escenarios de negocio con bootstrap estructural.
-- El clone-per-worker desde una baseline es una optimización controlada; no reemplaza el aislamiento lógico de los tests.
+Coverage sigue bajo `test/coverage/` porque es una salida consumida directamente por el proyecto.
 
-## 7.1) Alcance real de soporte por motor (v1)
+## 7) Alcance real por motor
 
-### MySQL (motor principal, soporte completo)
+### MySQL
 
-- provision, reset, clean, connect
-- snapshot restore (`.sql`, `.sql.gz`)
-- clone de DB entre nombres (para `per_worker`)
-- migration-contract con `TEST_BASELINE_MODE=snapshot`
+Ruta principal cerrada:
 
-### PostgreSQL (soporte parcial, no usar para snapshot/clone)
+- provision
+- reset
+- restore snapshot
+- clone database
+- suites que dependen de ese lifecycle, incluido `migration-contract`
 
-- provision, reset, clean, connect: **implementado**
-- `restoreSnapshot()`: **no implementado** — lanza excepción
-- `cloneDatabase()`: **no implementado** — lanza excepción
-- `migration_contract` con snapshot: **no soportado** — rechaza explícitamente drivers no MySQL
+### PostgreSQL
 
-El compose de PG (`compose.pg.yaml`) se provee para proyectos que consumen PG como infraestructura de tests.
-El core de testkit (seeding, migration-contract, clone-per-worker) opera únicamente sobre MySQL en esta versión.
+Soporte parcial de infraestructura:
+
+- puede existir como store de pruebas
+- snapshot restore y clone no forman parte del contrato cerrado de esta fase
 
 ### Redis
 
-No hay capa PHP de core para Redis.
-`compose.redis.yaml` provee el servicio; el proyecto lo consume directamente si lo necesita.
+`testkit` puede levantar el servicio en compose, pero no tiene lifecycle estructural equivalente al de DB SQL dentro del core PHP.
 
+## 8) Decisiones de diseño vigentes
 
-## 3.2) Baseline reutilizable
-
-- `testkit` puede materializar una baseline por `layered` o por `snapshot`.
-- La baseline activa puede persistirse como artefacto derivado en `.testkit/baselines/<driver>/<db>.manifest.json`.
-- Ese manifest sirve para reuse/diagnóstico; no redefine el catálogo estructural de migraciones.
-- En `per_worker` con `TEST_BASELINE_CLONE_PER_WORKER=1`, primero se prepara/reutiliza la baseline y luego se clona a cada worker.
-- La invalidación explícita (`TEST_BASELINE_INVALIDATE=1`) borra manifest y obliga a reconstruir.
-
-
-## 3.3) Suite de contrato de migración
-
-- `migration_contract` no descubre tests de dominio.
-- Usa `ContractWorldBootstrap` como chequeo técnico del baseline restaurado.
-- Su salida principal es un reporte suite-level con estado del bootstrap, snapshot usado y manifest resultante.
-- Está pensada como gate de infraestructura antes de correr suites funcionales sobre un baseline recién restaurado.
-
-
-## 3.2) Integración explícita con backupkit
-
-Cuando `TEST_BASELINE_MODE=snapshot`, `testkit` ya no depende únicamente de un path hardcodeado al dump. Puede resolver el baseline desde tres fuentes ordenadas por precedencia:
-
-1. snapshot explícito (`TEST_BASELINE_SNAPSHOT_FILE`)
-2. metadata sidecar de `backupkit`
-3. reporte JSON de `backupkit`
-
-La resolución vive en `core/php/seeding/BackupkitArtifactResolver.php`.
-
-El objetivo no es duplicar a `backupkit`, sino consumir sus artefactos verificados como input del lifecycle de testing. `backupkit` sigue siendo dueño de:
-
-- generación del dump
-- hash/metadata del artefacto
-- verify-artifact
-- restore-test declarativo
-
-`testkit` consume ese resultado para construir la baseline de pruebas y escribir un manifest local con el origen resuelto.
-
-
-## Estado de migración
-
-Para baseline `snapshot`, `testkit` incorpora una capa explícita de resolución de estado:
-
-- `MigrationStateResolver` detecta migraciones `available/applied/pending`
-- `SeedPipeline` decide si usa cálculo incremental o una lista explícita
-- `MigrationContractSuite` reporta el estado observado y las pendientes aplicadas
-
-La idea es separar:
-- origen del baseline
-- detección del punto de partida
-- selección de migraciones pendientes
-- validación estructural posterior
+- La plataforma es opinionated: prefiere contrato explícito antes que inferencia flexible.
+- El bootstrap estructural vive en `testkit`, no en `test/_support`.
+- `migration-contract` es una suite técnica de bootstrap y migración; no una suite funcional.
+- Heurísticas de reporting sirven para triage, no para reemplazar diagnóstico real.
