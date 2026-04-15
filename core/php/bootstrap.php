@@ -42,6 +42,8 @@ require_once __DIR__ . '/reporting/ReportLocator.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
 require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';
+require_once __DIR__ . '/reporting/FailureDelta.php';
+require_once __DIR__ . '/reporting/ReportFileNamer.php';
 require_once __DIR__ . '/reporting/ConsoleReporter.php';
 require_once __DIR__ . '/reporting/HistoryRepository.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';

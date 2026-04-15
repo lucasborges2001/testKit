@@ -19,9 +19,9 @@ final class ResultWriter
         }
         Paths::ensureDir($reportsRoot);
 
-        $safeSuite = self::safeSlug($suiteId, 'suite');
-        $scopeKey = self::scopeKey((string)($result['selected_module_scope'] ?? ''));
-        $baseName = self::suiteBaseName($suiteId, (string)($result['selected_module_scope'] ?? ''));
+        $safeSuite = ReportFileNamer::safeSlug($suiteId, 'suite');
+        $scopeKey = ReportFileNamer::scopeKey((string)($result['selected_module_scope'] ?? ''));
+        $baseName = ReportFileNamer::suiteBaseName($suiteId, (string)($result['selected_module_scope'] ?? ''));
         $timestamp = gmdate('Ymd_His');
 
         $latestPath = $reportsRoot . '/' . $baseName . '_latest.json';
@@ -78,8 +78,8 @@ final class ResultWriter
 
         $target = (string)($meta['target'] ?? 'all');
         $scope = (string)($meta['selected_module_scope'] ?? '');
-        $baseName = self::metaBaseName($target, $scope);
-        $scopeKey = self::scopeKey($scope);
+        $baseName = ReportFileNamer::metaBaseName($target, $scope);
+        $scopeKey = ReportFileNamer::scopeKey($scope);
         $timestamp = gmdate('Ymd_His');
 
         $latestPath = $reportsRoot . '/' . $baseName . '_latest.json';
@@ -174,7 +174,7 @@ final class ResultWriter
         $previousRunId = trim((string)($previous['run_id'] ?? $previous['meta_run_id'] ?? ''));
         $report['previous_run_id'] = $previousRunId !== '' ? $previousRunId : null;
 
-        $delta = self::diffFailures($previous, $report);
+        $delta = FailureDelta::diff($previous, $report);
         $report['new_failures'] = $delta['new_failures'];
         $report['resolved_failures'] = $delta['resolved_failures'];
         $report['new_failures_count'] = count($delta['new_failures']);
@@ -199,94 +199,94 @@ final class ResultWriter
     }
 
     /**
-     * @param array<string,mixed> $previous
-     * @param array<string,mixed> $current
-     * @return array{new_failures: array<int,string>, resolved_failures: array<int,string>}
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
      */
-    private static function diffFailures(array $previous, array $current): array
+    private static function buildRunsIndexEntry(array $report, string $kind, string $latestFile, string $timestampedFile, string $canonicalLatestFile): array
     {
-        $previousFailures = self::failureKeys($previous);
-        $currentFailures = self::failureKeys($current);
+        $recordId = $kind . '::'
+            . trim((string)($report['run_id'] ?? ''))
+            . '::'
+            . trim((string)($report['suite_id'] ?? $report['target'] ?? 'meta'))
+            . '::'
+            . trim((string)($report['report_key'] ?? 'default'));
 
-        $newFailures = array_values(array_diff($currentFailures, $previousFailures));
-        sort($newFailures);
-
-        $resolvedFailures = array_values(array_diff($previousFailures, $currentFailures));
-        sort($resolvedFailures);
+        $filters = is_array($report['filters'] ?? null) ? $report['filters'] : [];
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
 
         return [
-            'new_failures' => $newFailures,
-            'resolved_failures' => $resolvedFailures,
+            'record_id' => $recordId,
+            'kind' => $kind,
+            'run_id' => (string)($report['run_id'] ?? ''),
+            'meta_run_id' => $report['meta_run_id'] ?? null,
+            'previous_run_id' => $report['previous_run_id'] ?? null,
+            'suite_id' => $report['suite_id'] ?? null,
+            'target' => $report['target'] ?? ($filters['target'] ?? null),
+            'scope' => $report['scope'] ?? ($filters['scope'] ?? null),
+            'category' => $report['category'] ?? ($filters['category'] ?? null),
+            'match' => $report['match'] ?? ($filters['match'] ?? null),
+            'suite_status' => $report['suite_status'] ?? null,
+            'suite_status_counts' => $report['suite_status_counts'] ?? null,
+            'summary' => $summary,
+            'started_at' => $report['started_at'] ?? null,
+            'finished_at' => $report['finished_at'] ?? null,
+            'duration_ms' => (int)($report['duration_ms'] ?? 0),
+            'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
+            'report_scope_rel' => (string)($report['report_scope_rel'] ?? ''),
+            'report_scope_key' => (string)($report['report_scope_key'] ?? ''),
+            'report_key' => (string)($report['report_key'] ?? ''),
+            'has_failures' => (bool)($report['has_failures'] ?? ((int)($report['fail'] ?? 0) > 0)),
+            'evidence_valid' => (bool)($report['evidence_valid'] ?? true),
+            'evidence_invalid_reason' => $report['evidence_invalid_reason'] ?? null,
+            'failed_files' => self::failedFilesFromReport($report),
+            'top_failure_messages' => self::topFailureMessagesFromReport($report, 3),
+            'first_failure' => self::compactFirstFailureFromReport($report),
+            'new_failures_count' => (int)($report['new_failures_count'] ?? 0),
+            'resolved_failures_count' => (int)($report['resolved_failures_count'] ?? 0),
+            'dominant_failure_family' => $report['dominant_failure_family'] ?? null,
+            'report_files' => [
+                'latest' => $latestFile,
+                'timestamped' => $timestampedFile,
+                'canonical_latest' => $canonicalLatestFile,
+            ],
         ];
     }
 
     /**
-     * @param array<string,mixed> $report
-     * @return array<int,string>
+     * @param array<string,mixed> $entry
      */
-    private static function failureKeys(array $report): array
+    private static function updateRunsIndex(string $reportsRoot, array $entry, int $keep): void
     {
-        $keys = [];
-        $suiteId = trim((string)($report['suite_id'] ?? ''));
+        $indexPath = $reportsRoot . '/runs_latest.json';
+        $existing = self::loadJsonFile($indexPath);
+        $rows = [];
 
-        $failures = $report['failures'] ?? null;
-        if (is_array($failures)) {
-            foreach ($failures as $failure) {
-                if (!is_array($failure)) {
-                    continue;
-                }
-
-                $testId = trim((string)($failure['test_id'] ?? $failure['file'] ?? ''));
-                if ($testId === '') {
-                    continue;
-                }
-
-                $errorType = trim((string)($failure['error_type'] ?? ''));
-                $key = ($suiteId !== '' ? $suiteId . '::' : '') . $testId;
-                if ($errorType !== '') {
-                    $key .= '::' . $errorType;
-                }
-                $keys[$key] = true;
-            }
+        if (isset($existing['runs']) && is_array($existing['runs'])) {
+            $rows = array_values(array_filter($existing['runs'], 'is_array'));
+        } elseif (array_is_list($existing)) {
+            $rows = array_values(array_filter($existing, 'is_array'));
         }
 
-        if ($keys === []) {
-            $failedTests = $report['failed_tests'] ?? null;
-            if (is_array($failedTests)) {
-                foreach ($failedTests as $failure) {
-                    if (!is_array($failure)) {
-                        continue;
-                    }
+        $recordId = (string)($entry['record_id'] ?? '');
+        $rows = array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => (string)($row['record_id'] ?? '') !== $recordId
+        ));
 
-                    $testId = trim((string)($failure['rel'] ?? $failure['file'] ?? ''));
-                    if ($testId === '') {
-                        continue;
-                    }
+        array_unshift($rows, $entry);
+        $rows = array_slice($rows, 0, max(1, $keep));
 
-                    $key = ($suiteId !== '' ? $suiteId . '::' : '') . $testId;
-                    $keys[$key] = true;
-                }
-            }
+        $payload = [
+            'updated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'runs' => $rows,
+        ];
+
+        $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            return;
         }
 
-        if ($keys === []) {
-            $failedFiles = $report['failed_files'] ?? null;
-            if (is_array($failedFiles)) {
-                foreach ($failedFiles as $file) {
-                    $file = trim((string)$file);
-                    if ($file === '') {
-                        continue;
-                    }
-
-                    $keys[$file] = true;
-                }
-            }
-        }
-
-        $out = array_keys($keys);
-        sort($out);
-
-        return $out;
+        self::writeFileAtomic($indexPath, $json);
     }
 
     /**
@@ -403,97 +403,6 @@ final class ResultWriter
     }
 
     /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
-    private static function buildRunsIndexEntry(array $report, string $kind, string $latestFile, string $timestampedFile, string $canonicalLatestFile): array
-    {
-        $recordId = $kind . '::'
-            . trim((string)($report['run_id'] ?? ''))
-            . '::'
-            . trim((string)($report['suite_id'] ?? $report['target'] ?? 'meta'))
-            . '::'
-            . trim((string)($report['report_key'] ?? 'default'));
-
-        $filters = is_array($report['filters'] ?? null) ? $report['filters'] : [];
-        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
-
-        return [
-            'record_id' => $recordId,
-            'kind' => $kind,
-            'run_id' => (string)($report['run_id'] ?? ''),
-            'meta_run_id' => $report['meta_run_id'] ?? null,
-            'previous_run_id' => $report['previous_run_id'] ?? null,
-            'suite_id' => $report['suite_id'] ?? null,
-            'target' => $report['target'] ?? ($filters['target'] ?? null),
-            'scope' => $report['scope'] ?? ($filters['scope'] ?? null),
-            'category' => $report['category'] ?? ($filters['category'] ?? null),
-            'match' => $report['match'] ?? ($filters['match'] ?? null),
-            'suite_status' => $report['suite_status'] ?? null,
-            'suite_status_counts' => $report['suite_status_counts'] ?? null,
-            'summary' => $summary,
-            'started_at' => $report['started_at'] ?? null,
-            'finished_at' => $report['finished_at'] ?? null,
-            'duration_ms' => (int)($report['duration_ms'] ?? 0),
-            'selected_module_scope' => (string)($report['selected_module_scope'] ?? ''),
-            'report_scope_rel' => (string)($report['report_scope_rel'] ?? ''),
-            'report_scope_key' => (string)($report['report_scope_key'] ?? ''),
-            'report_key' => (string)($report['report_key'] ?? ''),
-            'has_failures' => (bool)($report['has_failures'] ?? ((int)($report['fail'] ?? 0) > 0)),
-            'evidence_valid' => (bool)($report['evidence_valid'] ?? true),
-            'evidence_invalid_reason' => $report['evidence_invalid_reason'] ?? null,
-            'failed_files' => self::failedFilesFromReport($report),
-            'top_failure_messages' => self::topFailureMessagesFromReport($report, 3),
-            'first_failure' => self::compactFirstFailureFromReport($report),
-            'new_failures_count' => (int)($report['new_failures_count'] ?? 0),
-            'resolved_failures_count' => (int)($report['resolved_failures_count'] ?? 0),
-            'dominant_failure_family' => $report['dominant_failure_family'] ?? null,
-            'report_files' => [
-                'latest' => $latestFile,
-                'timestamped' => $timestampedFile,
-                'canonical_latest' => $canonicalLatestFile,
-            ],
-        ];
-    }
-
-    /**
-     * @param array<string,mixed> $entry
-     */
-    private static function updateRunsIndex(string $reportsRoot, array $entry, int $keep): void
-    {
-        $indexPath = $reportsRoot . '/runs_latest.json';
-        $existing = self::loadJsonFile($indexPath);
-        $rows = [];
-
-        if (isset($existing['runs']) && is_array($existing['runs'])) {
-            $rows = array_values(array_filter($existing['runs'], 'is_array'));
-        } elseif (array_is_list($existing)) {
-            $rows = array_values(array_filter($existing, 'is_array'));
-        }
-
-        $recordId = (string)($entry['record_id'] ?? '');
-        $rows = array_values(array_filter(
-            $rows,
-            static fn(array $row): bool => (string)($row['record_id'] ?? '') !== $recordId
-        ));
-
-        array_unshift($rows, $entry);
-        $rows = array_slice($rows, 0, max(1, $keep));
-
-        $payload = [
-            'updated_at' => gmdate('Y-m-d\TH:i:s\Z'),
-            'runs' => $rows,
-        ];
-
-        $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($json === false) {
-            return;
-        }
-
-        self::writeFileAtomic($indexPath, $json);
-    }
-
-    /**
      * @return array<string,mixed>
      */
     private static function loadJsonFile(string $file): array
@@ -525,48 +434,6 @@ final class ResultWriter
         }
 
         return max(1, $default);
-    }
-
-    private static function suiteBaseName(string $suiteId, string $selectedModuleScope): string
-    {
-        $safeSuite = self::safeSlug($suiteId, 'suite');
-        $scopeKey = self::scopeKey($selectedModuleScope);
-
-        if ($scopeKey === 'global') {
-            return $safeSuite;
-        }
-
-        return $safeSuite . '__' . $scopeKey;
-    }
-
-    private static function metaBaseName(string $target, string $selectedModuleScope): string
-    {
-        $safeTarget = self::safeSlug($target, 'all');
-        $scopeKey = self::scopeKey($selectedModuleScope);
-
-        if ($safeTarget === 'all' && $scopeKey === 'global') {
-            return 'meta';
-        }
-
-        return 'meta__' . $safeTarget . '__' . $scopeKey;
-    }
-
-    private static function scopeKey(string $selectedModuleScope): string
-    {
-        $selectedModuleScope = trim($selectedModuleScope);
-        if ($selectedModuleScope === '') {
-            return 'global';
-        }
-
-        return self::safeSlug($selectedModuleScope, 'global');
-    }
-
-    private static function safeSlug(string $value, string $fallback): string
-    {
-        $value = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower(trim($value))) ?: '';
-        $value = trim($value, '._-');
-
-        return $value !== '' ? $value : $fallback;
     }
 
     private static function buildRunId(): string
