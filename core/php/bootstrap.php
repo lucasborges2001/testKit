@@ -23,20 +23,17 @@ require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
 require_once __DIR__ . '/store/bootstrap.php';
 require_once __DIR__ . '/seeding/BaselineManifest.php';
+require_once __DIR__ . '/seeding/BaselineManifestWriter.php';
 require_once __DIR__ . '/seeding/BaselineModeResolver.php';
 require_once __DIR__ . '/seeding/BaselineReuseDecider.php';
-require_once __DIR__ . '/seeding/FlatSeedMaterializer.php';
-require_once __DIR__ . '/seeding/LayeredSeedMaterializer.php';
 require_once __DIR__ . '/seeding/ManifestPlanBuilder.php';
 require_once __DIR__ . '/seeding/MigrationCatalog.php';
 require_once __DIR__ . '/seeding/MigrationPlanResolver.php';
-require_once __DIR__ . '/seeding/SeedMaterializer.php';
-require_once __DIR__ . '/seeding/SeedMigrationPlan.php';
-require_once __DIR__ . '/seeding/SeedRuntimeContext.php';
-require_once __DIR__ . '/seeding/SnapshotSeedMaterializer.php';
 require_once __DIR__ . '/seeding/SqlFailureHintResolver.php';
 require_once __DIR__ . '/seeding/SqlSeedExecutor.php';
 require_once __DIR__ . '/seeding/SuiteSeedState.php';
+require_once __DIR__ . '/seeding/SeedBootstrapTracer.php';
+require_once __DIR__ . '/seeding/SeedMaterializerResolver.php';
 
 require_once __DIR__ . '/reporting/UI.php';
 require_once __DIR__ . '/reporting/StructuredWarnings.php';

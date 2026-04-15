@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Seeding;
 
-use Testkit\Core\Common\Trace;
 use Testkit\Core\Store\StoreRegistry;
 
 require_once __DIR__ . '/../store/bootstrap.php';
 require_once __DIR__ . '/BaselineManifest.php';
+require_once __DIR__ . '/BaselineManifestWriter.php';
 require_once __DIR__ . '/BaselineModeResolver.php';
 require_once __DIR__ . '/BaselineReuseDecider.php';
 require_once __DIR__ . '/BackupkitArtifactResolver.php';
@@ -17,8 +17,10 @@ require_once __DIR__ . '/ManifestPlanBuilder.php';
 require_once __DIR__ . '/MigrationCatalog.php';
 require_once __DIR__ . '/MigrationPlanResolver.php';
 require_once __DIR__ . '/MigrationStateResolver.php';
+require_once __DIR__ . '/SeedBootstrapTracer.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
+require_once __DIR__ . '/SeedMaterializerResolver.php';
 require_once __DIR__ . '/SeedRuntimeContext.php';
 require_once __DIR__ . '/SnapshotSeedMaterializer.php';
 require_once __DIR__ . '/SqlFailureHintResolver.php';
@@ -63,7 +65,17 @@ final class SeedPipeline
             ]);
         }
 
-        self::traceBootstrapContext($driver, $projectRoot, $seedDir, $baselineMode, $databaseName, $manifestPath, $resolvedSnapshot);
+        $context = new SeedRuntimeContext(
+            $driver,
+            $seedDir,
+            $projectRoot,
+            $baselineMode,
+            $adapter,
+            $databaseName,
+            $resolvedSnapshot
+        );
+
+        SeedBootstrapTracer::trace($context, $manifestPath);
 
         if (!is_dir($seedDir)) {
             throw new SeedFailure('No existe el directorio de seeds requerido para el bootstrap.', [
@@ -78,13 +90,13 @@ final class SeedPipeline
 
         try {
             $manifestPlan = ManifestPlanBuilder::build(
-                $driver,
-                $seedDir,
-                $projectRoot,
-                $baselineMode,
-                $databaseName,
+                $context->driver(),
+                $context->seedDir(),
+                $context->projectRoot(),
+                $context->baselineMode(),
+                $context->databaseName(),
                 $manifestPath,
-                $resolvedSnapshot
+                $context->resolvedSnapshot()
             );
         } catch (\Throwable $e) {
             throw SeedFailure::wrap($e, 'No se pudo construir el plan del baseline de seed.', [
@@ -102,118 +114,12 @@ final class SeedPipeline
             return 0;
         }
 
-        $context = new SeedRuntimeContext(
-            $driver,
-            $seedDir,
-            $projectRoot,
-            $baselineMode,
-            $adapter,
-            $databaseName,
-            $resolvedSnapshot
-        );
-
-        $materializer = self::resolveMaterializer($context);
+        $materializer = SeedMaterializerResolver::resolve($context);
         $result = $materializer->run($context);
 
-        self::writeManifest(
-            $manifestPath,
-            $manifestPlan,
-            $driver,
-            $databaseName,
-            $baselineMode,
-            $projectRoot,
-            $seedDir,
-            $resolvedSnapshot
-        );
+        BaselineManifestWriter::write($manifestPath, $manifestPlan, $context);
 
         return $result;
-    }
-
-    private static function hasLayeredLayout(string $seedDir): bool
-    {
-        return is_dir($seedDir . '/schema') && is_dir($seedDir . '/base');
-    }
-
-    private static function resolveMaterializer(SeedRuntimeContext $context): SeedMaterializer
-    {
-        if ($context->baselineMode() === 'snapshot') {
-            return new SnapshotSeedMaterializer();
-        }
-
-        if (self::hasLayeredLayout($context->seedDir())) {
-            return new LayeredSeedMaterializer();
-        }
-
-        return new FlatSeedMaterializer();
-    }
-
-    /**
-     * @param array<string,mixed>|null $resolvedSnapshot
-     */
-    private static function writeManifest(
-        string $manifestPath,
-        array $manifestPlan,
-        string $driver,
-        string $databaseName,
-        string $baselineMode,
-        string $projectRoot,
-        string $seedDir,
-        ?array $resolvedSnapshot
-    ): void {
-        $payload = [
-            'status' => 'ready',
-            'driver' => $driver,
-            'db_name' => $databaseName,
-            'baseline_mode' => $baselineMode,
-            'baseline_fingerprint' => (string)($manifestPlan['fingerprint'] ?? ''),
-            'generated_at' => gmdate(DATE_ATOM),
-            'project_root' => self::realPathOrOriginal($projectRoot),
-            'seed_dir' => self::realPathOrOriginal($seedDir),
-            'manifest_path' => self::realPathOrOriginal($manifestPath),
-            'resolved_snapshot' => $resolvedSnapshot,
-            'migration_state' => $manifestPlan['migration_state'] ?? null,
-            'plan' => $manifestPlan,
-        ];
-
-        BaselineManifest::save($manifestPath, $payload);
-
-        Trace::log('baseline.manifest.write', [
-            'driver' => $driver,
-            'db' => $databaseName,
-            'manifest_path' => self::realPathOrOriginal($manifestPath),
-            'resolved_snapshot' => $resolvedSnapshot,
-            'baseline_mode' => $baselineMode,
-            'fingerprint' => (string)($manifestPlan['fingerprint'] ?? ''),
-        ]);
-    }
-
-    /**
-     * @param array<string,mixed>|null $resolvedSnapshot
-     */
-    private static function traceBootstrapContext(
-        string $driver,
-        string $projectRoot,
-        string $seedDir,
-        string $baselineMode,
-        string $databaseName,
-        string $manifestPath,
-        ?array $resolvedSnapshot
-    ): void {
-        Trace::log('seed.bootstrap.context', [
-            'driver' => $driver,
-            'project_root' => self::realPathOrOriginal($projectRoot),
-            'seed_dir' => self::realPathOrOriginal($seedDir),
-            'baseline_mode' => $baselineMode,
-            'db_name' => $databaseName,
-            'baseline_reuse' => BaselineModeResolver::reuseEnabled(),
-            'baseline_invalidate' => BaselineModeResolver::invalidateRequested(),
-            'baseline_manifest_path' => self::realPathOrOriginal($manifestPath),
-            'resolved_snapshot' => $resolvedSnapshot,
-            'DB_ENV_PATH' => (string)(getenv('DB_ENV_PATH') ?: ''),
-            'TESTKIT_PROJECT_ROOT' => (string)(getenv('TESTKIT_PROJECT_ROOT') ?: ''),
-            'TK_REPO_ROOT' => (string)(getenv('TK_REPO_ROOT') ?: ''),
-            'TEST_MATCH' => (string)(getenv('TEST_MATCH') ?: ''),
-        ]);
     }
 
     private static function realPathOrOriginal(string $path): string
