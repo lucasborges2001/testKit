@@ -3,32 +3,24 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Seeding;
 
-use Testkit\Core\Common\Trace;
-
 require_once __DIR__ . '/BackupkitArtifactResolver.php';
-require_once __DIR__ . '/MigrationPlanResolver.php';
+require_once __DIR__ . '/SeedDatabaseLifecycle.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
 require_once __DIR__ . '/SeedMigrationPlan.php';
+require_once __DIR__ . '/SeedMigrationWorkflow.php';
 require_once __DIR__ . '/SeedRuntimeContext.php';
-require_once __DIR__ . '/SqlSeedExecutor.php';
 
 final class SnapshotSeedMaterializer implements SeedMaterializer
 {
     public function run(SeedRuntimeContext $context): int
     {
-        try {
-            $pdo = $context->adapter()->connect();
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para bootstrap snapshot.', [
-                'stage' => 'connect',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'label' => 'snapshot',
-                'db_name' => $context->connectionSummary()['db'] ?? '',
-                'hint' => 'Revisá credenciales y que la base objetivo exista o pueda provisionarse.',
-            ]);
-        }
+        $pdo = SeedDatabaseLifecycle::connect(
+            $context,
+            'snapshot',
+            'No se pudo conectar a la DB para bootstrap snapshot.',
+            'Revisá credenciales y que la base objetivo exista o pueda provisionarse.'
+        );
 
         try {
             $resolvedSnapshot = $context->resolvedSnapshot() ?? BackupkitArtifactResolver::resolveFromEnv();
@@ -55,19 +47,16 @@ final class SnapshotSeedMaterializer implements SeedMaterializer
             ]);
         }
 
-        try {
-            $context->adapter()->reset($pdo);
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo resetear la DB antes de restaurar el snapshot.', [
-                'stage' => 'reset',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'db_name' => $context->currentDatabaseName($pdo),
-                'label' => 'snapshot reset',
+        SeedDatabaseLifecycle::reset(
+            $context,
+            $pdo,
+            'snapshot reset',
+            'No se pudo resetear la DB antes de restaurar el snapshot.',
+            'Revisá privilegios de borrado de objetos o residuos incompatibles en la base destino.',
+            [
                 'file' => $context->realPathOrOriginal($snapshotFile),
-                'hint' => 'Revisá privilegios de borrado de objetos o residuos incompatibles en la base destino.',
-            ]);
-        }
+            ]
+        );
 
         try {
             $context->adapter()->restoreSnapshot($snapshotFile);
@@ -83,41 +72,23 @@ final class SnapshotSeedMaterializer implements SeedMaterializer
             ]);
         }
 
-        try {
-            $migrationPlan = MigrationPlanResolver::resolve($pdo, $context->seedDir(), 'snapshot');
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo resolver el estado de migraciones después de restaurar el snapshot.', [
-                'stage' => 'migration_state',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'db_name' => $context->currentDatabaseName($pdo),
-                'label' => 'snapshot',
+        $migrationPlan = SeedMigrationWorkflow::resolvePlan(
+            $context,
+            $pdo,
+            'snapshot',
+            'No se pudo resolver el estado de migraciones después de restaurar el snapshot.',
+            'Definí una fuente confiable de estado (TEST_MIGRATION_APPLIED, TEST_MIGRATION_STATE_TABLE o state.json).',
+            [
                 'file' => $context->realPathOrOriginal($snapshotFile),
-                'hint' => 'Definí una fuente confiable de estado (TEST_MIGRATION_APPLIED, TEST_MIGRATION_STATE_TABLE o state.json).',
-            ]);
-        }
+            ]
+        );
 
-        Trace::log('seed.snapshot.plan', [
-            'driver' => $context->driver(),
-            'project_root' => $context->projectRoot(),
-            'seed_dir' => $context->realPathOrOriginal($context->seedDir()),
+        SeedMigrationWorkflow::tracePlan('seed.snapshot.plan', $context, $migrationPlan, [
             'snapshot_file' => $context->realPathOrOriginal($snapshotFile),
             'snapshot_source' => $resolvedSnapshot,
-            'db' => $context->connectionSummary(),
-            'raw_TEST_SEED_MIGRATIONS' => $migrationPlan->rawMigrations(),
-            'parsed_TEST_SEED_MIGRATIONS' => $migrationPlan->migrations(),
-            'migration_state' => $migrationPlan->migrationState(),
-            'skip_validations_after_extras' => $migrationPlan->skipPostValidations(),
         ]);
 
-        SqlSeedExecutor::applyRequestedMigrations($pdo, $context->seedDir(), $migrationPlan->migrations(), $context->driver());
-        SqlSeedExecutor::applyPostValidations(
-            $pdo,
-            $context->seedDir(),
-            $migrationPlan->migrations(),
-            $migrationPlan->skipPostValidations(),
-            $context->driver()
-        );
+        SeedMigrationWorkflow::applyPlan($pdo, $context, $migrationPlan);
 
         echo "Seed pipeline snapshot aplicado correctamente\n";
         return 0;

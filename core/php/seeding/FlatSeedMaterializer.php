@@ -5,6 +5,7 @@ namespace Testkit\Core\Seeding;
 
 use Testkit\Core\Common\Trace;
 
+require_once __DIR__ . '/SeedDatabaseLifecycle.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
 require_once __DIR__ . '/SeedRuntimeContext.php';
@@ -25,18 +26,12 @@ final class FlatSeedMaterializer implements SeedMaterializer
             ]);
         }
 
-        try {
-            $pdo = $context->adapter()->connect();
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para ejecutar el seed flat.', [
-                'stage' => 'connect',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'label' => 'flat',
-                'db_name' => $context->connectionSummary()['db'] ?? '',
-                'hint' => 'Revisá host, puerto, usuario y password de la conexión usada por testkit.',
-            ]);
-        }
+        $pdo = SeedDatabaseLifecycle::connect(
+            $context,
+            'flat',
+            'No se pudo conectar a la DB para ejecutar el seed flat.',
+            'Revisá host, puerto, usuario y password de la conexión usada por testkit.'
+        );
 
         Trace::log('seed.flat.files', [
             'count' => count($files),

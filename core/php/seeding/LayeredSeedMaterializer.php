@@ -3,12 +3,11 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Seeding;
 
-use Testkit\Core\Common\Trace;
-
-require_once __DIR__ . '/MigrationPlanResolver.php';
+require_once __DIR__ . '/SeedDatabaseLifecycle.php';
 require_once __DIR__ . '/SeedFailure.php';
 require_once __DIR__ . '/SeedMaterializer.php';
 require_once __DIR__ . '/SeedMigrationPlan.php';
+require_once __DIR__ . '/SeedMigrationWorkflow.php';
 require_once __DIR__ . '/SeedRuntimeContext.php';
 require_once __DIR__ . '/SqlSeedExecutor.php';
 
@@ -27,59 +26,35 @@ final class LayeredSeedMaterializer implements SeedMaterializer
             ]);
         }
 
-        try {
-            $pdo = $context->adapter()->connect();
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo conectar a la DB para bootstrap layered.', [
-                'stage' => 'connect',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'label' => 'layered',
-                'db_name' => $context->connectionSummary()['db'] ?? '',
-                'hint' => 'Revisá credenciales y disponibilidad de la base antes de aplicar schema/base.',
-            ]);
-        }
+        $pdo = SeedDatabaseLifecycle::connect(
+            $context,
+            'layered',
+            'No se pudo conectar a la DB para bootstrap layered.',
+            'Revisá credenciales y disponibilidad de la base antes de aplicar schema/base.'
+        );
 
-        try {
-            $migrationPlan = MigrationPlanResolver::resolve($pdo, $context->seedDir(), 'layered');
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo resolver el plan de migraciones para baseline layered.', [
-                'stage' => 'migration_state',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'db_name' => $context->currentDatabaseName($pdo),
-                'label' => 'layered',
-                'hint' => 'Revisá TEST_SEED_MIGRATIONS y el catálogo en test/seeds/<driver>/migrations.',
-            ]);
-        }
+        $migrationPlan = SeedMigrationWorkflow::resolvePlan(
+            $context,
+            $pdo,
+            'layered',
+            'No se pudo resolver el plan de migraciones para baseline layered.',
+            'Revisá TEST_SEED_MIGRATIONS y el catálogo en test/seeds/<driver>/migrations.'
+        );
 
-        Trace::log('seed.layered.plan', [
-            'driver' => $context->driver(),
-            'project_root' => $context->projectRoot(),
-            'seed_dir' => $context->realPathOrOriginal($context->seedDir()),
+        SeedMigrationWorkflow::tracePlan('seed.layered.plan', $context, $migrationPlan, [
             'db_env_path' => (string)(getenv('DB_ENV_PATH') ?: ''),
-            'db' => $context->connectionSummary(),
-            'raw_TEST_SEED_MIGRATIONS' => $migrationPlan->rawMigrations(),
-            'parsed_TEST_SEED_MIGRATIONS' => $migrationPlan->migrations(),
-            'migration_state' => $migrationPlan->migrationState(),
-            'skip_validations_after_extras' => $migrationPlan->skipPostValidations(),
             'TEST_MATCH' => (string)(getenv('TEST_MATCH') ?: ''),
             'TEST_SCOPE' => (string)(getenv('TEST_SCOPE') ?: ''),
             'TEST_TARGET' => (string)(getenv('TEST_TARGET') ?: ''),
         ]);
 
-        try {
-            $context->adapter()->reset($pdo);
-        } catch (\Throwable $e) {
-            throw SeedFailure::wrap($e, 'No se pudo resetear la DB antes de aplicar el baseline layered.', [
-                'stage' => 'reset',
-                'driver' => $context->driver(),
-                'db_driver' => $context->driver(),
-                'db_name' => $context->currentDatabaseName($pdo),
-                'label' => 'layered reset',
-                'hint' => 'Verificá privilegios para dropear objetos o residuos de una corrida previa.',
-            ]);
-        }
+        SeedDatabaseLifecycle::reset(
+            $context,
+            $pdo,
+            'layered reset',
+            'No se pudo resetear la DB antes de aplicar el baseline layered.',
+            'Verificá privilegios para dropear objetos o residuos de una corrida previa.'
+        );
 
         SqlSeedExecutor::applySqlDir($pdo, $context->seedDir() . '/schema', 'schema', 'schema', [
             'driver' => $context->driver(),
@@ -89,14 +64,7 @@ final class LayeredSeedMaterializer implements SeedMaterializer
             'driver' => $context->driver(),
             'db_driver' => $context->driver(),
         ]);
-        SqlSeedExecutor::applyRequestedMigrations($pdo, $context->seedDir(), $migrationPlan->migrations(), $context->driver());
-        SqlSeedExecutor::applyPostValidations(
-            $pdo,
-            $context->seedDir(),
-            $migrationPlan->migrations(),
-            $migrationPlan->skipPostValidations(),
-            $context->driver()
-        );
+        SeedMigrationWorkflow::applyPlan($pdo, $context, $migrationPlan);
 
         echo "Seed pipeline por capas aplicado correctamente\n";
         return 0;

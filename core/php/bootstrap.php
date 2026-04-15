@@ -33,7 +33,15 @@ require_once __DIR__ . '/seeding/SqlFailureHintResolver.php';
 require_once __DIR__ . '/seeding/SqlSeedExecutor.php';
 require_once __DIR__ . '/seeding/SuiteSeedState.php';
 require_once __DIR__ . '/seeding/SeedBootstrapTracer.php';
+require_once __DIR__ . '/seeding/SeedDatabaseLifecycle.php';
+require_once __DIR__ . '/seeding/SeedMaterializer.php';
 require_once __DIR__ . '/seeding/SeedMaterializerResolver.php';
+require_once __DIR__ . '/seeding/SeedMigrationPlan.php';
+require_once __DIR__ . '/seeding/SeedMigrationWorkflow.php';
+require_once __DIR__ . '/seeding/SeedRuntimeContext.php';
+require_once __DIR__ . '/seeding/FlatSeedMaterializer.php';
+require_once __DIR__ . '/seeding/LayeredSeedMaterializer.php';
+require_once __DIR__ . '/seeding/SnapshotSeedMaterializer.php';
 
 require_once __DIR__ . '/reporting/UI.php';
 require_once __DIR__ . '/reporting/StructuredWarnings.php';
