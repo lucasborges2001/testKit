@@ -8,6 +8,7 @@
  * - Soporta paralelismo por archivos (TEST_JOBS).
  * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx configurable por TEST_REPORT_KEEP).
  * - Mantiene `runs_latest.json` como índice compacto de corridas recientes.
+ * - Cuando TESTKIT_FRONT_JS_RESULT_FILE está definido, emite el payload bruto a ese archivo y deja la persistencia final a PHP.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -56,6 +57,7 @@ const envModuleScope = process.env.TESTKIT_SELECTED_MODULE_SCOPE || "";
 const envReportScopeRel = process.env.TESTKIT_REPORT_SCOPE_REL || "";
 const legacyReportFile = process.env.TESTKIT_REPORT_FILE || "";
 const selectedTestsFile = process.env.TESTKIT_SELECTED_TESTS_FILE || "";
+const resultFile = process.env.TESTKIT_FRONT_JS_RESULT_FILE || "";
 
 const VALID_SCOPES = new Set(["unit", "integration", "e2e", "all"]);
 if (!VALID_SCOPES.has(scope)) {
@@ -666,6 +668,27 @@ function writeReport(report, reportRoot) {
   }
 }
 
+function emitRawReport(report) {
+  if (!resultFile) return;
+
+  try {
+    fs.mkdirSync(path.dirname(resultFile), { recursive: true });
+    fs.writeFileSync(resultFile, JSON.stringify(report, null, 2), "utf8");
+  } catch (err) {
+    console.error(`WARN: no se pudo emitir payload JS (${resultFile}): ${err?.message || err}`);
+    process.exit(PVT_EXIT_ERROR);
+  }
+}
+
+function persistReport(report, reportRoot) {
+  if (resultFile) {
+    emitRawReport(report);
+    return;
+  }
+
+  writeReport(report, reportRoot);
+}
+
 function loadSelectedEntries() {
   if (!selectedTestsFile || !fs.existsSync(selectedTestsFile)) {
     return null;
@@ -746,7 +769,7 @@ if (!testEntries.length) {
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
     reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: false,
   });
-  writeReport(report, computedReportRoot);
+  persistReport(report, computedReportRoot);
   process.exit(exitCode);
 }
 
@@ -788,7 +811,7 @@ if (listOnly) {
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
     reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: true,
   });
-  writeReport(report, computedReportRoot);
+  persistReport(report, computedReportRoot);
   process.exit(PVT_EXIT_PASS);
 }
 
@@ -969,6 +992,6 @@ const report = buildReport({
   commonDir: computedCommonDir,
   listMode: false,
 });
-writeReport(report, computedReportRoot);
+persistReport(report, computedReportRoot);
 
 process.exit(exitCode);

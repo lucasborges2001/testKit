@@ -61,6 +61,8 @@ final class FrontJsSuite
         ];
 
         $lockLease = null;
+        $resultPayloadFile = self::createTempFile('tk_front_js_result_');
+
         try {
             $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
             $reportRoot = Paths::resolveReportRoot($discovered);
@@ -115,6 +117,7 @@ final class FrontJsSuite
                 $env['TESTKIT_REPORT_SCOPE_REL'] = Paths::relativeToRepo($reportRoot);
                 $env['TESTKIT_SELECTED_MODULE_SCOPE'] = $moduleScope;
                 $env['TESTKIT_SELECTED_TESTS_FILE'] = $selectedFile;
+                $env['TESTKIT_FRONT_JS_RESULT_FILE'] = $resultPayloadFile;
                 $env['TEST_SCOPE'] = (string)$config['scope'];
                 $env['TEST_CATEGORY'] = (string)$config['category'];
                 $env['TEST_MATCH'] = (string)$config['match'];
@@ -147,7 +150,9 @@ final class FrontJsSuite
             }
 
             $currentPhase = 'reporting';
-            self::enrichLatestReport($reportRoot, $config, $policy, $warnings, $admission, $runId, $metaRunId);
+            $report = self::loadRunnerReportPayload($resultPayloadFile);
+            $report = self::decorateRunnerReport($report, $config, $policy, $warnings, $admission, $runId, $metaRunId);
+            self::safeWriteSuite($report, 'front_js.persistReport');
 
             return (int)($done['code'] ?? 1);
         } catch (Throwable $e) {
@@ -168,6 +173,7 @@ final class FrontJsSuite
             self::safeWriteSuite($result, 'front_js.operational_failure');
             return SuiteExecutor::EXIT_ERROR;
         } finally {
+            @unlink($resultPayloadFile);
             $lockLease?->release();
         }
     }
@@ -177,10 +183,7 @@ final class FrontJsSuite
      */
     private static function writeSelectedTestsFile(array $tests): string
     {
-        $file = tempnam(sys_get_temp_dir(), 'tk_front_js_');
-        if ($file === false) {
-            throw new \RuntimeException('No se pudo crear archivo temporal para seleccion JS.');
-        }
+        $file = self::createTempFile('tk_front_js_');
 
         $json = json_encode(array_values($tests), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
@@ -191,28 +194,64 @@ final class FrontJsSuite
         return $file;
     }
 
+    private static function createTempFile(string $prefix): string
+    {
+        $file = tempnam(sys_get_temp_dir(), $prefix);
+        if ($file === false) {
+            throw new \RuntimeException('No se pudo crear archivo temporal: ' . $prefix);
+        }
+
+        return $file;
+    }
+
     /**
+     * @return array<string,mixed>
+     */
+    private static function loadRunnerReportPayload(string $file): array
+    {
+        if (!is_file($file)) {
+            throw new \RuntimeException('El runner JS no emitio payload de reporte.');
+        }
+
+        $json = trim((string)file_get_contents($file));
+        if ($json === '') {
+            throw new \RuntimeException('El payload de reporte JS esta vacio.');
+        }
+
+        try {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \RuntimeException('El payload de reporte JS no es JSON valido: ' . $e->getMessage(), 0, $e);
+        }
+
+        if (!is_array($decoded)) {
+            throw new \RuntimeException('El payload de reporte JS no tiene forma de objeto.');
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param array<string,mixed> $report
      * @param array<string,mixed> $config
      * @param array<string,mixed> $policy
      * @param array<int,array<string,mixed>> $warnings
      * @param array<string,mixed> $admission
+     * @return array<string,mixed>
      */
-    private static function enrichLatestReport(string $reportRoot, array $config, array $policy, array $warnings, array $admission, string $runId, string $metaRunId): void
+    private static function decorateRunnerReport(array $report, array $config, array $policy, array $warnings, array $admission, string $runId, string $metaRunId): array
     {
-        $report = ReportSummary::loadLatestSuiteReport('front_js', [$reportRoot]);
-        if (!is_array($report)) {
-            return;
-        }
-
-        $report['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
+        $report['report_contract_version'] = (int)($config['report_contract_version'] ?? $report['report_contract_version'] ?? 2);
         $report['runner_contract_version'] = (int)($config['runner_contract_version'] ?? 1);
-        $report['runner_capabilities'] = $config['runner_capabilities'] ?? [];
-        $report['runner_hazards'] = $config['runner_hazards'] ?? [];
+        $report['runner_capabilities'] = $config['runner_capabilities'] ?? ($report['runner_capabilities'] ?? []);
+        $report['runner_hazards'] = $config['runner_hazards'] ?? ($report['runner_hazards'] ?? []);
         $report['runner_contract'] = [
             'version' => (int)($config['runner_contract_version'] ?? 1),
             'capabilities' => $config['runner_capabilities'] ?? [],
             'hazards' => $config['runner_hazards'] ?? [],
         ];
+        $report['suite_id'] = (string)($report['suite_id'] ?? 'front_js');
+        $report['language'] = (string)($report['language'] ?? 'js');
         $report['suite_status'] = self::suiteStatus($report);
         $report['no_tests_reason'] = self::noTestsReason($report);
         $report['run_id'] = $runId;
@@ -243,9 +282,7 @@ final class FrontJsSuite
         $report['fragility_hints'] = $history['fragility_hints'];
 
         $report = SuiteSeedState::attachToReport($report, Paths::repoRoot());
-        $report = ReportSummary::enrichReport($report);
-
-        self::safeWriteSuite($report, 'front_js.enrichLatestReport');
+        return ReportSummary::enrichReport($report);
     }
 
     /**
