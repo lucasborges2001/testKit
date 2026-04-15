@@ -18,6 +18,8 @@ require_once __DIR__ . '/MigrationCatalog.php';
 require_once __DIR__ . '/MigrationPlanResolver.php';
 require_once __DIR__ . '/MigrationStateResolver.php';
 require_once __DIR__ . '/SeedFailure.php';
+require_once __DIR__ . '/SqlFailureHintResolver.php';
+require_once __DIR__ . '/SqlSeedExecutor.php';
 
 final class SeedPipeline
 {
@@ -126,7 +128,7 @@ final class SeedPipeline
 
     private static function runFlat(string $driver, string $seedDir): int
     {
-        $files = self::listFlatFiles($seedDir);
+        $files = SqlSeedExecutor::listFlatFiles($seedDir);
         if ($files === []) {
             throw new SeedFailure('No hay archivos SQL para seed en modo flat.', [
                 'stage' => 'flat_discovery',
@@ -157,7 +159,7 @@ final class SeedPipeline
         ]);
 
         foreach ($files as $file) {
-            self::applySqlFile($pdo, $file, 'flat', [
+            SqlSeedExecutor::applySqlFile($pdo, $file, 'flat', [
                 'driver' => $driver,
                 'db_driver' => $driver,
                 'label' => 'flat',
@@ -236,16 +238,16 @@ final class SeedPipeline
             ]);
         }
 
-        self::applySqlDir($pdo, $seedDir . '/schema', 'schema', 'schema', [
+        SqlSeedExecutor::applySqlDir($pdo, $seedDir . '/schema', 'schema', 'schema', [
             'driver' => $driver,
             'db_driver' => $driver,
         ]);
-        self::applySqlDir($pdo, $seedDir . '/base', 'base', 'base', [
+        SqlSeedExecutor::applySqlDir($pdo, $seedDir . '/base', 'base', 'base', [
             'driver' => $driver,
             'db_driver' => $driver,
         ]);
-        self::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
-        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
+        SqlSeedExecutor::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
+        SqlSeedExecutor::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
 
         echo "Seed pipeline por capas aplicado correctamente\n";
         return 0;
@@ -351,57 +353,11 @@ final class SeedPipeline
             'skip_validations_after_extras' => $skipPostValidations,
         ]);
 
-        self::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
-        self::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
+        SqlSeedExecutor::applyRequestedMigrations($pdo, $seedDir, $migrations, $driver);
+        SqlSeedExecutor::applyPostValidations($pdo, $seedDir, $migrations, $skipPostValidations, $driver);
 
         echo "Seed pipeline snapshot aplicado correctamente\n";
         return 0;
-    }
-
-    /**
-     * @param array<int,string> $migrations
-     */
-    private static function applyPostValidations(PDO $pdo, string $seedDir, array $migrations, bool $skipPostValidations, string $driver): void
-    {
-        if (!($migrations !== [] && $skipPostValidations)) {
-            self::applySqlDirIfExists($pdo, $seedDir . '/validations', 'validations', 'validations', [
-                'driver' => $driver,
-                'db_driver' => $driver,
-            ]);
-            return;
-        }
-
-        Trace::log('seed.validations.skipped', [
-            'reason' => 'TEST_SEED_SKIP_VALIDATIONS_AFTER_EXTRAS=1',
-            'migrations' => $migrations,
-        ]);
-    }
-
-    /**
-     * @param array<int,string> $migrations
-     */
-    private static function applyRequestedMigrations(PDO $pdo, string $seedDir, array $migrations, string $driver): void
-    {
-        foreach ($migrations as $migration) {
-            try {
-                $migrationDir = self::resolveMigrationDir($seedDir, $migration);
-            } catch (\Throwable $e) {
-                throw SeedFailure::wrap($e, 'No se pudo resolver el directorio de migración solicitado.', [
-                    'stage' => 'migration',
-                    'driver' => $driver,
-                    'db_driver' => $driver,
-                    'label' => 'migration ' . $migration,
-                    'hint' => 'Revisá que el directorio exista dentro de test/seeds/<driver>/migrations.',
-                ]);
-            }
-
-            self::applySqlDir($pdo, $migrationDir, 'migration ' . $migration, 'migration', [
-                'driver' => $driver,
-                'db_driver' => $driver,
-                'label' => 'migration ' . $migration,
-                'migration' => $migration,
-            ]);
-        }
     }
 
     /**
@@ -445,252 +401,6 @@ final class SeedPipeline
     }
 
     /**
-     * @param array<string,mixed> $context
-     */
-    private static function applySqlDirIfExists(PDO $pdo, string $dir, string $label, string $stage = 'sql', array $context = []): void
-    {
-        if (!is_dir($dir)) {
-            Trace::log('sql.dir.skip_missing', [
-                'label' => $label,
-                'dir' => self::realPathOrOriginal($dir),
-            ]);
-            return;
-        }
-
-        self::applySqlDir($pdo, $dir, $label, $stage, $context);
-    }
-
-    /**
-     * @param array<string,mixed> $context
-     */
-    private static function applySqlDir(PDO $pdo, string $dir, string $label, string $stage = 'sql', array $context = []): void
-    {
-        if (!is_dir($dir)) {
-            throw new SeedFailure('No existe el directorio SQL requerido para esta fase del seed.', array_merge($context, [
-                'stage' => $stage,
-                'label' => $label,
-                'db_name' => self::currentDatabaseName($pdo),
-                'file' => self::realPathOrOriginal($dir),
-                'hint' => 'Revisá la estructura de test/seeds y que el directorio esperado exista antes de bootstrapping.',
-            ]));
-        }
-
-        $files = self::listSqlFiles($dir);
-        Trace::log('sql.dir.resolve', [
-            'label' => $label,
-            'dir' => self::realPathOrOriginal($dir),
-            'count' => count($files),
-            'files' => self::normalizePaths($files),
-        ]);
-
-        if ($files === []) {
-            echo "==> {$label}: sin archivos SQL\n";
-            return;
-        }
-
-        $suffix = count($files) === 1 ? '1 sql' : count($files) . ' sql';
-        echo "==> {$label} ({$suffix})\n";
-
-        if (self::seedVerbose()) {
-            foreach ($files as $file) {
-                echo "==> {$file}\n";
-            }
-        }
-
-        foreach ($files as $file) {
-            self::applySqlFile($pdo, $file, $stage, array_merge($context, [
-                'label' => $label,
-            ]));
-        }
-    }
-
-    /**
-     * @param array<string,mixed> $context
-     */
-    private static function applySqlFile(PDO $pdo, string $file, string $stage = 'sql', array $context = []): void
-    {
-        $baseContext = array_merge($context, [
-            'stage' => $stage,
-            'file' => self::realPathOrOriginal($file),
-            'db_name' => self::currentDatabaseName($pdo),
-        ]);
-
-        $sql = file_get_contents($file);
-        if ($sql === false) {
-            throw new SeedFailure('No se pudo leer el archivo SQL del seed.', array_merge($baseContext, [
-                'hint' => 'Verificá permisos de lectura y que el archivo exista dentro del contenedor/entorno donde corre testkit.',
-            ]));
-        }
-
-        if (trim($sql) === '') {
-            Trace::log('sql.file.skip_empty', [
-                'file' => self::realPathOrOriginal($file),
-            ]);
-            return;
-        }
-
-        if (preg_match('/^\s*DELIMITER\s+/mi', $sql) === 1) {
-            throw new SeedFailure('El archivo SQL contiene DELIMITER y no puede ejecutarse desde testkit.', array_merge($baseContext, [
-                'hint' => 'Convertí procedimientos/triggers a un formato compatible o materializalos fuera del runner SQL plano.',
-            ]));
-        }
-
-        $statements = self::splitSqlStatements($sql);
-        Trace::log('sql.file.start', [
-            'file' => self::realPathOrOriginal($file),
-            'statements' => count($statements),
-        ]);
-
-        $executed = 0;
-        try {
-            foreach ($statements as $index => $statement) {
-                self::executeStatement($pdo, $statement);
-                $executed = $index + 1;
-            }
-        } catch (\Throwable $e) {
-            $failedIndex = $executed + 1;
-            $statement = isset($statements[$executed]) ? (string)$statements[$executed] : '';
-            $errorContext = array_merge($baseContext, [
-                'statement_index' => $failedIndex,
-                'statement_count' => count($statements),
-                'statement_excerpt' => self::statementExcerpt($statement),
-                'hint' => self::hintForSqlFailure($stage, (string)($baseContext['label'] ?? ''), $e->getMessage()),
-            ], self::sqlErrorContext($e));
-
-            Trace::log('sql.file.fail', [
-                'file' => self::realPathOrOriginal($file),
-                'statement_index' => $failedIndex,
-                'statement_count' => count($statements),
-                'error' => $e->getMessage(),
-            ]);
-
-            throw SeedFailure::wrap($e, 'Falló la ejecución de una sentencia SQL del seed.', $errorContext);
-        }
-
-        Trace::log('sql.file.ok', [
-            'file' => self::realPathOrOriginal($file),
-            'statements' => count($statements),
-        ]);
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function listFlatFiles(string $seedDir): array
-    {
-        $files = self::listSqlFiles($seedDir);
-        if ($files !== []) {
-            return $files;
-        }
-
-        return self::listSqlFiles($seedDir . '/seeds');
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function listSqlFiles(string $dir): array
-    {
-        if (!is_dir($dir)) {
-            return [];
-        }
-
-        $files = glob(rtrim($dir, '/\\') . '/*.sql') ?: [];
-        sort($files, SORT_NATURAL);
-        return array_values($files);
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function parseCsvEnv(string $name): array
-    {
-        $raw = trim((string)(getenv($name) ?: ''));
-        if ($raw === '') {
-            return [];
-        }
-
-        $parts = array_map('trim', explode(',', $raw));
-        $parts = array_values(array_filter($parts, static fn(string $value): bool => $value !== ''));
-        return array_values(array_unique($parts));
-    }
-
-    private static function envBool(string $name, bool $default = false): bool
-    {
-        $raw = getenv($name);
-        if ($raw === false) {
-            return $default;
-        }
-
-        return in_array(strtolower(trim((string)$raw)), ['1', 'true', 'yes', 'on'], true);
-    }
-
-    /**
-     * @return array<int,string>
-     */
-    private static function splitSqlStatements(string $sql): array
-    {
-        $lines = preg_split('/\R/', $sql) ?: [];
-        $buffer = '';
-        $statements = [];
-        $insideCompoundStatement = false;
-
-        foreach ($lines as $line) {
-            $trimmed = ltrim($line);
-            if ($buffer === '' && ($trimmed === '' || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#'))) {
-                continue;
-            }
-
-            if (!$insideCompoundStatement && preg_match('/^\s*CREATE\s+(TRIGGER|PROCEDURE|FUNCTION|EVENT)\b/i', $line) === 1) {
-                $insideCompoundStatement = true;
-            }
-
-            $buffer .= $line . "\n";
-
-            if ($insideCompoundStatement) {
-                if (preg_match('/\bEND\s*;\s*$/i', $line) === 1) {
-                    $statement = trim($buffer);
-                    if ($statement !== '') {
-                        $statements[] = $statement;
-                    }
-                    $buffer = '';
-                    $insideCompoundStatement = false;
-                }
-                continue;
-            }
-
-            if (preg_match('/;\s*$/', $line) === 1) {
-                $statement = trim($buffer);
-                if ($statement !== '') {
-                    $statements[] = $statement;
-                }
-                $buffer = '';
-            }
-        }
-
-        $tail = trim($buffer);
-        if ($tail !== '') {
-            $statements[] = $tail;
-        }
-
-        return $statements;
-    }
-
-    private static function executeStatement(PDO $pdo, string $statement): void
-    {
-        if (preg_match('/^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN|WITH)\b/i', $statement) === 1) {
-            $result = $pdo->query($statement);
-            if ($result !== false) {
-                $result->fetchAll(PDO::FETCH_ASSOC);
-                $result->closeCursor();
-            }
-            return;
-        }
-
-        $pdo->exec($statement);
-    }
-
-    /**
      * @param array<string,mixed>|null $resolvedSnapshot
      */
     private static function traceBootstrapContext(
@@ -717,25 +427,6 @@ final class SeedPipeline
             'TK_REPO_ROOT' => (string)(getenv('TK_REPO_ROOT') ?: ''),
             'TEST_MATCH' => (string)(getenv('TEST_MATCH') ?: ''),
         ]);
-    }
-
-    private static function resolveMigrationDir(string $seedDir, string $migration): string
-    {
-        $migrationDir = $seedDir . '/migrations/' . $migration;
-        Trace::log('migration.resolve', [
-            'migration' => $migration,
-            'requested_dir' => $migrationDir,
-            'resolved_dir' => self::realPathOrOriginal($migrationDir),
-            'exists' => is_dir($migrationDir),
-        ]);
-
-        if (!is_dir($migrationDir)) {
-            throw new RuntimeException(
-                'Migracion solicitada no existe: ' . $migration . ' (' . $migrationDir . ')'
-            );
-        }
-
-        return $migrationDir;
     }
 
     /**
@@ -808,88 +499,4 @@ final class SeedPipeline
         return '';
     }
 
-    /**
-     * @return array<string,mixed>
-     */
-    private static function sqlErrorContext(\Throwable $error): array
-    {
-        $context = [];
-
-        if ($error instanceof \PDOException) {
-            $errorInfo = is_array($error->errorInfo ?? null) ? $error->errorInfo : [];
-            $sqlState = trim((string)($errorInfo[0] ?? ''));
-            $driverCode = trim((string)($errorInfo[1] ?? ''));
-            $driverMessage = trim((string)($errorInfo[2] ?? ''));
-
-            if ($sqlState !== '') {
-                $context['sqlstate'] = $sqlState;
-            }
-            if ($driverCode !== '') {
-                $context['driver_code'] = $driverCode;
-            }
-            if ($driverMessage !== '') {
-                $context['driver_message'] = $driverMessage;
-            }
-        }
-
-        $fallbackCode = trim((string)$error->getCode());
-        if ($fallbackCode !== '' && !isset($context['sqlstate'])) {
-            $context['sqlstate'] = $fallbackCode;
-        }
-
-        return $context;
-    }
-
-    private static function statementExcerpt(string $statement, int $maxLen = 220): string
-    {
-        $statement = trim((string)preg_replace('/\s+/', ' ', trim($statement)));
-        if ($statement === '') {
-            return '';
-        }
-
-        if (mb_strlen($statement) <= $maxLen) {
-            return $statement;
-        }
-
-        return mb_substr($statement, 0, $maxLen - 3) . '...';
-    }
-
-    private static function hintForSqlFailure(string $stage, string $label, string $errorMessage): string
-    {
-        $normalized = strtolower($errorMessage);
-
-        if (str_contains($normalized, 'unknown column') || str_contains($normalized, 'doesn\'t exist')) {
-            return 'La sentencia referencia una columna u objeto inexistente. Revisá el orden entre schema/base/migrations y el baseline desde el que parte la DB.';
-        }
-
-        if (str_contains($normalized, 'duplicate') || str_contains($normalized, 'already exists')) {
-            return 'El seed intenta crear algo que ya existe. Revisá idempotencia del SQL o residuos de una corrida previa al reset.';
-        }
-
-        if (str_contains($normalized, 'foreign key') || str_contains($normalized, 'constraint fails')) {
-            return 'Hay una violación de integridad. Revisá orden de inserts, datos base requeridos y relaciones creadas en schema.';
-        }
-
-        if ($stage === 'schema') {
-            return 'El fallo ocurrió en schema. Revisá DDL, compatibilidad con el engine y dependencia entre objetos creados.';
-        }
-
-        if ($stage === 'base') {
-            return 'El fallo ocurrió en base. Revisá datos iniciales, columnas esperadas por el schema y dependencias entre inserts.';
-        }
-
-        if ($stage === 'migration') {
-            return 'El fallo ocurrió dentro de una migración opcional o pendiente. Revisá el estado de partida del baseline y qué migraciones ya estaban absorbidas.';
-        }
-
-        if ($stage === 'validations') {
-            return 'El fallo ocurrió en validations. Revisá que el estado final esperado del baseline coincida con schema/base/migrations aplicadas.';
-        }
-
-        if ($label !== '') {
-            return 'Revisá la fase ' . $label . ' y el contrato estructural esperado antes de correr tests funcionales.';
-        }
-
-        return 'Revisá la sentencia SQL fallida, el estado real de la DB y el orden de ejecución del seed.';
-    }
 }

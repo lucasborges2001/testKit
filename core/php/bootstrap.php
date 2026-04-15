@@ -28,6 +28,8 @@ require_once __DIR__ . '/seeding/BaselineReuseDecider.php';
 require_once __DIR__ . '/seeding/ManifestPlanBuilder.php';
 require_once __DIR__ . '/seeding/MigrationCatalog.php';
 require_once __DIR__ . '/seeding/MigrationPlanResolver.php';
+require_once __DIR__ . '/seeding/SqlFailureHintResolver.php';
+require_once __DIR__ . '/seeding/SqlSeedExecutor.php';
 require_once __DIR__ . '/seeding/SuiteSeedState.php';
 
 require_once __DIR__ . '/reporting/UI.php';
