@@ -20,6 +20,7 @@ TESTKIT_HOST_GID="${TESTKIT_HOST_GID:-$(id -g)}"
 
 DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
 TESTKIT_COMPOSE_VERBOSE="${TESTKIT_COMPOSE_VERBOSE:-0}"
+TESTKIT_COMPOSE_FILTER="${TESTKIT_COMPOSE_FILTER:-1}"
 
 pick_env_file() {
   local override="${TESTKIT_ENV_FILE:-}"
@@ -179,25 +180,79 @@ compose_status_noise() {
   return 1
 }
 
-filter_compose_stderr() {
-  local line
-  while IFS= read -r line; do
-    line="${line%$'\r'}"
-    if compose_status_noise "$line"; then
-      continue
-    fi
-    printf '%s\n' "$line" >&2
-  done
-}
-
 run_docker_compose() {
-  if [[ "$TESTKIT_COMPOSE_VERBOSE" == "1" ]]; then
+  if [[ "$TESTKIT_COMPOSE_VERBOSE" == "1" || "$TESTKIT_COMPOSE_FILTER" == "0" ]]; then
     docker compose "$@"
     return $?
   fi
 
-  docker compose "$@" 2> >(tr '\r' '\n' | filter_compose_stderr)
+  if ! command -v python3 >/dev/null 2>&1; then
+    docker compose --ansi never "$@"
+    return $?
+  fi
+
+  python3 - "$@" <<'PY'
+import re
+import subprocess
+import sys
+
+noise_patterns = [
+    r'^\[\+\]',
+    r'^\s*✔\s+Container\s+.*\s+(?:Running|Healthy|Created|Started|Recreated)\s+[0-9.]+s\s*$',
+    r'^Container\s+.*\s(?:Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)\s*$',
+    r'^Found\s+orphan\s+containers',
+    r'^To\s+remove\s+them,\s+run\s+this\s+command\s+with\s+the\s+--remove-orphans\s+flag\.\s*$',
+]
+
+
+def is_noise(line: str) -> bool:
+    line = line.rstrip('\r')
+    if not line:
+        return False
+    return any(re.match(pattern, line) for pattern in noise_patterns)
+
+cmd = ['docker', 'compose', '--ansi', 'never', *sys.argv[1:]]
+proc = subprocess.Popen(
+    cmd,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    bufsize=0,
+)
+assert proc.stdout is not None
+buffer = bytearray()
+
+while True:
+    chunk = proc.stdout.read(1)
+    if not chunk:
+        break
+    if chunk == b'\r':
+        line = buffer.decode('utf-8', errors='replace')
+        buffer.clear()
+        if line and not is_noise(line):
+            sys.stdout.write(line + '\n')
+            sys.stdout.flush()
+        continue
+    if chunk == b'\n':
+        line = buffer.decode('utf-8', errors='replace')
+        buffer.clear()
+        if not is_noise(line):
+            sys.stdout.write(line + '\n')
+            sys.stdout.flush()
+        continue
+    buffer.extend(chunk)
+
+if buffer:
+    line = buffer.decode('utf-8', errors='replace')
+    if not is_noise(line):
+        sys.stdout.write(line)
+        if not line.endswith('\n'):
+            sys.stdout.write('\n')
+        sys.stdout.flush()
+
+sys.exit(proc.wait())
+PY
 }
+
 
 repair_derived_artifact_ownership_if_needed() {
   artifact_ownership_needs_repair || return 0
