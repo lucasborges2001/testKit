@@ -22,7 +22,10 @@ $tests = [
     'Store resource lock'                => __DIR__ . '/test_store_resource_lock.php',
     'Manifest atomic write'              => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'          => __DIR__ . '/test_reporting_contract.php',
-    'Meta Action Required per suite'     => __DIR__ . '/test_meta_action_required_renderer.php',
+    'ConsoleReporter compact pass'       => __DIR__ . '/test_console_reporter_compact_pass.php',
+    'Bootstrap visual dedupe'            => __DIR__ . '/test_bootstrap_visual_dedupe.php',
+    'Meta action required renderer'      => __DIR__ . '/test_meta_action_required_renderer.php',
+    'Meta rerun plan fallback'           => __DIR__ . '/test_meta_rerun_plan_fallback.php',
 ];
 
 $pass   = 0;

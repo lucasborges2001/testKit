@@ -91,7 +91,7 @@ final class MetaRunner
                     $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
                     $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
                     $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
-                    $suiteRow['rerun_plan'] = is_array($suiteReport['rerun_plan'] ?? null) ? $suiteReport['rerun_plan'] : [];
+                    $suiteRow['rerun_plan'] = self::suiteRerunPlanFromReport($suiteReport);
                 }
 
                 $suiteRows[] = $suiteRow;
@@ -162,6 +162,48 @@ final class MetaRunner
         }
     }
 
+    public static function suiteRerunPlanFromReport(array $suiteReport): array
+    {
+        $plan = is_array($suiteReport['rerun_plan'] ?? null)
+            ? array_values(array_filter($suiteReport['rerun_plan'], 'is_array'))
+            : [];
+        if ($plan !== []) {
+            return $plan;
+        }
+
+        $actions = is_array($suiteReport['recommended_actions'] ?? null)
+            ? array_values(array_filter($suiteReport['recommended_actions'], 'is_array'))
+            : [];
+        foreach ($actions as $action) {
+            $kind = trim((string)($action['kind'] ?? ''));
+            $command = trim((string)($action['command'] ?? ''));
+            if ($kind !== 'rerun_filtered' || $command === '') {
+                continue;
+            }
+
+            return [[
+                'command' => $command,
+                'reason' => trim((string)($action['reason'] ?? '')),
+            ]];
+        }
+
+        $firstFailure = is_array($suiteReport['first_failure'] ?? null)
+            ? $suiteReport['first_failure']
+            : ReportSummary::firstFailure($suiteReport);
+        if (is_array($firstFailure)) {
+            $file = trim((string)($firstFailure['file'] ?? ''));
+            $suiteId = trim((string)($firstFailure['suite_id'] ?? $suiteReport['suite_id'] ?? ''));
+            if ($file !== '' && $suiteId !== '') {
+                return [[
+                    'command' => "TEST_MATCH='" . self::shellSingleQuote($file) . "' php runTest.php " . str_replace('_', '-', $suiteId),
+                    'reason' => 'aislar el primer archivo fallido',
+                ]];
+            }
+        }
+
+        return [];
+    }
+
     private static function runSuite(string $suiteId): int
     {
         return match ($suiteId) {
@@ -188,6 +230,11 @@ final class MetaRunner
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    private static function shellSingleQuote(string $value): string
+    {
+        return str_replace("'", "'\\''", $value);
     }
 
     /**
