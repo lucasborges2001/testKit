@@ -128,6 +128,11 @@ final class SeedPipeline
         return is_dir($seedDir . '/schema') && is_dir($seedDir . '/base');
     }
 
+    private static function seedVerbose(): bool
+    {
+        return self::envBool('TESTKIT_SEED_VERBOSE', false);
+    }
+
     private static function runFlat(string $driver, string $seedDir): int
     {
         $files = self::listFlatFiles($seedDir);
@@ -736,7 +741,15 @@ final class SeedPipeline
             return;
         }
 
-        echo "==> {$label}\n";
+        $suffix = count($files) === 1 ? '1 sql' : count($files) . ' sql';
+        echo "==> {$label} ({$suffix})\n";
+
+        if (self::seedVerbose()) {
+            foreach ($files as $file) {
+                echo "==> {$file}\n";
+            }
+        }
+
         foreach ($files as $file) {
             self::applySqlFile($pdo, $file, $stage, array_merge($context, [
                 'label' => $label,
@@ -781,7 +794,6 @@ final class SeedPipeline
             'statements' => count($statements),
         ]);
 
-        echo "==> {$file}\n";
         $executed = 0;
         try {
             foreach ($statements as $index => $statement) {

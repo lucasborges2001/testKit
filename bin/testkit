@@ -19,6 +19,7 @@ TESTKIT_HOST_UID="${TESTKIT_HOST_UID:-$(id -u)}"
 TESTKIT_HOST_GID="${TESTKIT_HOST_GID:-$(id -g)}"
 
 DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
+TESTKIT_COMPOSE_VERBOSE="${TESTKIT_COMPOSE_VERBOSE:-0}"
 
 pick_env_file() {
   local override="${TESTKIT_ENV_FILE:-}"
@@ -88,7 +89,7 @@ normalize_stack_csv() {
   fi
 
   local out=()
-  local seen=","
+  local seen="," 
   local IFS=','
   read -r -a parts <<< "$raw"
   for part in "${parts[@]}"; do
@@ -117,7 +118,7 @@ normalize_stack_csv() {
   local joined=""
   local i
   for i in "${!out[@]}"; do
-    [[ $i -gt 0 ]] && joined+=","
+    [[ $i -gt 0 ]] && joined+="," 
     joined+="${out[$i]}"
   done
   echo "$joined"
@@ -163,6 +164,39 @@ artifact_ownership_needs_repair() {
   done < <(artifact_paths_for_repair)
 
   return 1
+}
+
+compose_status_noise() {
+  local line="${1%$'\r'}"
+  [[ -z "$line" ]] && return 1
+
+  [[ "$line" =~ ^\[\+\] ]] && return 0
+  [[ "$line" =~ ^[[:space:]]*✔[[:space:]]+Container[[:space:]].*[[:space:]]+(Running|Healthy|Created|Started|Recreated)[[:space:]]+[0-9.]+s[[:space:]]*$ ]] && return 0
+  [[ "$line" =~ ^Container[[:space:]].*[[:space:]](Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)[[:space:]]*$ ]] && return 0
+  [[ "$line" =~ ^Found[[:space:]]orphan[[:space:]]containers ]] && return 0
+  [[ "$line" =~ ^To[[:space:]]remove[[:space:]]them,[[:space:]]run[[:space:]]this[[:space:]]command[[:space:]]with[[:space:]]the[[:space:]]--remove-orphans[[:space:]]flag\.[[:space:]]*$ ]] && return 0
+
+  return 1
+}
+
+filter_compose_stderr() {
+  local line
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    if compose_status_noise "$line"; then
+      continue
+    fi
+    printf '%s\n' "$line" >&2
+  done
+}
+
+run_docker_compose() {
+  if [[ "$TESTKIT_COMPOSE_VERBOSE" == "1" ]]; then
+    docker compose "$@"
+    return $?
+  fi
+
+  docker compose "$@" 2> >(tr '\r' '\n' | filter_compose_stderr)
 }
 
 repair_derived_artifact_ownership_if_needed() {
@@ -249,6 +283,7 @@ _dump_config() {
   echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
   echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
   echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
+  echo "TESTKIT_COMPOSE_VERBOSE: ${TESTKIT_COMPOSE_VERBOSE}"
   echo ""
 }
 
@@ -442,9 +477,11 @@ repair_derived_artifact_ownership_if_needed
 
 if [[ "${1:-}" == "inspect" ]]; then
   shift
-  exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" run --rm testkit php /workspace/testkit/scripts/inspect.php "$@"
+  run_docker_compose --env-file "$ENV_FILE" "${FILES[@]}" run --rm testkit php /workspace/testkit/scripts/inspect.php "$@"
+  exit $?
 fi
 
 mapfile -d '' -t REWRITTEN_ARGS < <(rewrite_run_command_args "$@")
 
-exec docker compose --env-file "$ENV_FILE" "${FILES[@]}" "${REWRITTEN_ARGS[@]}"
+run_docker_compose --env-file "$ENV_FILE" "${FILES[@]}" "${REWRITTEN_ARGS[@]}"
+exit $?
