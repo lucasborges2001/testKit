@@ -9,13 +9,11 @@ use Testkit\Core\Common\Trace;
 
 require_once __DIR__ . '/MigrationCatalog.php';
 require_once __DIR__ . '/MigrationStateResolver.php';
+require_once __DIR__ . '/SeedMigrationPlan.php';
 
 final class MigrationPlanResolver
 {
-    /**
-     * @return array{0: array<int,string>, 1: string, 2: bool, 3: array<string,mixed>}
-     */
-    public static function resolve(PDO $pdo, string $seedDir, string $baselineMode): array
+    public static function resolve(PDO $pdo, string $seedDir, string $baselineMode): SeedMigrationPlan
     {
         $rawMigrations = (string)(getenv('TEST_SEED_MIGRATIONS') ?: '');
         $requested = MigrationCatalog::normalizeSelectedExecutables($seedDir, self::parseCsvEnv('TEST_SEED_MIGRATIONS'));
@@ -40,7 +38,7 @@ final class MigrationPlanResolver
                 'state' => $migrationState,
             ]);
 
-            return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
+            return new SeedMigrationPlan($planned, $rawMigrations, $skipPostValidations, $migrationState);
         }
 
         $migrationState = MigrationStateResolver::resolve($pdo, $seedDir);
@@ -61,7 +59,7 @@ final class MigrationPlanResolver
             'state' => $migrationState,
         ]);
 
-        return [$planned, $rawMigrations, $skipPostValidations, $migrationState];
+        return new SeedMigrationPlan($planned, $rawMigrations, $skipPostValidations, $migrationState);
     }
 
     /**

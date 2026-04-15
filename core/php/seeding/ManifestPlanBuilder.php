@@ -29,7 +29,10 @@ final class ManifestPlanBuilder
         try {
             $adapter = StoreRegistry::fromDriver($driver);
             $pdo = $adapter->connect();
-            [$migrations, , $skipPostValidations, $migrationState] = MigrationPlanResolver::resolve($pdo, $seedDir, $baselineMode);
+            $migrationPlan = MigrationPlanResolver::resolve($pdo, $seedDir, $baselineMode);
+            $migrations = $migrationPlan->migrations();
+            $skipPostValidations = $migrationPlan->skipPostValidations();
+            $migrationState = $migrationPlan->migrationState();
         } catch (\Throwable $e) {
             if ($baselineMode === 'snapshot' && $e instanceof RuntimeException) {
                 throw $e;
