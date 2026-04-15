@@ -23,7 +23,11 @@ require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
 require_once __DIR__ . '/store/bootstrap.php';
 require_once __DIR__ . '/seeding/BaselineManifest.php';
+require_once __DIR__ . '/seeding/BaselineModeResolver.php';
+require_once __DIR__ . '/seeding/BaselineReuseDecider.php';
+require_once __DIR__ . '/seeding/ManifestPlanBuilder.php';
 require_once __DIR__ . '/seeding/MigrationCatalog.php';
+require_once __DIR__ . '/seeding/MigrationPlanResolver.php';
 require_once __DIR__ . '/seeding/SuiteSeedState.php';
 
 require_once __DIR__ . '/reporting/UI.php';
@@ -44,11 +48,11 @@ require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';
 require_once __DIR__ . '/reporting/ConsoleReporter.php';
 require_once __DIR__ . '/reporting/HistoryRepository.php';
-require_once __DIR__ . '/reporting/FailureDelta.php';
-require_once __DIR__ . '/reporting/ReportFileNamer.php';
 require_once __DIR__ . '/reporting/AtomicJsonWriter.php';
 require_once __DIR__ . '/reporting/ReportDecorator.php';
+require_once __DIR__ . '/reporting/ReportFileNamer.php';
 require_once __DIR__ . '/reporting/RunIndexWriter.php';
+require_once __DIR__ . '/reporting/FailureDelta.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';
 require_once __DIR__ . '/reporting/AgentRunArtifact.php';
 require_once __DIR__ . '/reporting/Inspector.php';
