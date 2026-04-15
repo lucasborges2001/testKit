@@ -74,6 +74,8 @@ require_once __DIR__ . '/reporting/Inspector.php';
 require_once __DIR__ . '/reporting/AgentRunExecute.php';
 require_once __DIR__ . '/reporting/AgentRun.php';
 
+require_once __DIR__ . '/suites/SuiteSelection.php';
+require_once __DIR__ . '/suites/SuiteOperationalFailure.php';
 require_once __DIR__ . '/suites/SuiteOrchestrator.php';
 require_once __DIR__ . '/suites/ContractWorldBootstrap.php';
 require_once __DIR__ . '/suites/TargetResolver.php';

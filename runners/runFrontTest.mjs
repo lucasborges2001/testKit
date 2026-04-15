@@ -6,9 +6,9 @@
  * - Consume una selección precomputada desde PHP cuando está disponible.
  * - Soporta loader ESM para redirigir imports test/front -> <TK_PUBLIC_DIR>.
  * - Soporta paralelismo por archivos (TEST_JOBS).
- * - Escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx configurable por TEST_REPORT_KEEP).
+ * - Puede emitir un payload JSON bruto para que PHP sea dueño del reporting final.
+ * - En modo standalone escribe <suite>_latest.json + <suite>_YYYYmmdd_HHmmss.json y rota (máx configurable por TEST_REPORT_KEEP).
  * - Mantiene `runs_latest.json` como índice compacto de corridas recientes.
- * - Cuando TESTKIT_FRONT_JS_RESULT_FILE está definido, emite el payload bruto a ese archivo y deja la persistencia final a PHP.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -51,13 +51,13 @@ const reportKeep = Math.max(1, parseInt(process.env.TEST_REPORT_KEEP || "5", 10)
 const runsIndexKeep = Math.max(1, parseInt(process.env.TEST_RUNS_INDEX_KEEP || String(reportKeep), 10) || reportKeep);
 const envRunId = (process.env.TEST_RUN_ID || "").trim();
 const envMetaRunId = (process.env.TEST_META_RUN_ID || "").trim();
+const emittedResultFile = (process.env.TESTKIT_FRONT_JS_RESULT_FILE || "").trim();
 
 const envReportRoot = process.env.TESTKIT_REPORT_ROOT || "";
 const envModuleScope = process.env.TESTKIT_SELECTED_MODULE_SCOPE || "";
 const envReportScopeRel = process.env.TESTKIT_REPORT_SCOPE_REL || "";
 const legacyReportFile = process.env.TESTKIT_REPORT_FILE || "";
 const selectedTestsFile = process.env.TESTKIT_SELECTED_TESTS_FILE || "";
-const resultFile = process.env.TESTKIT_FRONT_JS_RESULT_FILE || "";
 
 const VALID_SCOPES = new Set(["unit", "integration", "e2e", "all"]);
 if (!VALID_SCOPES.has(scope)) {
@@ -85,7 +85,7 @@ function norm(p) {
 }
 
 function buildRunId() {
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(".000Z", "Z").replace(".","").replace("T", "T");
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(".000Z", "Z").replace(".", "").replace("T", "T");
   return `${stamp}_${crypto.randomBytes(3).toString("hex")}`;
 }
 
@@ -627,6 +627,14 @@ function buildReport({ startedAt, startedMs, tests, passed, failed, skipped, exi
 
 function writeReport(report, reportRoot) {
   try {
+    const json = JSON.stringify(report, null, 2);
+
+    if (emittedResultFile) {
+      fs.mkdirSync(path.dirname(emittedResultFile), { recursive: true });
+      fs.writeFileSync(emittedResultFile, json, "utf8");
+      return;
+    }
+
     fs.mkdirSync(reportRoot, { recursive: true });
     const now = new Date();
     const ts = now.toISOString().replace(/-/g, "").replace(/:/g, "").replace("T", "_").slice(0, 15);
@@ -650,43 +658,22 @@ function writeReport(report, reportRoot) {
       },
     };
 
-    const json = JSON.stringify(decorated, null, 2);
+    const decoratedJson = JSON.stringify(decorated, null, 2);
 
-    fs.writeFileSync(latestPath, json, "utf8");
-    fs.writeFileSync(tsPath, json, "utf8");
+    fs.writeFileSync(latestPath, decoratedJson, "utf8");
+    fs.writeFileSync(tsPath, decoratedJson, "utf8");
     pruneOldRuns(reportRoot, suiteIdSafe, reportKeep);
     updateRunsIndex(reportRoot, buildRunsIndexEntry(decorated, latestPath, tsPath), runsIndexKeep);
 
     if (legacyReportFile && norm(legacyReportFile) !== norm(latestPath)) {
       try {
         fs.mkdirSync(path.dirname(legacyReportFile), { recursive: true });
-        fs.writeFileSync(legacyReportFile, json, "utf8");
+        fs.writeFileSync(legacyReportFile, decoratedJson, "utf8");
       } catch { /* ignore */ }
     }
   } catch (err) {
     console.error(`WARN: no se pudo escribir reporte (${reportRoot}): ${err?.message || err}`);
   }
-}
-
-function emitRawReport(report) {
-  if (!resultFile) return;
-
-  try {
-    fs.mkdirSync(path.dirname(resultFile), { recursive: true });
-    fs.writeFileSync(resultFile, JSON.stringify(report, null, 2), "utf8");
-  } catch (err) {
-    console.error(`WARN: no se pudo emitir payload JS (${resultFile}): ${err?.message || err}`);
-    process.exit(PVT_EXIT_ERROR);
-  }
-}
-
-function persistReport(report, reportRoot) {
-  if (resultFile) {
-    emitRawReport(report);
-    return;
-  }
-
-  writeReport(report, reportRoot);
 }
 
 function loadSelectedEntries() {
@@ -769,7 +756,7 @@ if (!testEntries.length) {
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
     reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: false,
   });
-  persistReport(report, computedReportRoot);
+  writeReport(report, computedReportRoot);
   process.exit(exitCode);
 }
 
@@ -811,7 +798,7 @@ if (listOnly) {
     reportRoot: computedReportRoot, moduleScope: computedModuleScope,
     reportScopeRel: computedReportScopeRel, commonDir: computedCommonDir, listMode: true,
   });
-  persistReport(report, computedReportRoot);
+  writeReport(report, computedReportRoot);
   process.exit(PVT_EXIT_PASS);
 }
 
@@ -992,6 +979,6 @@ const report = buildReport({
   commonDir: computedCommonDir,
   listMode: false,
 });
-persistReport(report, computedReportRoot);
+writeReport(report, computedReportRoot);
 
 process.exit(exitCode);
