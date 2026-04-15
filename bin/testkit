@@ -173,7 +173,7 @@ compose_status_noise() {
 
   [[ "$line" =~ ^\[\+\] ]] && return 0
   [[ "$line" =~ ^[[:space:]]*✔[[:space:]]+Container[[:space:]].*[[:space:]]+(Running|Healthy|Created|Started|Recreated)[[:space:]]+[0-9.]+s[[:space:]]*$ ]] && return 0
-  [[ "$line" =~ ^Container[[:space:]].*[[:space:]](Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)[[:space:]]*$ ]] && return 0
+  [[ "$line" =~ ^[[:space:]]*Container[[:space:]].*[[:space:]](Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)[[:space:]]*$ ]] && return 0
   [[ "$line" =~ ^Found[[:space:]]orphan[[:space:]]containers ]] && return 0
   [[ "$line" =~ ^To[[:space:]]remove[[:space:]]them,[[:space:]]run[[:space:]]this[[:space:]]command[[:space:]]with[[:space:]]the[[:space:]]--remove-orphans[[:space:]]flag\.[[:space:]]*$ ]] && return 0
 
@@ -199,7 +199,7 @@ import sys
 noise_patterns = [
     r'^\[\+\]',
     r'^\s*✔\s+Container\s+.*\s+(?:Running|Healthy|Created|Started|Recreated)\s+[0-9.]+s\s*$',
-    r'^Container\s+.*\s(?:Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)\s*$',
+    r'^\s*Container\s+.*\s(?:Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)\s*$',
     r'^Found\s+orphan\s+containers',
     r'^To\s+remove\s+them,\s+run\s+this\s+command\s+with\s+the\s+--remove-orphans\s+flag\.\s*$',
 ]
