@@ -165,7 +165,7 @@ final class FrontJsSuite
             );
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
             $result = ReportSummary::enrichReport($result);
-            ResultWriter::writeSuite($result);
+            self::safeWriteSuite($result, 'front_js.operational_failure');
             return SuiteExecutor::EXIT_ERROR;
         } finally {
             $lockLease?->release();
@@ -245,7 +245,7 @@ final class FrontJsSuite
         $report = SuiteSeedState::attachToReport($report, Paths::repoRoot());
         $report = ReportSummary::enrichReport($report);
 
-        ResultWriter::writeSuite($report);
+        self::safeWriteSuite($report, 'front_js.enrichLatestReport');
     }
 
     /**
@@ -402,6 +402,20 @@ final class FrontJsSuite
     }
 
     /**
+     * @param array<string,mixed> $report
+     */
+    private static function safeWriteSuite(array $report, string $context): void
+    {
+        try {
+            ResultWriter::writeSuite($report);
+        } catch (Throwable $e) {
+            $root = trim((string)($report['report_root'] ?? ''));
+            $scope = $root !== '' ? ' root=' . $root : '';
+            fwrite(STDERR, 'WARN[REPORT_WRITE_FAILED] ' . $context . $scope . ': ' . $e->getMessage() . PHP_EOL);
+        }
+    }
+
+    /**
      * @param array<string,mixed> $config
      * @param array<int,array<string,mixed>> $tests
      * @param array<string,mixed> $policy
@@ -509,7 +523,7 @@ final class FrontJsSuite
             'selected_test_count' => count($tests),
             'selected_test_files' => $selectedTestFiles,
             'suite_status' => $tests === [] ? 'no_tests' : 'failed',
-            'no_tests_reason' => $tests === [] ? self::noTestsReason(['suite_status' => 'no_tests'], $config) : null,
+            'no_tests_reason' => $tests === [] ? self::noTestsReason(['suite_status' => 'no_tests']) : null,
             'run_id' => $runId,
             'meta_run_id' => $metaRunId,
             'run_kind' => 'suite',

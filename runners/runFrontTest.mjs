@@ -13,11 +13,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { banner, testHead, counts, bold, dim, gray, red } from "../utils/js/ui.mjs";
+import { banner, testHead, counts, bold, dim, gray, red, green, yellow } from "../utils/js/ui.mjs";
 import { PVT_EXIT_PASS, PVT_EXIT_FAIL, PVT_EXIT_SKIP, PVT_EXIT_ERROR } from "../utils/js/constants.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +39,9 @@ const listOnly = (process.env.TEST_LIST || "0") === "1";
 const requireTests = (process.env.TEST_JS_REQUIRE_TESTS || process.env.TEST_REQUIRE_TESTS || "0") === "1";
 const jobs = Math.max(1, parseInt(process.env.TEST_JOBS || "1", 10) || 1);
 const useLoader = (process.env.TEST_USE_PUBLIC_LOADER || "1") === "1";
+const streamRawOutput = (process.env.TEST_JS_STREAM_RAW || "0") === "1";
+const showPassingCases = (process.env.TEST_JS_SHOW_PASS_CASES || "0") === "1";
+const showPerTestHead = streamRawOutput || (process.env.TEST_JS_SHOW_TEST_HEADS || "0") === "1";
 const slowThresholdMs = Math.max(1, parseInt(process.env.TEST_SLOW_THRESHOLD_MS || "1500", 10) || 1500);
 const slowTop = Math.max(1, parseInt(process.env.TEST_SLOW_TOP || "10", 10) || 10);
 const perfMaxMs = Math.max(0, parseInt(process.env.TEST_PERF_MAX_MS || "0", 10) || 0);
@@ -182,15 +186,63 @@ function moduleFromRel(rel) {
   return parts[0] || "unknown";
 }
 
-function moduleSummary(entries) {
-  const out = {};
-  for (const entry of entries) {
-    const mod = entry.module || "unknown";
-    if (!out[mod]) out[mod] = { total: 0, pass: 0, fail: 0, skip: 0 };
-    out[mod].total += 1;
-    out[mod][entry.status] = (out[mod][entry.status] || 0) + 1;
+function resolvePublicRoot() {
+  const configured = process.env.TK_PUBLIC_DIR || "public_html";
+  const candidates = [
+    configured,
+    "public_html",
+    "public",
+    "web_cargadores/public",
+  ]
+    .map((rel) => path.resolve(repoRoot, rel))
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      return candidate;
+    }
   }
-  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+
+  return path.resolve(repoRoot, configured);
+}
+
+function ensureSymlink(aliasPath, targetPath) {
+  try {
+    const stat = fs.lstatSync(aliasPath);
+    if (stat.isSymbolicLink()) {
+      const current = fs.readlinkSync(aliasPath);
+      const resolved = path.resolve(path.dirname(aliasPath), current);
+      if (path.resolve(resolved) === path.resolve(targetPath)) {
+        return;
+      }
+    }
+    fs.rmSync(aliasPath, { recursive: true, force: true });
+  } catch {
+    // nothing
+  }
+
+  fs.mkdirSync(path.dirname(aliasPath), { recursive: true });
+  const symlinkType = process.platform === "win32" ? "junction" : "dir";
+  fs.symlinkSync(targetPath, aliasPath, symlinkType);
+}
+
+function ensureTmpFrontAliases(entries) {
+  const publicRoot = resolvePublicRoot();
+  if (!fs.existsSync(publicRoot) || !fs.statSync(publicRoot).isDirectory()) {
+    return;
+  }
+
+  const modules = new Set();
+  for (const entry of entries) {
+    const mod = extractFunctionalModule(entry.rel || entry.file || "");
+    if (!mod || !mod.startsWith("front/")) continue;
+    modules.add(mod.split("/")[1]);
+  }
+
+  for (const moduleName of modules) {
+    const aliasPath = path.join(os.tmpdir(), `${moduleName}_front`);
+    ensureSymlink(aliasPath, publicRoot);
+  }
 }
 
 function pruneOldRuns(dir, prefix, keep = 5) {
@@ -211,12 +263,33 @@ function textExcerpt(text, maxLines) {
   return lines.slice(0, maxLines).join("\n");
 }
 
+function isTapNoiseLine(text) {
+  return /^(TAP version \d+|# Subtest:|# tests\b|# suites\b|# pass\b|# fail\b|# cancelled\b|# skipped\b|# todo\b|# duration_ms\b|1\.\.\d+|---|\.\.\.|ok \d+ -|not ok \d+ -)/.test(text);
+}
+
+function stripKnownNoise(text) {
+  if (!text) return "";
+  const lines = text.split(/\r\n|\r|\n/);
+  const cleaned = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^\(node:\d+\) ExperimentalWarning: `--experimental-loader`/.test(trimmed)) continue;
+    if (trimmed.startsWith("--import 'data:text/javascript")) continue;
+    if (trimmed === "(Use `node --trace-warnings ...` to show where the warning was created)") continue;
+    cleaned.push(line);
+  }
+  return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+}
+
 function extractFirstMessage(text) {
   if (!text) return null;
-  for (const line of text.split("\n")) {
+  const lines = text.split("\n");
+  for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
     if (/^(at\s+|#\d+\s|Stack trace:)/.test(t)) continue;
+    if (isTapNoiseLine(t)) continue;
+    if (/^(duration_ms:|location:|failureType:|operator:|expected:|actual:|code:|name:)/.test(t)) continue;
     return t.slice(0, 200);
   }
   return null;
@@ -632,6 +705,8 @@ const computedModuleScope = envModuleScope || (() => {
 const computedReportScopeRel = envReportScopeRel || norm(path.relative(repoRoot, computedReportRoot));
 const computedCommonDir = commonDirFromRels(testRels);
 
+ensureTmpFrontAliases(testEntries);
+
 const suiteStartedAt = new Date().toISOString();
 const suiteStartedMs = performance.now();
 
@@ -744,6 +819,48 @@ function countEntry(entry, counters) {
   else counters.failed += 1;
 }
 
+function buildEntry(baseEntry, code, durationMs, stdout, stderr) {
+  const cleanStdout = stripKnownNoise(typeof stdout === "string" ? stdout : "");
+  const cleanStderr = stripKnownNoise(typeof stderr === "string" ? stderr : "");
+  let result = {
+    rel: baseEntry.rel,
+    file: baseEntry.file,
+    module: baseEntry.module,
+    tags: baseEntry.tags,
+    status: classifyStatus(code ?? 1),
+    exit_code: code ?? 1,
+    duration_ms: Math.max(0, Math.round(durationMs)),
+    stdout: cleanStdout,
+    stderr: cleanStderr,
+  };
+  result = applyPerfBudgets(result);
+  return result;
+}
+
+function printCompactOutcome(result) {
+  if (streamRawOutput) {
+    if (showPerTestHead) console.log(testHead(result.rel));
+    if (result.stdout) process.stdout.write(result.stdout + (result.stdout.endsWith("\n") ? "" : "\n"));
+    if (result.stderr) process.stderr.write(result.stderr + (result.stderr.endsWith("\n") ? "" : "\n"));
+    console.log("");
+    return;
+  }
+
+  const message = result.perf_violation?.message || extractFirstMessage(result.stderr) || extractFirstMessage(result.stdout) || "";
+  if (result.status === "pass") {
+    if (!showPassingCases) return;
+    console.log(`  ${green("PASS")} ${result.rel}`);
+    return;
+  }
+
+  if (result.status === "skip") {
+    console.log(`  ${yellow("SKIP")} ${result.rel}${message ? ` — ${message}` : ""}`);
+    return;
+  }
+
+  console.log(`  ${red("FAIL")} ${result.rel}${message ? ` — ${message}` : ""}`);
+}
+
 function runOne(entry, workerId) {
   const args = makeArgs(entry.file);
   return new Promise((resolve) => {
@@ -760,18 +877,7 @@ function runOne(entry, workerId) {
     child.stderr.on("data", (d) => { err += d.toString("utf8"); });
 
     child.on("close", (code) => {
-      let result = {
-        rel: entry.rel,
-        file: entry.file,
-        module: entry.module,
-        tags: entry.tags,
-        status: classifyStatus(code ?? 1),
-        exit_code: code ?? 1,
-        duration_ms: Math.max(0, Math.round(performance.now() - t0)),
-        stdout: out,
-        stderr: err,
-      };
-      resolve(applyPerfBudgets(result));
+      resolve(buildEntry(entry, code, performance.now() - t0, out, err));
     });
   });
 }
@@ -781,8 +887,6 @@ const entries = [];
 
 if (jobs <= 1) {
   for (const entry of testEntries) {
-    console.log(testHead(entry.rel));
-
     const t0 = performance.now();
     const r = spawnSync(process.execPath, makeArgs(entry.file), {
       cwd: repoRoot,
@@ -791,27 +895,17 @@ if (jobs <= 1) {
       maxBuffer: 10 * 1024 * 1024,
     });
 
-    const out = typeof r.stdout === "string" ? r.stdout : "";
-    const err = typeof r.stderr === "string" ? r.stderr : "";
-    if (out) process.stdout.write(out);
-    if (err) process.stderr.write(err);
-
-    let result = {
-      rel: entry.rel,
-      file: entry.file,
-      module: entry.module,
-      tags: entry.tags,
-      status: classifyStatus(r.status ?? (r.signal ? 128 : 1)),
-      exit_code: r.status ?? (r.signal ? 128 : 1),
-      duration_ms: Math.max(0, Math.round(performance.now() - t0)),
-      stdout: out,
-      stderr: err,
-    };
-    result = applyPerfBudgets(result);
+    const result = buildEntry(
+      entry,
+      r.status ?? (r.signal ? 128 : 1),
+      performance.now() - t0,
+      r.stdout,
+      r.stderr,
+    );
     countEntry(result, counters);
     entries.push(result);
+    printCompactOutcome(result);
 
-    console.log("");
     if (result.status === "fail" && failFast) break;
   }
 } else {
@@ -825,13 +919,9 @@ if (jobs <= 1) {
       if (idx >= testEntries.length) return;
 
       const res = await runOne(testEntries[idx], workerId);
-      console.log(testHead(res.rel));
-      if (res.stdout) process.stdout.write(res.stdout);
-      if (res.stderr) process.stderr.write(res.stderr);
-      console.log("");
-
       countEntry(res, counters);
       entries.push(res);
+      printCompactOutcome(res);
       if (res.status === "fail" && failFast) {
         stop = true;
         return;

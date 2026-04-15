@@ -133,7 +133,7 @@ final class MetaRunner
 
             $currentPhase = 'reporting';
             ConsoleReporter::printMeta($meta);
-            ResultWriter::writeMeta($meta);
+            self::safeWriteMeta($meta, 'meta.run');
 
             if ($overallFail) {
                 self::printActionRequired($meta);
@@ -153,7 +153,7 @@ final class MetaRunner
                 error: $e
             );
             ConsoleReporter::printMeta($meta);
-            ResultWriter::writeMeta($meta);
+            self::safeWriteMeta($meta, 'meta.operational_failure');
             return 1;
         } finally {
             $resourceLease?->release();
@@ -377,5 +377,19 @@ final class MetaRunner
         ];
 
         return ReportSummary::enrichReport($meta);
+    }
+
+    /**
+     * @param array<string,mixed> $meta
+     */
+    private static function safeWriteMeta(array $meta, string $context): void
+    {
+        try {
+            ResultWriter::writeMeta($meta);
+        } catch (\Throwable $e) {
+            $root = trim((string)($meta['report_root'] ?? ''));
+            $scope = $root !== '' ? ' root=' . $root : '';
+            fwrite(STDERR, 'WARN[REPORT_WRITE_FAILED] ' . $context . $scope . ': ' . $e->getMessage() . PHP_EOL);
+        }
     }
 }
