@@ -306,6 +306,10 @@ final class ReportSummary
             'duration_ms' => $durationMs,
         ];
 
+        $topLevelPass = 0;
+        $topLevelFail = 0;
+        $topLevelSkip = 0;
+        $topLevelTimeout = 0;
         $selectedTestCount = 0;
         $reportScopeValues = [];
         $moduleScopeValues = [];
@@ -320,6 +324,12 @@ final class ReportSummary
             $summary['passed'] += (int)($report['pass'] ?? $reportSummary['passed'] ?? 0);
             $summary['failed'] += (int)($report['fail'] ?? $reportSummary['failed'] ?? 0);
             $summary['skipped'] += (int)($report['skip'] ?? $reportSummary['skipped'] ?? 0);
+
+            $topLevelPass += self::metric($report, 'pass', 'passed');
+            $topLevelFail += self::metric($report, 'fail', 'failed');
+            $topLevelSkip += self::metric($report, 'skip', 'skipped');
+            $topLevelTimeout += (int)($report['timeout'] ?? ($report['status_counts']['timeout'] ?? 0));
+
             $selectedTestCount += (int)($report['selected_test_count'] ?? $report['tests_total'] ?? $reportSummary['total'] ?? 0);
 
             $scopeRel = trim((string)($report['report_scope_rel'] ?? ''));
@@ -362,6 +372,11 @@ final class ReportSummary
         return [
             'target'                => $target,
             'category'              => $category,
+            'tests_total'           => $summary['total'],
+            'pass'                  => $topLevelPass,
+            'fail'                  => $topLevelFail,
+            'skip'                  => $topLevelSkip,
+            'timeout'               => $topLevelTimeout,
             'started_at'            => $startedAt,
             'duration_ms'           => $durationMs,
             'report_root'           => $reportRoot,
@@ -435,10 +450,10 @@ final class ReportSummary
     {
         $failures = self::canonicalFailures($report);
         $statusCounts = [
-            'pass' => (int)($report['pass'] ?? 0),
-            'fail' => (int)($report['fail'] ?? 0),
-            'skip' => (int)($report['skip'] ?? 0),
-            'timeout' => 0,
+            'pass' => self::metric($report, 'pass', 'passed'),
+            'fail' => self::metric($report, 'fail', 'failed'),
+            'skip' => self::metric($report, 'skip', 'skipped'),
+            'timeout' => (int)($report['timeout'] ?? ($report['status_counts']['timeout'] ?? 0)),
             'infra_error' => 0,
             'contention' => 0,
         ];
@@ -511,8 +526,8 @@ final class ReportSummary
         $diagnostics ??= self::diagnostics($report);
         $primaryPhase = (string)($diagnostics['primary_phase'] ?? 'none');
         $outcome = (string)($diagnostics['outcome_status'] ?? 'passed');
-        $testsTotal = (int)($report['tests_total'] ?? 0);
-        $hasExecution = $testsTotal > 0 || (int)($report['pass'] ?? 0) > 0 || (int)($report['fail'] ?? 0) > 0 || (int)($report['skip'] ?? 0) > 0;
+        $testsTotal = self::testsTotal($report);
+        $hasExecution = $testsTotal > 0 || self::metric($report, 'pass', 'passed') > 0 || self::metric($report, 'fail', 'failed') > 0 || self::metric($report, 'skip', 'skipped') > 0;
         $listOnly = (bool)($report['list_only'] ?? false);
 
         $rows = [];
@@ -901,7 +916,7 @@ final class ReportSummary
             return 'contention';
         }
 
-        $testsTotal = (int)($report['tests_total'] ?? 0);
+        $testsTotal = self::testsTotal($report);
         if ($testsTotal === 0) {
             return 'no_tests';
         }
@@ -919,15 +934,15 @@ final class ReportSummary
             };
         }
 
-        if ((int)($report['fail'] ?? 0) > 0) {
+        if ($statusCounts['fail'] > 0) {
             return 'failed';
         }
 
-        if ((int)($report['skip'] ?? 0) > 0 && (int)($report['pass'] ?? 0) === 0) {
+        if ($statusCounts['skip'] > 0 && $statusCounts['pass'] === 0) {
             return 'skipped';
         }
 
-        if ((int)($report['skip'] ?? 0) > 0) {
+        if ($statusCounts['skip'] > 0) {
             return 'partial';
         }
 
@@ -1044,17 +1059,42 @@ final class ReportSummary
         if ($text === '') {
             return null;
         }
-        foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
+
+        $lines = self::normalizedLines($text);
+        if ($lines === []) {
+            return null;
+        }
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\[FAIL\].+/i', $line)) {
+                return substr($line, 0, 200);
             }
-            if (preg_match('/^(#\d+\s|Stack trace:|at\s+|\w.*\.(php|mjs|js|ts|py):\d+$)/', $line)) {
+        }
+
+        foreach ($lines as $line) {
+            if (preg_match('/^(FAIL|ERROR):\s+.+/i', $line)) {
+                return substr($line, 0, 200);
+            }
+        }
+
+        for ($i = count($lines) - 1; $i >= 0; $i--) {
+            $line = $lines[$i];
+            if (preg_match('/^(Assertion(?:Error|FailedError)?|TypeError|ValueError|RuntimeError|KeyError|IndexError|AttributeError|ImportError|ModuleNotFoundError|LookupError|OSError|Exception):\s*.+/i', $line)) {
+                return substr($line, 0, 200);
+            }
+            if (preg_match('/^[A-Za-z_\\\\]+(?:Error|Exception):\s*.+/', $line)) {
+                return substr($line, 0, 200);
+            }
+        }
+
+        foreach ($lines as $line) {
+            if (self::isNoiseMessageLine($line)) {
                 continue;
             }
             return substr($line, 0, 200);
         }
-        return null;
+
+        return substr($lines[0], 0, 200);
     }
 
     private static function extractTrace(string $text, int $maxLines): ?string
@@ -1062,13 +1102,23 @@ final class ReportSummary
         if ($text === '') {
             return null;
         }
-        $traceLines = array_values(array_filter(
-            preg_split('/\r\n|\r|\n/', $text) ?: [],
-            static fn(string $line): bool => (bool)preg_match('/^\s*(#\d+|Stack trace:|at\s+|\w.*\.(php|mjs|js|ts|py):\d+)/', $line)
-        ));
+
+        $traceLines = [];
+        foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $line) {
+            $trimmed = rtrim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (preg_match('/^\s*(#\d+|Stack trace:|at\s+|Traceback \(most recent call last\):|File ".*", line \d+|[A-Za-z_\\\\]+(?:Error|Exception):|\w.*\.(php|mjs|js|ts|py):\d+)/', $trimmed)) {
+                $traceLines[] = $trimmed;
+            }
+        }
+
         if ($traceLines === []) {
             return null;
         }
+
         return implode("\n", array_slice($traceLines, 0, $maxLines));
     }
 
@@ -1108,5 +1158,68 @@ final class ReportSummary
 
         $json['_source_file'] = $file;
         return $json;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function metric(array $report, string $key, string $summaryKey): int
+    {
+        if (array_key_exists($key, $report)) {
+            return (int)$report[$key];
+        }
+
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        if (array_key_exists($summaryKey, $summary)) {
+            return (int)$summary[$summaryKey];
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     */
+    private static function testsTotal(array $report): int
+    {
+        if (array_key_exists('tests_total', $report)) {
+            return (int)$report['tests_total'];
+        }
+
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        if (array_key_exists('total', $summary)) {
+            return (int)$summary['total'];
+        }
+
+        $selected = (int)($report['selected_test_count'] ?? 0);
+        if ($selected > 0) {
+            return $selected;
+        }
+
+        return self::metric($report, 'pass', 'passed')
+            + self::metric($report, 'fail', 'failed')
+            + self::metric($report, 'skip', 'skipped');
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function normalizedLines(string $text): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+        $lines = array_map(static fn(string $line): string => trim($line), $lines);
+        return array_values(array_filter($lines, static fn(string $line): bool => $line !== ''));
+    }
+
+    private static function isNoiseMessageLine(string $line): bool
+    {
+        if ($line === '') {
+            return true;
+        }
+
+        return (bool)preg_match(
+            '/^(#\d+\s|Stack trace:|at\s+|Traceback \(most recent call last\):|File ".*", line \d+, in |-+|=+|Ran \d+ tests? in |OK$|FAILED \(.+\)$|\w.*\.(php|mjs|js|ts|py):\d+$|test[\w\.\(\)_ ]+\.\.\.\s+(ok|FAIL|ERROR|skipped.*))$/i',
+            $line
+        );
     }
 }
