@@ -186,6 +186,23 @@ function moduleFromRel(rel) {
   return parts[0] || "unknown";
 }
 
+function moduleSummary(entries) {
+  const out = {};
+  for (const entry of entries) {
+    const mod = entry.module || "unknown";
+    if (!out[mod]) {
+      out[mod] = { total: 0, pass: 0, fail: 0, skip: 0, timeout: 0 };
+    }
+    out[mod].total += 1;
+    const status = entry.status || "unknown";
+    if (status === "pass") out[mod].pass += 1;
+    else if (status === "skip") out[mod].skip += 1;
+    else if (status === "timeout") out[mod].timeout += 1;
+    else out[mod].fail += 1;
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function resolvePublicRoot() {
   const configured = process.env.TK_PUBLIC_DIR || "public_html";
   const candidates = [

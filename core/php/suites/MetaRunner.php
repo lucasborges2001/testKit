@@ -133,10 +133,14 @@ final class MetaRunner
 
             $currentPhase = 'reporting';
             ConsoleReporter::printMeta($meta);
+
+            // Desde este punto ya existe un meta canónico calculado e impreso.
+            // Cualquier fallo auxiliar (persistencia, manifest, acciones sugeridas)
+            // debe degradar a warning y NO reingresar al catch global.
             self::safeWriteMeta($meta, 'meta.run');
 
             if ($overallFail) {
-                self::printActionRequired($meta);
+                self::safePrintActionRequired($meta);
             }
 
             return $overallFail ? 1 : 0;
@@ -245,29 +249,46 @@ final class MetaRunner
     private static function printActionRequired(array $meta): void
     {
         $failedSuites = self::failedSuites($meta);
-        $delta = is_array($meta['run_delta'] ?? null) ? $meta['run_delta'] : ReportSummary::runDelta($meta);
-        $rerunPlan = is_array($meta['rerun_plan'] ?? null) ? $meta['rerun_plan'] : ReportSummary::rerunPlan($meta);
+        $delta = is_array($meta['regression_delta'] ?? null)
+            ? $meta['regression_delta']
+            : ReportSummary::regressionDelta($meta);
+        $actions = is_array($meta['recommended_actions'] ?? null)
+            ? array_values(array_filter($meta['recommended_actions'], 'is_array'))
+            : ReportSummary::recommendedActions($meta);
+
+        $newFailures = count(array_filter((array)($delta['new_failures'] ?? []), 'is_string'));
+        $resolvedFailures = count(array_filter((array)($delta['resolved_failures'] ?? []), 'is_string'));
+        $statusTransitions = count(array_filter((array)($delta['status_transitions'] ?? []), 'is_array'));
 
         echo "\n[Action Required]\n";
         if ($failedSuites !== []) {
             echo '  Suites con issues: ' . implode(', ', $failedSuites) . "\n";
         }
-        echo '  Delta: new=' . (int)($delta['new_failures_count'] ?? 0)
-            . ' resolved=' . (int)($delta['resolved_failures_count'] ?? 0)
-            . ' persistent=' . (int)($delta['persistent_failures_count'] ?? 0)
+        echo '  Delta: new=' . $newFailures
+            . ' resolved=' . $resolvedFailures
+            . ' transitions=' . $statusTransitions
             . "\n";
         echo "  Reporte detallado: php scripts/report.php\n";
 
-        foreach (array_slice($rerunPlan, 0, 2) as $step) {
-            if (!is_array($step)) {
+        foreach (array_slice($actions, 0, 2) as $action) {
+            if (!is_array($action)) {
                 continue;
             }
-            $label = trim((string)($step['label'] ?? 'step'));
-            $command = trim((string)($step['command'] ?? ''));
+
+            $command = trim((string)($action['command'] ?? ''));
             if ($command === '') {
                 continue;
             }
-            echo '  ' . $label . ': ' . $command . "\n";
+
+            $label = trim((string)($action['kind'] ?? 'action'));
+            $label = $label !== '' ? str_replace('_', ' ', $label) : 'action';
+            $reason = trim((string)($action['reason'] ?? ''));
+
+            echo '  ' . $label . ': ' . $command;
+            if ($reason !== '') {
+                echo ' (' . $reason . ')';
+            }
+            echo "\n";
         }
     }
 
@@ -390,6 +411,20 @@ final class MetaRunner
             $root = trim((string)($meta['report_root'] ?? ''));
             $scope = $root !== '' ? ' root=' . $root : '';
             fwrite(STDERR, 'WARN[REPORT_WRITE_FAILED] ' . $context . $scope . ': ' . $e->getMessage() . PHP_EOL);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $meta
+     */
+    private static function safePrintActionRequired(array $meta): void
+    {
+        try {
+            self::printActionRequired($meta);
+        } catch (\Throwable $e) {
+            $runId = trim((string)($meta['run_id'] ?? ''));
+            $scope = $runId !== '' ? ' run=' . $runId : '';
+            fwrite(STDERR, 'WARN[ACTION_REQUIRED_RENDER_FAILED] meta.run' . $scope . ': ' . $e->getMessage() . PHP_EOL);
         }
     }
 }
