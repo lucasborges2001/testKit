@@ -121,6 +121,74 @@ final class ConsoleReporter
     }
 
     /**
+     * @param array<string,mixed> $snapshot
+     */
+    public static function printSuiteProgress(array $snapshot): void
+    {
+        $currentRel = trim((string)($snapshot['current_test_rel'] ?? ''));
+        $currentElapsedMs = $currentRel !== '' ? (int)($snapshot['current_elapsed_ms'] ?? 0) : null;
+        $avgMs = $snapshot['avg_ms_per_test'] ?? null;
+        $etaMs = $snapshot['eta_ms'] ?? null;
+
+        echo UI::info('[Progress]') . ' '
+            . 'elapsed=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
+            . ' '
+            . 'done=' . (int)($snapshot['completed'] ?? 0) . '/' . (int)($snapshot['total'] ?? 0)
+            . ' '
+            . 'pass=' . (int)($snapshot['pass'] ?? 0)
+            . ' '
+            . 'fail=' . (int)($snapshot['fail'] ?? 0)
+            . ' '
+            . 'skip=' . (int)($snapshot['skip'] ?? 0)
+            . ' '
+            . 'timeout=' . (int)($snapshot['timeout'] ?? 0)
+            . ' '
+            . 'current=' . ($currentRel !== '' ? UI::gray($currentRel) : 'n/a')
+            . ' '
+            . 'current_elapsed=' . ($currentElapsedMs !== null ? self::formatDurationMs($currentElapsedMs) : 'n/a')
+            . ' '
+            . 'avg=' . self::formatAvgMs(is_int($avgMs) ? $avgMs : null)
+            . ' '
+            . 'eta=' . (is_int($etaMs) ? self::formatDurationMs($etaMs) : 'n/a')
+            . ' '
+            . 'jobs=' . (int)($snapshot['jobs'] ?? 1)
+            . "\n";
+    }
+
+    /**
+     * @param array<string,mixed> $warning
+     */
+    public static function printLongRunningTest(array $warning): void
+    {
+        $rel = trim((string)($warning['rel'] ?? ''));
+        if ($rel === '') {
+            return;
+        }
+
+        echo UI::warning('[WARN]') . ' '
+            . 'long_running_test'
+            . ' '
+            . 'elapsed=' . self::formatDurationMs((int)($warning['elapsed_ms'] ?? 0))
+            . ' '
+            . 'rel=' . UI::gray($rel)
+            . ' '
+            . 'worker=' . (int)($warning['worker'] ?? 0)
+            . "\n";
+    }
+
+    /**
+     * @param array<string,int> $phaseTimings
+     */
+    public static function printPhaseTimings(array $phaseTimings): void
+    {
+        UI::section('Phase Timings');
+        echo '  discovery_ms=' . (int)($phaseTimings['discovery'] ?? 0) . "\n";
+        echo '  admission_ms=' . (int)($phaseTimings['admission'] ?? 0) . "\n";
+        echo '  execution_ms=' . (int)($phaseTimings['execution'] ?? 0) . "\n";
+        echo '  reporting_ms=' . (int)($phaseTimings['reporting'] ?? 0) . "\n";
+    }
+
+    /**
      * @param array<string,mixed> $meta
      */
     public static function printMeta(array $meta): void
@@ -779,5 +847,24 @@ final class ConsoleReporter
         }
 
         return UI::failure($normalized);
+    }
+
+    private static function formatDurationMs(int $durationMs): string
+    {
+        $totalSeconds = max(0, (int)floor($durationMs / 1000));
+        $hours = intdiv($totalSeconds, 3600);
+        $minutes = intdiv($totalSeconds % 3600, 60);
+        $seconds = $totalSeconds % 60;
+
+        return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+    }
+
+    private static function formatAvgMs(?int $avgMs): string
+    {
+        if ($avgMs === null) {
+            return 'n/a';
+        }
+
+        return sprintf('%.1fs/test', max(0, $avgMs) / 1000);
     }
 }

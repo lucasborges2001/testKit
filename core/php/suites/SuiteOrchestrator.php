@@ -30,6 +30,8 @@ final class SuiteOrchestrator
         $tests = [];
         $reportRoot = Paths::reportsRoot();
         $currentPhase = 'discovery';
+        $phaseStartedMs = self::nowMs();
+        $phaseTimings = self::emptyPhaseTimings();
 
         $runId = self::envString('TEST_RUN_ID');
         if ($runId === '') {
@@ -62,7 +64,8 @@ final class SuiteOrchestrator
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, (string)($config['suite_id'] ?? 'suite'));
 
-            $currentPhase = 'admission';
+            self::transitionPhase($currentPhase, 'admission', $phaseStartedMs, $phaseTimings);
+
             $policy = ParallelGuard::evaluate($tests, $config, Paths::repoRoot());
             $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
             $admission = ParallelGuard::admissionState($policy);
@@ -92,7 +95,8 @@ final class SuiteOrchestrator
             }
 
             $config['repo_root'] = Paths::repoRoot();
-            $currentPhase = 'execution';
+            self::transitionPhase($currentPhase, 'execution', $phaseStartedMs, $phaseTimings);
+
             $result = SuiteExecutor::execute($tests, $config, $buildCommand);
 
             $moduleScope = SuiteSelection::moduleScope($tests);
@@ -201,12 +205,18 @@ final class SuiteOrchestrator
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
             $result = ReportSummary::enrichReport($result);
 
+            self::transitionPhase($currentPhase, 'reporting', $phaseStartedMs, $phaseTimings);
+
             ConsoleReporter::printSuiteResult($result);
-            $currentPhase = 'reporting';
+            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
             ResultWriter::writeSuite($result);
+            ConsoleReporter::printPhaseTimings($result['phase_timings_ms']);
 
             return (int)$result['exit_code'];
         } catch (Throwable $e) {
+            $failedPhase = $currentPhase;
+            self::transitionPhase($currentPhase, 'reporting', $phaseStartedMs, $phaseTimings);
+
             $result = SuiteOperationalFailure::build(
                 config: $config,
                 tests: $tests,
@@ -216,7 +226,7 @@ final class SuiteOrchestrator
                 policy: $policy,
                 warnings: $warnings,
                 admission: $admission,
-                phase: $currentPhase,
+                phase: $failedPhase,
                 error: $e,
                 options: [
                     'include_selection_manifest' => true,
@@ -229,7 +239,9 @@ final class SuiteOrchestrator
             $result = ReportSummary::enrichReport($result);
 
             ConsoleReporter::printSuiteResult($result);
+            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
             ResultWriter::writeSuite($result);
+            ConsoleReporter::printPhaseTimings($result['phase_timings_ms']);
 
             return SuiteExecutor::EXIT_ERROR;
         } finally {
@@ -269,5 +281,55 @@ final class SuiteOrchestrator
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private static function emptyPhaseTimings(): array
+    {
+        return [
+            'discovery' => 0,
+            'admission' => 0,
+            'execution' => 0,
+            'reporting' => 0,
+        ];
+    }
+
+    /**
+     * @param array<string,int> &$phaseTimings
+     */
+    private static function transitionPhase(string &$currentPhase, string $nextPhase, int &$phaseStartedMs, array &$phaseTimings): void
+    {
+        $nowMs = self::nowMs();
+        if (isset($phaseTimings[$currentPhase])) {
+            $phaseTimings[$currentPhase] += max(0, $nowMs - $phaseStartedMs);
+        }
+
+        $currentPhase = $nextPhase;
+        $phaseStartedMs = $nowMs;
+    }
+
+    /**
+     * @param array<string,int> $phaseTimings
+     * @return array<string,int>
+     */
+    private static function phaseTimingsSnapshot(array $phaseTimings, string $currentPhase, int $phaseStartedMs): array
+    {
+        $snapshot = self::emptyPhaseTimings();
+        foreach ($snapshot as $phase => $_) {
+            $snapshot[$phase] = max(0, (int)($phaseTimings[$phase] ?? 0));
+        }
+
+        if (isset($snapshot[$currentPhase])) {
+            $snapshot[$currentPhase] += max(0, self::nowMs() - $phaseStartedMs);
+        }
+
+        return $snapshot;
+    }
+
+    private static function nowMs(): int
+    {
+        return (int)round(microtime(true) * 1000);
     }
 }
