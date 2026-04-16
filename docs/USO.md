@@ -8,6 +8,7 @@ Usar esta guía para la operación normal:
 - comandos base
 - secuencia segura de ejecución
 - lectura operativa mínima de lo que pasó
+- lectura humana de observabilidad durante una corrida larga
 
 No usarla para:
 
@@ -147,7 +148,42 @@ Después de una corrida, `inspect` da rutas de diagnóstico más cortas que leer
 
 Usarlo cuando ya existe una corrida. No reemplaza `doctor`.
 
-## 6) Qué comportamiento sí es esperado
+## 6) Observabilidad de ejecución
+
+Durante una suite larga, el runner puede emitir heartbeats de progreso y advertencias de test largo.
+
+Ejemplo compacto:
+
+```text
+[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 cur=test/back/.../FooTest.php cur_el=00:00:37 avg=9.6s/test eta=00:39:12 jobs=1
+[WARN] long_running_test elapsed=00:01:00 rel=test/back/.../FooTest.php worker=1
+[Phase Timings]
+  discovery_ms=118
+  admission_ms=41
+  execution_ms=602311
+  reporting_ms=352
+```
+
+Lectura correcta:
+
+- `[Progress]` es una señal humana de que la suite sigue viva; no es un formato para automatización
+- `cur` puede aparecer compactado o truncado con elipsis en terminales angostas; el contrato estable es el significado del campo, no el path raw completo
+- `avg` y `eta` usan promedio simple de la corrida actual; no hay heurística histórica en esta capa
+- `[WARN] long_running_test` es informativo; no cambia exit code ni estado final
+- `[Phase Timings]` resume tiempos gruesos de `discovery`, `admission`, `execution` y `reporting`
+
+Configuración mínima:
+
+- `TESTKIT_PROGRESS_MODE=heartbeat|quiet`
+- `TESTKIT_PROGRESS_INTERVAL_SEC` (default `15`)
+- `TESTKIT_LONG_TEST_WARN_SEC` (default `60`)
+
+Lectura de modos:
+
+- `heartbeat`: habilita heartbeats y warnings de test largo
+- `quiet`: suprime heartbeats y warnings de test largo, pero no elimina el reporte final ni `phase_timings_ms`
+
+## 7) Qué comportamiento sí es esperado
 
 | Situación | Lectura correcta |
 |---|---|
@@ -159,15 +195,16 @@ Usarlo cuando ya existe una corrida. No reemplaza `doctor`.
 
 Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
-## 7) Cosas que no conviene sobreinterpretar
+## 8) Cosas que no conviene sobreinterpretar
 
 - `TEST_LIST=1` imprime selección, pero no debe venderse como dry-run puro del lifecycle de store; según la suite, el bootstrap puede ocurrir igual.
 - `doctor` no prueba restore de snapshot ni migraciones.
 - `scripts/report.php` no es el contrato estable para automatización.
 - `per_worker` no habilita varios runners top-level en paralelo.
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
+- `[Progress]` no reemplaza `inspect`, el JSON persistido ni el reporte final.
 
-## 8) Patrones seguros vs peligrosos
+## 9) Patrones seguros vs peligrosos
 
 | Caso | Estado |
 |---|---|
@@ -179,11 +216,11 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 | usar `all` como primer diagnóstico | posible, pero innecesariamente ruidoso |
 | usar `back-php` o `front-js` como primer diagnóstico | recomendado |
 
-## 9) Qué leer después
+## 10) Qué leer después
 
 | Si tu pregunta es... | Leer |
 |---|---|
 | qué exige y qué no garantiza la plataforma | [`CONTRATO.md`](CONTRATO.md) |
 | por qué apareció un error concreto y qué revisar | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
 | cómo funcionan bootstrap, baseline y locks | [`ARQUITECTURA.md`](ARQUITECTURA.md) |
-| cómo leer reportes, estados y coverage | [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) |
+| cómo leer reportes, estados, coverage y observabilidad persistida | [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) |

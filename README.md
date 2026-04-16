@@ -14,7 +14,7 @@ Read by question, not by file order:
 | How do I run it safely for the first time? Which commands are normal? | [`docs/USO.md`](docs/USO.md) |
 | Setup failed. Which command should I run next? | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | How is execution wired internally? How do bootstrap, baseline and locks fit together? | [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
-| Which report fields are stable? What is heuristic? How should coverage be read? | [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) |
+| Which report fields are stable? What is heuristic? How should coverage and observability be read? | [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) |
 
 Suggested reading order for a new adopter:
 
@@ -49,6 +49,28 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
 ```
+
+## Execution observability
+
+Long suites now expose operator-facing progress and summarized execution metrics as part of the framework contract.
+
+What exists:
+
+- periodic `[Progress]` heartbeats during execution
+- `[WARN] long_running_test` for tests that cross the configured threshold
+- `[Phase Timings]` at the end of the suite
+- summarized observability fields persisted in suite JSON and local history
+
+What does **not** exist here:
+
+- per-heartbeat persistence
+- capability doctor decisions
+- automatic diagnosis of business tests
+
+The detailed contract lives in:
+
+- [`docs/USO.md`](docs/USO.md) for operator reading
+- [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) for stable JSON/report semantics
 
 ## Current support limits
 

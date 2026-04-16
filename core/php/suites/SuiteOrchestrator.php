@@ -14,8 +14,8 @@ use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\HistoryRepository;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
-use Testkit\Core\Seeding\SuiteSeedState;
 use Testkit\Core\Reporting\StructuredWarnings;
+use Testkit\Core\Seeding\SuiteSeedState;
 
 final class SuiteOrchestrator
 {
@@ -156,6 +156,7 @@ final class SuiteOrchestrator
             $result['concurrency_admission'] = $admission;
             $result['evidence_valid'] = true;
             $result['evidence_invalid_reason'] = null;
+            self::attachObservabilityDefaults($result, count($tests));
 
             $result['failures'] = ReportSummary::canonicalFailures($result);
             $result['grouped_failures'] = ReportSummary::groupFailures($result['failures']);
@@ -206,10 +207,11 @@ final class SuiteOrchestrator
             $result = ReportSummary::enrichReport($result);
 
             self::transitionPhase($currentPhase, 'reporting', $phaseStartedMs, $phaseTimings);
+            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
 
             ConsoleReporter::printSuiteResult($result);
-            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
             ResultWriter::writeSuite($result);
+            HistoryRepository::recordSuiteMetrics($result);
             ConsoleReporter::printPhaseTimings($result['phase_timings_ms']);
 
             return (int)$result['exit_code'];
@@ -235,12 +237,14 @@ final class SuiteOrchestrator
                 ]
             );
 
+            self::attachObservabilityDefaults($result, count($tests));
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
             $result = ReportSummary::enrichReport($result);
+            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
 
             ConsoleReporter::printSuiteResult($result);
-            $result['phase_timings_ms'] = self::phaseTimingsSnapshot($phaseTimings, $currentPhase, $phaseStartedMs);
             ResultWriter::writeSuite($result);
+            HistoryRepository::recordSuiteMetrics($result);
             ConsoleReporter::printPhaseTimings($result['phase_timings_ms']);
 
             return SuiteExecutor::EXIT_ERROR;
@@ -259,6 +263,7 @@ final class SuiteOrchestrator
                 return true;
             }
         }
+
         return false;
     }
 
@@ -326,6 +331,30 @@ final class SuiteOrchestrator
         }
 
         return $snapshot;
+    }
+
+    /**
+     * @param array<string,mixed> &$result
+     */
+    private static function attachObservabilityDefaults(array &$result, int $selectedTestCount): void
+    {
+        if (!is_array($result['progress_policy'] ?? null)) {
+            $result['progress_policy'] = SuiteExecutor::progressPolicy();
+        }
+
+        if (!is_array($result['execution_metrics'] ?? null)) {
+            $completed = is_array($result['tests'] ?? null) ? count($result['tests']) : 0;
+            $durationMs = isset($result['duration_ms']) ? max(0, (int)$result['duration_ms']) : 0;
+            $avgMs = $completed > 0 ? (int)round($durationMs / $completed) : null;
+            $estimatedTotalMs = $avgMs !== null ? $avgMs * $selectedTestCount : null;
+
+            $result['execution_metrics'] = [
+                'selected_test_count' => $selectedTestCount,
+                'completed_test_count' => $completed,
+                'avg_test_ms' => $avgMs,
+                'estimated_total_ms' => $estimatedTotalMs,
+            ];
+        }
     }
 
     private static function nowMs(): int

@@ -7,6 +7,7 @@ Usar este documento para responder:
 - qué artefactos de reporte escribe realmente `testkit`
 - qué campos JSON son canónicos para automatización
 - qué significan `suite_status`, `outcome_status` y `no_tests_reason`
+- cómo se expone la observabilidad de ejecución
 - qué partes del output son para humanos
 - qué partes son diagnósticos heurísticos
 - cómo leer coverage y qué límites tiene
@@ -33,7 +34,8 @@ Para eso, leer:
 |---|---|---|
 | JSON suite/meta bajo `.testkit/reports/` | automatización y evidencia persistida | superficie principal |
 | `canonical_report` dentro del JSON | normalización derivada del reporte persistido | útil, pero no sustituye el top-level |
-| consola del runner | lectura rápida humana | no consumir como contrato estable |
+| consola del runner | lectura rápida humana | no consumir como contrato de automatización |
+| `[Progress]` y `[Phase Timings]` en consola | observabilidad operatoria durante la corrida | semántica estable para humanos, no parser stable |
 | `php scripts/report.php` | resumen humano agregado | no consumir como contrato estable |
 | `inspect` | diagnóstico asistido sobre reportes existentes | interfaz operativa, no formato persistido |
 | artifacts de coverage | diagnóstico de cobertura | útiles para lectura y tooling, no gate implícito |
@@ -63,6 +65,15 @@ Coverage PHP:
 - `coverage_diagnostics.json`
 - `coverage_report.md`
 
+### Historia local por suite
+
+`.testkit/history/<suite>.json` mantiene dos cosas distintas:
+
+- historial por test para fragility hints y regression delta
+- `suite_runs[]` con métricas resumidas por corrida para baseline futuro
+
+No guarda heartbeats individuales.
+
 ## 4) Qué consumir para automatización
 
 El contrato primario vive en el JSON top-level versionado por:
@@ -81,6 +92,9 @@ Campos canónicos a priorizar:
 - `first_failure`
 - `evidence_valid`
 - `evidence_invalid_reason`
+- `phase_timings_ms`
+- `progress_policy`
+- `execution_metrics`
 
 `failures` es la colección canónica de fallos.
 `failed_tests` existe como fallback legacy y no debe ser la primera elección.
@@ -136,7 +150,106 @@ Hoy suele expresar que ningún test coincidió con los filtros activos (`scope`,
 
 No leerlo como explicación general de cualquier fallo.
 
-## 6) Campos principales
+## 6) Contrato de observabilidad
+
+### 6.1) `[Progress]` en consola
+
+`[Progress]` es una señal operatoria humana emitida durante `execution`.
+
+Semántica estable de los campos:
+
+- `el`: elapsed total de la fase de ejecución
+- `done`: tests completados / tests seleccionados
+- `p/f/s/to`: contadores acumulados de pass, fail, skip y timeout
+- `cur`: test actualmente en ejecución; puede aparecer compactado o truncado
+- `cur_el`: tiempo transcurrido del test actual
+- `avg`: promedio simple `elapsed / completed`
+- `eta`: `avg * remaining`
+- `jobs`: paralelismo efectivo de la suite
+
+No estable:
+
+- colores ANSI
+- spacing exacto
+- largo exacto del path
+- política visual de truncado/compactación del path
+
+No consumir esta línea con parsers frágiles. El contrato fuerte para automatización está en el JSON final.
+
+### 6.2) `[Phase Timings]` en consola
+
+`[Phase Timings]` resume tiempos gruesos de la corrida por fase:
+
+- `discovery`
+- `admission`
+- `execution`
+- `reporting`
+
+Sirve para lectura humana rápida y para contrastar contra `phase_timings_ms` del JSON.
+
+### 6.3) Campos JSON nuevos de observabilidad
+
+#### `phase_timings_ms`
+
+```json
+{
+  "phase_timings_ms": {
+    "discovery": 120,
+    "admission": 45,
+    "execution": 603221,
+    "reporting": 380
+  }
+}
+```
+
+Contrato:
+
+- tiempos en milisegundos
+- granularidad de suite, no por test
+- útiles para comparación relativa y baseline operativo
+- no prometen precisión de microbenchmark
+
+#### `progress_policy`
+
+```json
+{
+  "progress_policy": {
+    "mode": "heartbeat",
+    "interval_sec": 15,
+    "long_test_warn_sec": 60
+  }
+}
+```
+
+Contrato:
+
+- describe la política activa usada por el runner
+- no implica persistencia de heartbeats
+- `mode=quiet` deshabilita heartbeats y warnings de test largo, pero no elimina el reporte final
+
+#### `execution_metrics`
+
+```json
+{
+  "execution_metrics": {
+    "selected_test_count": 267,
+    "completed_test_count": 267,
+    "avg_test_ms": 2847,
+    "estimated_total_ms": 760000
+  }
+}
+```
+
+Contrato:
+
+- `selected_test_count`: cantidad seleccionada para la suite
+- `completed_test_count`: cantidad efectivamente ejecutada/completada
+- `avg_test_ms`: promedio simple final; puede ser `null` si no hubo completados
+- `estimated_total_ms`: estimado simple derivado del promedio final; puede ser `null` si no aplica
+
+No hay baseline histórico ni heurística sofisticada en este campo.
+
+## 7) Campos principales
 
 ### `runner_capabilities`
 
@@ -185,9 +298,9 @@ Cada entrada puede incluir, entre otros:
 
 Consumirla como evidencia principal de fallo.
 
-## 7) Qué es estable y qué es derivado
+## 8) Qué es estable y qué es derivado
 
-### 7.1) Más estable
+### 8.1) Más estable
 
 - campos top-level versionados
 - `suite_status`
@@ -197,16 +310,20 @@ Consumirla como evidencia principal de fallo.
 - `first_failure`
 - `report_links`
 - `selection_manifest`
+- `phase_timings_ms`
+- `progress_policy`
+- `execution_metrics`
 
-### 7.2) Derivado pero útil
+### 8.2) Derivado pero útil
 
 - `canonical_report`
 - `diagnostics`
 - `phase_timeline`
 - `normalized_artifacts`
 - `regression_delta`
+- `suite_runs[]` dentro de `.testkit/history/<suite>.json`
 
-### 7.3) Heurístico o de ayuda
+### 8.3) Heurístico o de ayuda
 
 - `fragility_hints`
 - familias/clusters de fallo
@@ -216,11 +333,13 @@ Consumirla como evidencia principal de fallo.
 
 Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
 
-## 8) Humanos vs automatización
+## 9) Humanos vs automatización
 
 ### Para humanos
 
 - consola del runner
+- `[Progress]`
+- `[Phase Timings]`
 - `php scripts/report.php`
 - `inspect`
 - `coverage_report.md`
@@ -232,9 +351,12 @@ Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
 - `summary`
 - `suite_status`
 - `outcome_status`
+- `phase_timings_ms`
+- `progress_policy`
+- `execution_metrics`
 - `canonical_report` solo como ayuda de normalización, no como único origen
 
-## 9) Fragility hints
+## 10) Fragility hints
 
 `fragility_hints` hoy salen del historial local por suite.
 
@@ -247,9 +369,9 @@ Lectura correcta:
 
 Sirven para priorizar investigación, no para cerrar diagnóstico.
 
-## 10) Coverage: lectura correcta
+## 11) Coverage: lectura correcta
 
-## 10.1) Coverage como diagnóstico
+## 11.1) Coverage como diagnóstico
 
 Coverage en `testkit` es, ante todo, una señal diagnóstica.
 
@@ -263,7 +385,7 @@ No implica por sí sola un gate contractual de calidad.
 
 Si un proyecto quiere usar coverage como gate, ese gate tiene que vivir en la política del proyecto, no asumirse implícitamente desde `testkit`.
 
-## 10.2) Coverage PHP
+## 11.2) Coverage PHP
 
 La ruta diagnóstica cerrada hoy está en suites PHP.
 
@@ -287,7 +409,7 @@ Artifacts típicos:
 
 Es diagnóstico estructurado. No describe exhaustivamente la intención del proyecto.
 
-## 10.3) Coverage Python
+## 11.3) Coverage Python
 
 Python usa `trace` de la stdlib.
 
@@ -298,7 +420,7 @@ Lectura correcta:
 - no debe venderse como analítica avanzada
 - puede servir para smoke diagnóstico, no para conclusiones finas por sí sola
 
-## 11) Regla práctica de consumo
+## 12) Regla práctica de consumo
 
 Si necesitás una decisión automática:
 
@@ -306,12 +428,14 @@ Si necesitás una decisión automática:
 2. leer `outcome_status`
 3. leer `summary`
 4. leer `failures`
-5. usar `canonical_report` solo como ayuda de uniformidad
+5. leer `phase_timings_ms`, `progress_policy` y `execution_metrics`
+6. usar `canonical_report` solo como ayuda de uniformidad
 
 Si necesitás entender rápido qué pasó:
 
 1. `inspect latest`
 2. `inspect failure`
 3. `php scripts/report.php`
+4. revisar `[Phase Timings]` y, durante la corrida, `[Progress]`
 
 No mezclar ambas capas como si fueran el mismo contrato.

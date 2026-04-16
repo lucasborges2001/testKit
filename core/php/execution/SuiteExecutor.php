@@ -14,6 +14,23 @@ final class SuiteExecutor
     public const EXIT_ERROR = 3;
 
     /**
+     * @return array<string,int|string>
+     */
+    public static function progressPolicy(): array
+    {
+        $mode = strtolower(Env::string('TESTKIT_PROGRESS_MODE', 'heartbeat'));
+        if (!in_array($mode, ['heartbeat', 'quiet'], true)) {
+            $mode = 'heartbeat';
+        }
+
+        return [
+            'mode' => $mode,
+            'interval_sec' => max(1, Env::int('TESTKIT_PROGRESS_INTERVAL_SEC', 15)),
+            'long_test_warn_sec' => max(1, Env::int('TESTKIT_LONG_TEST_WARN_SEC', 60)),
+        ];
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $tests
      * @param array<string,mixed> $config
      * @param callable $buildCommand fn(array $test, int $workerId): array{cmd:array<int,string>, env:array<string,string>}
@@ -177,6 +194,10 @@ final class SuiteExecutor
     private static function emitExecutionSignals(array $result, array &$progressState, array $running): void
     {
         if ($running === []) {
+            return;
+        }
+
+        if ((string)($progressState['mode'] ?? 'heartbeat') !== 'heartbeat') {
             return;
         }
 
@@ -362,15 +383,15 @@ final class SuiteExecutor
      */
     private static function createProgressState(array $tests, array $config, int $startedMs): array
     {
-        $intervalSec = max(1, Env::int('TESTKIT_PROGRESS_INTERVAL_SEC', 15));
-        $warnSec = max(1, Env::int('TESTKIT_LONG_TEST_WARN_SEC', 60));
+        $policy = self::progressPolicy();
 
         return [
             'suite_started_ms' => $startedMs,
             'total' => count($tests),
             'jobs' => max(1, (int)($config['jobs'] ?? 1)),
-            'progress_interval_ms' => $intervalSec * 1000,
-            'long_running_warn_sec' => $warnSec,
+            'mode' => (string)$policy['mode'],
+            'progress_interval_ms' => (int)$policy['interval_sec'] * 1000,
+            'long_running_warn_sec' => (int)$policy['long_test_warn_sec'],
             'last_progress_emit_ms' => $startedMs,
             'long_running_warning_state' => [],
         ];
@@ -513,7 +534,32 @@ final class SuiteExecutor
         }
 
         $result['slow_tests'] = $slow;
+        $result['progress_policy'] = self::progressPolicy();
+        $result['execution_metrics'] = self::buildExecutionMetrics($result);
+
         return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @return array<string,int|null>
+     */
+    private static function buildExecutionMetrics(array $result): array
+    {
+        $selected = (int)($result['tests_total'] ?? 0);
+        $completed = is_array($result['tests'] ?? null) ? count($result['tests']) : 0;
+        $durationMs = isset($result['duration_ms']) ? max(0, (int)$result['duration_ms']) : null;
+        $avgMs = ($durationMs !== null && $completed > 0)
+            ? (int)round($durationMs / $completed)
+            : null;
+        $estimatedTotalMs = $avgMs !== null ? $avgMs * $selected : null;
+
+        return [
+            'selected_test_count' => $selected,
+            'completed_test_count' => $completed,
+            'avg_test_ms' => $avgMs,
+            'estimated_total_ms' => $estimatedTotalMs,
+        ];
     }
 
     /**

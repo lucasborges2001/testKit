@@ -14,6 +14,8 @@ final class ConsoleReporter
     private const MAX_PERF_VIOLATIONS = 5;
     private const MAX_ACTIONS = 4;
     private const MAX_REGRESSION_ITEMS = 3;
+    private const MAX_PROGRESS_CURRENT_LEN = 28;
+    private const MAX_WARNING_REL_LEN = 40;
 
     /**
      * @param array<string,mixed> $config
@@ -129,23 +131,23 @@ final class ConsoleReporter
         $currentElapsedMs = $currentRel !== '' ? (int)($snapshot['current_elapsed_ms'] ?? 0) : null;
         $avgMs = $snapshot['avg_ms_per_test'] ?? null;
         $etaMs = $snapshot['eta_ms'] ?? null;
+        $currentLabel = $currentRel !== ''
+            ? UI::gray(self::formatProgressPath($currentRel, self::MAX_PROGRESS_CURRENT_LEN))
+            : 'n/a';
 
         echo UI::info('[Progress]') . ' '
-            . 'elapsed=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
+            . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
             . ' '
             . 'done=' . (int)($snapshot['completed'] ?? 0) . '/' . (int)($snapshot['total'] ?? 0)
             . ' '
-            . 'pass=' . (int)($snapshot['pass'] ?? 0)
+            . 'p/f/s/to=' . (int)($snapshot['pass'] ?? 0)
+            . '/' . (int)($snapshot['fail'] ?? 0)
+            . '/' . (int)($snapshot['skip'] ?? 0)
+            . '/' . (int)($snapshot['timeout'] ?? 0)
             . ' '
-            . 'fail=' . (int)($snapshot['fail'] ?? 0)
+            . 'cur=' . $currentLabel
             . ' '
-            . 'skip=' . (int)($snapshot['skip'] ?? 0)
-            . ' '
-            . 'timeout=' . (int)($snapshot['timeout'] ?? 0)
-            . ' '
-            . 'current=' . ($currentRel !== '' ? UI::gray($currentRel) : 'n/a')
-            . ' '
-            . 'current_elapsed=' . ($currentElapsedMs !== null ? self::formatDurationMs($currentElapsedMs) : 'n/a')
+            . 'cur_el=' . ($currentElapsedMs !== null ? self::formatDurationMs($currentElapsedMs) : 'n/a')
             . ' '
             . 'avg=' . self::formatAvgMs(is_int($avgMs) ? $avgMs : null)
             . ' '
@@ -155,9 +157,6 @@ final class ConsoleReporter
             . "\n";
     }
 
-    /**
-     * @param array<string,mixed> $warning
-     */
     public static function printLongRunningTest(array $warning): void
     {
         $rel = trim((string)($warning['rel'] ?? ''));
@@ -170,15 +169,12 @@ final class ConsoleReporter
             . ' '
             . 'elapsed=' . self::formatDurationMs((int)($warning['elapsed_ms'] ?? 0))
             . ' '
-            . 'rel=' . UI::gray($rel)
+            . 'rel=' . UI::gray(self::formatProgressPath($rel, self::MAX_WARNING_REL_LEN))
             . ' '
             . 'worker=' . (int)($warning['worker'] ?? 0)
             . "\n";
     }
 
-    /**
-     * @param array<string,int> $phaseTimings
-     */
     public static function printPhaseTimings(array $phaseTimings): void
     {
         UI::section('Phase Timings');
@@ -866,5 +862,52 @@ final class ConsoleReporter
         }
 
         return sprintf('%.1fs/test', max(0, $avgMs) / 1000);
+    }
+
+    private static function formatProgressPath(string $rel, int $maxLen): string
+    {
+        $normalized = trim(str_replace('\\', '/', $rel));
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (strlen($normalized) <= $maxLen) {
+            return $normalized;
+        }
+
+        $parts = array_values(array_filter(explode('/', $normalized), static fn(string $part): bool => $part !== ''));
+        if (count($parts) >= 4) {
+            $variants = [
+                implode('/', array_merge(array_slice($parts, 0, 2), ['...'], array_slice($parts, -2))),
+                implode('/', array_merge([$parts[0], '...'], array_slice($parts, -2))),
+                implode('/', array_merge(['...'], array_slice($parts, -2))),
+            ];
+
+            foreach ($variants as $variant) {
+                if (strlen($variant) <= $maxLen) {
+                    return $variant;
+                }
+            }
+
+            return self::truncateMiddle((string)$variants[count($variants) - 1], $maxLen);
+        }
+
+        return self::truncateMiddle($normalized, $maxLen);
+    }
+
+    private static function truncateMiddle(string $value, int $maxLen): string
+    {
+        if ($maxLen <= 0 || strlen($value) <= $maxLen) {
+            return $value;
+        }
+
+        if ($maxLen <= 3) {
+            return substr($value, 0, $maxLen);
+        }
+
+        $keepLeft = intdiv($maxLen - 3, 2);
+        $keepRight = ($maxLen - 3) - $keepLeft;
+
+        return substr($value, 0, $keepLeft) . '...' . substr($value, -$keepRight);
     }
 }
