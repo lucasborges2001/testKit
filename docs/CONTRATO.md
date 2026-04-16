@@ -159,6 +159,19 @@ No están garantizados como verdad semántica:
 
 Sirven para priorizar análisis, no para cerrar diagnóstico.
 
+### 6.6) Capability doctor
+
+`doctor` puede emitir una sección de capability basada en la config visible del wrapper.
+
+Eso **no** cambia este contrato:
+
+- no convierte `UNKNOWN` en soporte faltante
+- no vuelve seguro un path runtime que no fue ejecutado
+- no reemplaza una corrida real
+- no autoriza varios runners top-level en paralelo
+
+Sirve para detectar contradicciones visibles y para no vender compatibilidad que el wrapper no puede demostrar todavía.
+
 ## 7) Qué no soporta o no garantiza hoy
 
 - throughput normal basado en varios runners top-level concurrentes sobre la misma DB

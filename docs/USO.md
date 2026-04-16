@@ -40,6 +40,7 @@ Supuestos mínimos:
 export TESTKIT_PROJECT_ROOT=/path/to/project
 
 ./bin/testkit doctor
+./bin/testkit doctor migration-contract
 ./bin/testkit up -d
 ./bin/testkit run --rm testkit php runTest.php back-php
 ./bin/testkit inspect latest
@@ -51,6 +52,7 @@ export TESTKIT_PROJECT_ROOT=/path/to/project
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 
 .\bin\testkit.ps1 doctor
+.\bin\testkit.ps1 doctor migration-contract
 .\bin\testkit.ps1 up -d
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
@@ -61,16 +63,18 @@ Observaciones duras:
 - el primer target no tiene que ser `all`; conviene empezar por una suite concreta
 - el primer intento operativo seguro es secuencial
 - `doctor` no reemplaza una corrida real; solo valida el contrato mínimo visible antes de entrar al runner
+- el capability doctor de este primer corte no prueba bootstrap, restore ni seguridad runtime de concurrencia top-level
 
 ## 3) Secuencia segura para el primer diagnóstico
 
 1. correr `doctor`
-2. si falla, corregir el primer `[FAIL]`
-3. levantar el stack con `up -d`
-4. correr una sola suite con la ruta simple:
+2. si necesitás validar un contrato más angosto, correr `doctor migration-contract`
+3. si falla, corregir el primer `[FAIL]`
+4. levantar el stack con `up -d`
+5. correr una sola suite con la ruta simple:
    - `TEST_JOBS=1`
    - `TEST_DB_STRATEGY=shared`
-5. recién después probar filtros, `per_worker`, snapshot o suites agregadas
+6. recién después probar filtros, `per_worker`, snapshot o suites agregadas
 
 Ejemplo seguro:
 
@@ -92,7 +96,9 @@ Eso no es un uso soportado del store compartido.
 | Necesidad | Comando | Lectura correcta |
 |---|---|---|
 | validar setup mínimo | `doctor` | contrato mínimo del wrapper, no del baseline completo |
+| validar un path contractual angosto | `doctor migration-contract` | lectura visible por config del target pedido |
 | ver configuración efectiva | `doctor --dump` | cómo quedó resuelto env/root/stack |
+| ver configuración efectiva de un target | `doctor --dump migration-contract` | dump + status capability visible por config |
 | levantar servicios | `up -d` | `docker compose` del stack elegido |
 | correr una suite concreta | `php runTest.php back-php` | una sola suite, no todo el proyecto |
 | correr resumen agregado | `php runTest.php all` | varias suites bajo un solo runner top-level |
@@ -112,10 +118,17 @@ Comando base:
 ./bin/testkit doctor
 ```
 
+Con target explícito:
+
+```bash
+./bin/testkit doctor migration-contract
+```
+
 Dump útil:
 
 ```bash
 ./bin/testkit doctor --dump
+./bin/testkit doctor --dump migration-contract
 ```
 
 Qué te dice de forma confiable:
@@ -127,6 +140,8 @@ Qué te dice de forma confiable:
 - si `TESTKIT_PROJECT_ROOT` existe
 - si faltan variables mínimas del store
 - si Docker está en PATH
+- si la config visible contradice reglas genéricas de estrategia/motor
+- si `migration-contract` contradice snapshot/shared/MySQL cuando lo pedís explícitamente
 
 Qué no te garantiza:
 
@@ -134,6 +149,15 @@ Qué no te garantiza:
 - que el snapshot sea restaurable
 - que una suite concreta no tenga conflictos de concurrencia
 - que el proyecto haya definido seeds, migraciones o tests correctos
+- que `Capability doctor: PASS` vuelva segura una ruta runtime no observada por `doctor`
+
+Lectura correcta del nuevo bloque capability:
+
+- `PASS`: no ve contradicción visible en esa regla
+- `WARN`: la config visible es rara o incompleta, pero no alcanza para marcar contradicción dura
+- `UNKNOWN`: falta contexto observable para cerrar compatibilidad
+- `FAIL`: hay contradicción contractual visible
+- en este primer corte, el exit code del wrapper sigue atado al contrato mínimo del doctor base, no al bloque capability
 
 ### `inspect`
 
@@ -197,6 +221,7 @@ Lectura de modos:
 | contention / locks | ya existe otra corrida top-level sobre el mismo store base |
 | `TEST_DB_STRATEGY=clean` rechazado | comportamiento esperado; no es un modo soportado |
 | `migration-contract` rechazado fuera de snapshot/shared/MySQL | comportamiento esperado; es una suite técnica acotada |
+| `Capability doctor: UNKNOWN` | doctor no tiene evidencia visible suficiente para cerrar esa compatibilidad |
 
 Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
@@ -204,6 +229,7 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 - `TEST_LIST=1` imprime selección, pero no debe venderse como dry-run puro del lifecycle de store; según la suite, el bootstrap puede ocurrir igual.
 - `doctor` no prueba restore de snapshot ni migraciones.
+- `doctor migration-contract` solo evalúa contradicciones visibles por config; no ejecuta restore ni seed-state.
 - `scripts/report.php` no es el contrato estable para automatización.
 - `per_worker` no habilita varios runners top-level en paralelo.
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
@@ -216,7 +242,7 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 |---|---|
 | una sola corrida top-level, secuencial, `shared` | seguro |
 | una sola corrida top-level, `per_worker`, `TEST_JOBS>1` | seguro si la suite necesita aislamiento DB intra-suite |
-| una sola corrida top-level, `migration-contract` sobre snapshot MySQL | seguro |
+| una sola corrida top-level, `migration-contract` sobre snapshot MySQL | seguro como ruta contractual, pero sigue requiriendo una corrida real |
 | dos corridas top-level sobre el mismo store base | no soportado |
 | usar `TEST_LIST=1` como si evitara todo bootstrap | lectura incorrecta |
 | usar `all` como primer diagnóstico | posible, pero innecesariamente ruidoso |

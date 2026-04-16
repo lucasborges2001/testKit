@@ -90,7 +90,7 @@ normalize_stack_csv() {
   fi
 
   local out=()
-  local seen="," 
+  local seen=","
   local IFS=','
   read -r -a parts <<< "$raw"
   for part in "${parts[@]}"; do
@@ -119,7 +119,7 @@ normalize_stack_csv() {
   local joined=""
   local i
   for i in "${!out[@]}"; do
-    [[ $i -gt 0 ]] && joined+="," 
+    [[ $i -gt 0 ]] && joined+=","
     joined+="${out[$i]}"
   done
   echo "$joined"
@@ -210,6 +210,7 @@ def is_noise(line: str) -> bool:
     if not line:
         return False
     return any(re.match(pattern, line) for pattern in noise_patterns)
+
 
 cmd = ['docker', 'compose', '--ansi', 'never', *sys.argv[1:]]
 proc = subprocess.Popen(
@@ -338,7 +339,8 @@ _dump_config() {
   echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
   echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
   echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
-  echo "TESTKIT_COMPOSE_VERBOSE: ${TESTKIT_COMPOSE_VERBOSE}"
+  echo "TESTKIT_DOCTOR_TARGET: ${DOCTOR_REQUESTED_TARGET:-}"
+  echo "TESTKIT_CAPABILITY_STATUS: ${CAPABILITY_STATUS:-PASS}"
   echo ""
 }
 
@@ -362,6 +364,42 @@ path_is_under_root() {
   local root="$1"
   local target="$2"
   [[ "$target" == "$root" || "$target" == "$root/"* ]]
+}
+
+normalize_simple_token() {
+  echo "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs
+}
+
+capability_status_rank() {
+  case "${1:-}" in
+    PASS) echo 1 ;;
+    WARN) echo 2 ;;
+    UNKNOWN) echo 3 ;;
+    FAIL) echo 4 ;;
+    *) echo 0 ;;
+  esac
+}
+
+capability_update_status() {
+  local candidate="${1:-PASS}"
+  local candidate_rank current_rank
+  candidate_rank="$(capability_status_rank "$candidate")"
+  current_rank="$(capability_status_rank "${CAPABILITY_STATUS:-PASS}")"
+  if (( candidate_rank > current_rank )); then
+    CAPABILITY_STATUS="$candidate"
+  fi
+}
+
+capability_emit() {
+  local status="$1"
+  local code="$2"
+  local summary="$3"
+  local action="${4:-}"
+  capability_update_status "$status"
+  echo "[$status] $code - $summary"
+  if [[ -n "$action" ]]; then
+    echo "       Acción: $action"
+  fi
 }
 
 doctor_contract_checks() {
@@ -426,8 +464,134 @@ doctor_contract_checks() {
   fi
 }
 
+doctor_capability_checks() {
+  local requested_target="${1:-}"
+  local db_strategy
+  db_strategy="$(normalize_simple_token "${TEST_DB_STRATEGY:-shared}")"
+  local store_driver
+  store_driver="$(normalize_simple_token "${TEST_STORE_DRIVER:-mysql}")"
+  local baseline_mode
+  baseline_mode="$(normalize_simple_token "${TEST_BASELINE_MODE:-}")"
+  local jobs_raw="${TEST_JOBS:-1}"
+  local jobs=1
+
+  CAPABILITY_STATUS="PASS"
+
+  echo ""
+  echo -e "\033[1m== CAPABILITY DOCTOR ==\033[0m"
+  if [[ -n "$requested_target" ]]; then
+    echo "[INFO] capability target=${requested_target}"
+  else
+    echo "[INFO] capability target=generic"
+    echo "       Sin target explícito, solo se evalúan restricciones visibles por config."
+  fi
+
+  case "$db_strategy" in
+    shared)
+      capability_emit PASS SHARED_STRATEGY_DECLARED "TEST_DB_STRATEGY=shared está dentro del contrato vigente."
+      ;;
+    per_worker)
+      capability_emit PASS PER_WORKER_STRATEGY_DECLARED "TEST_DB_STRATEGY=per_worker está dentro del contrato vigente para aislamiento intra-suite."
+      echo "       Nota: no vuelve seguras corridas top-level concurrentes sobre el mismo store base."
+      ;;
+    clean)
+      capability_emit FAIL CLEAN_STRATEGY_UNSUPPORTED "TEST_DB_STRATEGY=clean no está implementado como modo operativo."
+      ;;
+    "")
+      capability_emit PASS DEFAULT_SHARED_STRATEGY "No se declaró TEST_DB_STRATEGY; doctor asume shared como default actual."
+      db_strategy="shared"
+      ;;
+    *)
+      capability_emit FAIL INVALID_DB_STRATEGY "TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-} no pertenece al contrato visible."
+      ;;
+  esac
+
+  if [[ "$jobs_raw" =~ ^[0-9]+$ ]]; then
+    jobs="$jobs_raw"
+    if (( jobs < 1 )); then
+      capability_emit WARN NON_POSITIVE_TEST_JOBS "TEST_JOBS=${jobs_raw} no es una cantidad operativa normal; doctor tratará la lectura como no confiable."
+    elif (( jobs == 1 )); then
+      capability_emit PASS SINGLE_WORKER_PATH "TEST_JOBS=1 mantiene la ruta secuencial simple."
+    elif [[ "$db_strategy" == "per_worker" ]]; then
+      capability_emit PASS MULTIWORKER_PER_WORKER "TEST_JOBS=${jobs_raw} con per_worker declara aislamiento intra-suite por worker."
+    else
+      capability_emit UNKNOWN MULTIWORKER_NEEDS_SUITE_CONTEXT "TEST_JOBS=${jobs_raw} sin per_worker requiere saber si la suite toca DB real; doctor no puede cerrarlo solo con config visible."
+      echo "       Nota: aun con per_worker, doctor no observa corridas top-level concurrentes."
+    fi
+  else
+    capability_emit WARN TEST_JOBS_UNPARSEABLE "TEST_JOBS=${jobs_raw} no es un entero visible para doctor."
+  fi
+
+  if [[ "$store_driver" == "mysql" || -z "$store_driver" ]]; then
+    capability_emit PASS MYSQL_CLOSED_PATH "MySQL es la ruta principal cerrada del contrato actual."
+    store_driver="${store_driver:-mysql}"
+  else
+    capability_emit UNKNOWN ENGINE_NOT_CLOSED "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase."
+  fi
+
+  case "$requested_target" in
+    "" )
+      ;;
+    migration-contract)
+      if [[ "$baseline_mode" == "snapshot" ]]; then
+        capability_emit PASS MIGRATION_CONTRACT_SNAPSHOT "migration-contract declara TEST_BASELINE_MODE=snapshot."
+      else
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SNAPSHOT "migration-contract exige TEST_BASELINE_MODE=snapshot."
+      fi
+
+      if [[ "$db_strategy" == "shared" ]]; then
+        capability_emit PASS MIGRATION_CONTRACT_SHARED "migration-contract declara TEST_DB_STRATEGY=shared."
+      else
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SHARED "migration-contract exige TEST_DB_STRATEGY=shared."
+      fi
+
+      if [[ "$store_driver" == "mysql" ]]; then
+        capability_emit PASS MIGRATION_CONTRACT_MYSQL "migration-contract queda cerrado en esta fase solo para MySQL."
+      else
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_MYSQL "migration-contract queda fuera de contrato si el motor efectivo no es MySQL."
+      fi
+
+      if env_present_any TEST_BASELINE_SNAPSHOT_FILE; then
+        capability_emit PASS SNAPSHOT_SOURCE_VISIBLE "Doctor ve TEST_BASELINE_SNAPSHOT_FILE como fuente visible de snapshot."
+      else
+        capability_emit UNKNOWN SNAPSHOT_SOURCE_NOT_VISIBLE "Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales."
+      fi
+      ;;
+    all|back|back-php|back-py|front|front-php|front-js|smoke|perf|stress)
+      capability_emit UNKNOWN TARGET_RULESET_PARTIAL "El target ${requested_target} todavía no tiene mapa cerrado de sensibilidad DB en doctor."
+      echo "       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite."
+      ;;
+    *)
+      capability_emit UNKNOWN TARGET_NOT_CLASSIFIED "Doctor no reconoce un ruleset cerrado para target=${requested_target}."
+      ;;
+  esac
+
+  echo ""
+  echo "Capability doctor: ${CAPABILITY_STATUS}"
+  echo "Nota: esta sección no cambia el exit code del wrapper en este primer corte; el exit sigue atado al contrato mínimo visible."
+}
+
 doctor() {
   local ok=1
+  local dump=0
+  local requested_target=""
+  local arg
+
+  for arg in "${@:2}"; do
+    case "$arg" in
+      --dump)
+        dump=1
+        ;;
+      *)
+        if [[ -z "$requested_target" ]]; then
+          requested_target="$arg"
+        fi
+        ;;
+    esac
+  done
+
+  DOCTOR_REQUESTED_TARGET="$(normalize_simple_token "${requested_target:-${TESTKIT_DOCTOR_TARGET:-}}")"
+
   echo ""
   echo -e "\033[1m== TESTKIT DOCTOR ==\033[0m"
 
@@ -470,9 +634,10 @@ doctor() {
 
   if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
     doctor_contract_checks ok
+    doctor_capability_checks "${DOCTOR_REQUESTED_TARGET:-}"
   fi
 
-  if [[ "${2:-}" == "--dump" && -n "${ENV_FILE:-}" ]]; then
+  if [[ "$dump" -eq 1 && -n "${ENV_FILE:-}" ]]; then
     export TESTKIT_DB_ENV_PATH="$(env_file_to_container_db_env_path "$ENV_FILE")"
     export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
     export TESTKIT_ROOT="$TESTKIT_ROOT_HOST"

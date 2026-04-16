@@ -34,6 +34,7 @@ Use one concrete suite first. Do not start with `all`.
 export TESTKIT_PROJECT_ROOT=/path/to/project
 
 ./bin/testkit doctor
+./bin/testkit doctor migration-contract
 ./bin/testkit up -d
 ./bin/testkit run --rm testkit php runTest.php back-php
 ./bin/testkit inspect latest
@@ -45,6 +46,7 @@ export TESTKIT_PROJECT_ROOT=/path/to/project
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 
 .\bin\testkit.ps1 doctor
+.\bin\testkit.ps1 doctor migration-contract
 .\bin\testkit.ps1 up -d
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
@@ -60,11 +62,12 @@ What exists:
 - `[WARN] long_running_test` for tests that cross the configured threshold
 - `[Phase Timings]` at the end of the suite
 - summarized observability fields persisted in suite JSON and local history
+- a config-visible capability section in `doctor` for generic store constraints and the closed `migration-contract` path
 
 What does **not** exist here:
 
 - per-heartbeat persistence
-- capability doctor decisions
+- proof that a runtime path is safe just because `doctor` emitted `PASS`
 - automatic diagnosis of business tests
 
 The detailed contract lives in:
@@ -80,6 +83,7 @@ This repository does not try to hide its current limits. The detailed contract l
 - `TEST_DB_STRATEGY=clean` is rejected
 - `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
 - `migration-contract` is a narrow technical suite, not a general functional suite
+- capability checks in `doctor` are config-visible only and do not replace a real run
 - fragility hints, failure families and similar triage signals are heuristics, not source of truth
 
 ## Artifact ownership

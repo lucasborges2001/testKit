@@ -167,7 +167,38 @@ function Rewrite-RunCommandArgs([string[]]$InputArgs) {
   return ,$rewritten
 }
 
-function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
+function Normalize-SimpleToken([string]$Raw) {
+  if ([string]::IsNullOrWhiteSpace($Raw)) { return '' }
+  return $Raw.Trim().ToLowerInvariant()
+}
+
+function Get-CapabilityStatusRank([string]$Status) {
+  switch ($Status) {
+    'PASS' { return 1 }
+    'WARN' { return 2 }
+    'UNKNOWN' { return 3 }
+    'FAIL' { return 4 }
+    default { return 0 }
+  }
+}
+
+$script:CapabilityStatus = 'PASS'
+
+function Update-CapabilityStatus([string]$Candidate) {
+  if ((Get-CapabilityStatusRank $Candidate) -gt (Get-CapabilityStatusRank $script:CapabilityStatus)) {
+    $script:CapabilityStatus = $Candidate
+  }
+}
+
+function Write-CapabilityLine([string]$Status, [string]$Code, [string]$Summary, [string]$Action = '') {
+  Update-CapabilityStatus $Status
+  Write-Host "[$Status] $Code - $Summary"
+  if (-not [string]::IsNullOrWhiteSpace($Action)) {
+    Write-Host "       Acción: $Action"
+  }
+}
+
+function Dump-Config([string]$EnvFilePath, [string]$StackCsv, [string]$DoctorTarget) {
   Write-Host ""
   Write-Host "-- Effective TestKit config --"
   Write-Host "projectRoot: $ProjectRoot"
@@ -190,6 +221,8 @@ function Dump-Config([string]$EnvFilePath, [string]$StackCsv) {
   Write-Host "TEST_DB_STRATEGY: $dbStrategy"
   Write-Host "TEST_DB_WORKER_SUFFIX_FORMAT: $workerSuffix"
   Write-Host "TEST_STORE_PROVISION: $storeProvision"
+  Write-Host "TESTKIT_DOCTOR_TARGET: $DoctorTarget"
+  Write-Host "TESTKIT_CAPABILITY_STATUS: $script:CapabilityStatus"
   Write-Host ""
 }
 
@@ -250,10 +283,115 @@ function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath) {
   }
 }
 
+function Invoke-DoctorCapabilityChecks([string]$DoctorTarget) {
+  $script:CapabilityStatus = 'PASS'
+
+  $dbStrategy = if ($env:TEST_DB_STRATEGY) { Normalize-SimpleToken $env:TEST_DB_STRATEGY } else { 'shared' }
+  $storeDriver = if ($env:TEST_STORE_DRIVER) { Normalize-SimpleToken $env:TEST_STORE_DRIVER } else { 'mysql' }
+  $baselineMode = if ($env:TEST_BASELINE_MODE) { Normalize-SimpleToken $env:TEST_BASELINE_MODE } else { '' }
+  $jobsRaw = if ($env:TEST_JOBS) { $env:TEST_JOBS } else { '1' }
+
+  Write-Host ""
+  Write-Host "== CAPABILITY DOCTOR =="
+  if ([string]::IsNullOrWhiteSpace($DoctorTarget)) {
+    Write-Host "[INFO] capability target=generic"
+    Write-Host "       Sin target explícito, solo se evalúan restricciones visibles por config."
+  } else {
+    Write-Host "[INFO] capability target=$DoctorTarget"
+  }
+
+  switch ($dbStrategy) {
+    'shared' { Write-CapabilityLine 'PASS' 'SHARED_STRATEGY_DECLARED' 'TEST_DB_STRATEGY=shared está dentro del contrato vigente.' }
+    'per_worker' {
+      Write-CapabilityLine 'PASS' 'PER_WORKER_STRATEGY_DECLARED' 'TEST_DB_STRATEGY=per_worker está dentro del contrato vigente para aislamiento intra-suite.'
+      Write-Host "       Nota: no vuelve seguras corridas top-level concurrentes sobre el mismo store base."
+    }
+    'clean' { Write-CapabilityLine 'FAIL' 'CLEAN_STRATEGY_UNSUPPORTED' 'TEST_DB_STRATEGY=clean no está implementado como modo operativo.' }
+    '' {
+      Write-CapabilityLine 'PASS' 'DEFAULT_SHARED_STRATEGY' 'No se declaró TEST_DB_STRATEGY; doctor asume shared como default actual.'
+      $dbStrategy = 'shared'
+    }
+    default { Write-CapabilityLine 'FAIL' 'INVALID_DB_STRATEGY' "TEST_DB_STRATEGY=$($env:TEST_DB_STRATEGY) no pertenece al contrato visible." }
+  }
+
+  $jobs = 1
+  if ($jobsRaw -match '^\d+$') {
+    $jobs = [int]$jobsRaw
+    if ($jobs -lt 1) {
+      Write-CapabilityLine 'WARN' 'NON_POSITIVE_TEST_JOBS' "TEST_JOBS=$jobsRaw no es una cantidad operativa normal; doctor tratará la lectura como no confiable."
+    } elseif ($jobs -eq 1) {
+      Write-CapabilityLine 'PASS' 'SINGLE_WORKER_PATH' 'TEST_JOBS=1 mantiene la ruta secuencial simple.'
+    } elseif ($dbStrategy -eq 'per_worker') {
+      Write-CapabilityLine 'PASS' 'MULTIWORKER_PER_WORKER' "TEST_JOBS=$jobsRaw con per_worker declara aislamiento intra-suite por worker."
+    } else {
+      Write-CapabilityLine 'UNKNOWN' 'MULTIWORKER_NEEDS_SUITE_CONTEXT' "TEST_JOBS=$jobsRaw sin per_worker requiere saber si la suite toca DB real; doctor no puede cerrarlo solo con config visible."
+      Write-Host "       Nota: aun con per_worker, doctor no observa corridas top-level concurrentes."
+    }
+  } else {
+    Write-CapabilityLine 'WARN' 'TEST_JOBS_UNPARSEABLE' "TEST_JOBS=$jobsRaw no es un entero visible para doctor."
+  }
+
+  if ($storeDriver -eq 'mysql' -or [string]::IsNullOrWhiteSpace($storeDriver)) {
+    Write-CapabilityLine 'PASS' 'MYSQL_CLOSED_PATH' 'MySQL es la ruta principal cerrada del contrato actual.'
+    if ([string]::IsNullOrWhiteSpace($storeDriver)) { $storeDriver = 'mysql' }
+  } else {
+    Write-CapabilityLine 'UNKNOWN' 'ENGINE_NOT_CLOSED' "TEST_STORE_DRIVER=$($env:TEST_STORE_DRIVER) no pertenece a la ruta cerrada general de esta fase."
+  }
+
+  switch ($DoctorTarget) {
+    '' {}
+    'migration-contract' {
+      if ($baselineMode -eq 'snapshot') {
+        Write-CapabilityLine 'PASS' 'MIGRATION_CONTRACT_SNAPSHOT' 'migration-contract declara TEST_BASELINE_MODE=snapshot.'
+      } else {
+        Write-CapabilityLine 'FAIL' 'MIGRATION_CONTRACT_NEEDS_SNAPSHOT' 'migration-contract exige TEST_BASELINE_MODE=snapshot.'
+      }
+
+      if ($dbStrategy -eq 'shared') {
+        Write-CapabilityLine 'PASS' 'MIGRATION_CONTRACT_SHARED' 'migration-contract declara TEST_DB_STRATEGY=shared.'
+      } else {
+        Write-CapabilityLine 'FAIL' 'MIGRATION_CONTRACT_NEEDS_SHARED' 'migration-contract exige TEST_DB_STRATEGY=shared.'
+      }
+
+      if ($storeDriver -eq 'mysql') {
+        Write-CapabilityLine 'PASS' 'MIGRATION_CONTRACT_MYSQL' 'migration-contract queda cerrado en esta fase solo para MySQL.'
+      } else {
+        Write-CapabilityLine 'FAIL' 'MIGRATION_CONTRACT_NEEDS_MYSQL' 'migration-contract queda fuera de contrato si el motor efectivo no es MySQL.'
+      }
+
+      if (Test-EnvPresentAny @('TEST_BASELINE_SNAPSHOT_FILE')) {
+        Write-CapabilityLine 'PASS' 'SNAPSHOT_SOURCE_VISIBLE' 'Doctor ve TEST_BASELINE_SNAPSHOT_FILE como fuente visible de snapshot.'
+      } else {
+        Write-CapabilityLine 'UNKNOWN' 'SNAPSHOT_SOURCE_NOT_VISIBLE' 'Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales.'
+      }
+    }
+    'all' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target all todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'back' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'back-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'back-py' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-py todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'front' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'front-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'front-js' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-js todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'smoke' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target smoke todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'perf' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target perf todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    'stress' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target stress todavía no tiene mapa cerrado de sensibilidad DB en doctor.' }
+    default { Write-CapabilityLine 'UNKNOWN' 'TARGET_NOT_CLASSIFIED' "Doctor no reconoce un ruleset cerrado para target=$DoctorTarget." }
+  }
+
+  Write-Host ""
+  Write-Host "Capability doctor: $script:CapabilityStatus"
+  Write-Host "Nota: esta sección no cambia el exit code del wrapper en este primer corte; el exit sigue atado al contrato mínimo visible."
+}
+
 function Run-Doctor {
-  param([switch]$Dump)
+  param(
+    [switch]$Dump,
+    [string]$DoctorTarget = ''
+  )
 
   $ok = $true
+  $doctorTargetResolved = if ([string]::IsNullOrWhiteSpace($DoctorTarget)) { Normalize-SimpleToken $env:TESTKIT_DOCTOR_TARGET } else { Normalize-SimpleToken $DoctorTarget }
+
   Write-Host "== TestKit doctor =="
 
   $envFile = Pick-EnvFile
@@ -298,13 +436,14 @@ function Run-Doctor {
 
   if ($envFile) {
     Invoke-DoctorContractChecks ([ref]$ok) $envFile.Path
+    Invoke-DoctorCapabilityChecks $doctorTargetResolved
   }
 
   if ($Dump -and $envFile) {
     $env:TESTKIT_DB_ENV_PATH = EnvFile-ToContainerDbEnvPath($envFile.Path)
     $env:TESTKIT_PROJECT_ROOT = $ProjectRoot.Path
     $env:TESTKIT_ROOT = $ResolvedTestkitRoot.Path
-    Dump-Config $envFile.Path $stackCsv
+    Dump-Config $envFile.Path $stackCsv $doctorTargetResolved
   }
 
   if ($ok) { Write-Host "`nDoctor: OK"; exit 0 }
@@ -314,8 +453,17 @@ function Run-Doctor {
 
 if ($Args.Count -gt 0 -and $Args[0] -eq "doctor") {
   $dump = $false
-  if ($Args.Count -gt 1 -and $Args[1] -eq "--dump") { $dump = $true }
-  Run-Doctor -Dump:$dump
+  $doctorTarget = ''
+  if ($Args.Count -gt 1) {
+    foreach ($arg in $Args[1..($Args.Count-1)]) {
+      if ($arg -eq '--dump') {
+        $dump = $true
+      } elseif ([string]::IsNullOrWhiteSpace($doctorTarget)) {
+        $doctorTarget = $arg
+      }
+    }
+  }
+  Run-Doctor -Dump:$dump -DoctorTarget:$doctorTarget
 }
 
 $envFile = Pick-EnvFile
