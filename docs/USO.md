@@ -150,12 +150,13 @@ Usarlo cuando ya existe una corrida. No reemplaza `doctor`.
 
 ## 6) Observabilidad de ejecución
 
-Durante una suite larga, el runner puede emitir heartbeats de progreso y advertencias de test largo.
+Durante una suite larga, el runner puede emitir señales de progreso humano, advertencias de test largo y un resumen final de timings por fase.
 
 Ejemplo compacto:
 
 ```text
-[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 cur=test/back/.../FooTest.php cur_el=00:00:37 avg=9.6s/test eta=00:39:12 jobs=1
+[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 cur=test/back/.../FooTest.php cur_el=00:00:37 avg=9.6s/test eta=00:39:12 jobs=3 workers=w1:...@00:00:37, w2:...@00:00:11, w3:...@00:00:04
+[Test] status=PASS worker=2 done=24/267 dur=00:00:09 rel=test/back/.../BarTest.php el=00:03:50 p/f/s/to=23/1/0/0 jobs=3 active=w1:...@00:00:46, w3:...@00:00:13
 [WARN] long_running_test elapsed=00:01:00 rel=test/back/.../FooTest.php worker=1
 [Phase Timings]
   discovery_ms=118
@@ -167,21 +168,25 @@ Ejemplo compacto:
 Lectura correcta:
 
 - `[Progress]` es una señal humana de que la suite sigue viva; no es un formato para automatización
-- `cur` puede aparecer compactado o truncado con elipsis en terminales angostas; el contrato estable es el significado del campo, no el path raw completo
+- `workers=` resume workers activos cuando `TEST_JOBS > 1`; sirve para ver quién está ocupado y hace cuánto
+- `[Test]` aparece solo en `per_test` y emite una línea por test completado
+- `rel`, `cur`, `workers` y `active` pueden aparecer compactados o truncados con elipsis en terminales angostas; el contrato estable es el significado del campo, no el path raw completo
 - `avg` y `eta` usan promedio simple de la corrida actual; no hay heurística histórica en esta capa
 - `[WARN] long_running_test` es informativo; no cambia exit code ni estado final
+- `[WARN] long_running_test` aplica tanto en `heartbeat` como en `per_test`; `quiet` lo suprime
 - `[Phase Timings]` resume tiempos gruesos de `discovery`, `admission`, `execution` y `reporting`
 
 Configuración mínima:
 
-- `TESTKIT_PROGRESS_MODE=heartbeat|quiet`
+- `TESTKIT_PROGRESS_MODE=heartbeat|per_test|quiet`
 - `TESTKIT_PROGRESS_INTERVAL_SEC` (default `15`)
 - `TESTKIT_LONG_TEST_WARN_SEC` (default `60`)
 
 Lectura de modos:
 
-- `heartbeat`: habilita heartbeats y warnings de test largo
-- `quiet`: suprime heartbeats y warnings de test largo, pero no elimina el reporte final ni `phase_timings_ms`
+- `heartbeat`: habilita heartbeats periódicos, warnings de test largo y visibilidad compacta de workers activos
+- `per_test`: emite una línea por test completado, mantiene warnings de test largo y muestra workers activos cuando aplica
+- `quiet`: suprime `[Progress]`, `[Test]` y warnings de test largo, pero no elimina el reporte final ni `phase_timings_ms`
 
 ## 7) Qué comportamiento sí es esperado
 
@@ -202,7 +207,8 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - `scripts/report.php` no es el contrato estable para automatización.
 - `per_worker` no habilita varios runners top-level en paralelo.
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
-- `[Progress]` no reemplaza `inspect`, el JSON persistido ni el reporte final.
+- `[Progress]` y `[Test]` no reemplazan `inspect`, el JSON persistido ni el reporte final.
+- esta capa no persiste heartbeats individuales ni telemetría por evento.
 
 ## 9) Patrones seguros vs peligrosos
 

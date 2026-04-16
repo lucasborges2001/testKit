@@ -286,7 +286,7 @@ final class HistoryRepository
         }
 
         $mode = strtolower(trim((string)($value['mode'] ?? '')));
-        if ($mode === '') {
+        if (!in_array($mode, ['heartbeat', 'quiet', 'per_test'], true)) {
             $mode = 'heartbeat';
         }
 

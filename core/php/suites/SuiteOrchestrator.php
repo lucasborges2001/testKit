@@ -343,17 +343,8 @@ final class SuiteOrchestrator
         }
 
         if (!is_array($result['execution_metrics'] ?? null)) {
-            $completed = is_array($result['tests'] ?? null) ? count($result['tests']) : 0;
-            $durationMs = isset($result['duration_ms']) ? max(0, (int)$result['duration_ms']) : 0;
-            $avgMs = $completed > 0 ? (int)round($durationMs / $completed) : null;
-            $estimatedTotalMs = $avgMs !== null ? $avgMs * $selectedTestCount : null;
-
-            $result['execution_metrics'] = [
-                'selected_test_count' => $selectedTestCount,
-                'completed_test_count' => $completed,
-                'avg_test_ms' => $avgMs,
-                'estimated_total_ms' => $estimatedTotalMs,
-            ];
+            $result['tests_total'] = (int)($result['tests_total'] ?? $selectedTestCount);
+            $result['execution_metrics'] = SuiteExecutor::executionMetricsSnapshot($result);
         }
     }
 

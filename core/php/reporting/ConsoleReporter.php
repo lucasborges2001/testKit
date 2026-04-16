@@ -15,7 +15,10 @@ final class ConsoleReporter
     private const MAX_ACTIONS = 4;
     private const MAX_REGRESSION_ITEMS = 3;
     private const MAX_PROGRESS_CURRENT_LEN = 28;
+    private const MAX_PROGRESS_WORKER_PATH_LEN = 18;
+    private const MAX_PROGRESS_WORKERS_LEN = 84;
     private const MAX_WARNING_REL_LEN = 40;
+    private const MAX_TEST_REL_LEN = 28;
 
     /**
      * @param array<string,mixed> $config
@@ -135,7 +138,7 @@ final class ConsoleReporter
             ? UI::gray(self::formatProgressPath($currentRel, self::MAX_PROGRESS_CURRENT_LEN))
             : 'n/a';
 
-        echo UI::info('[Progress]') . ' '
+        $line = UI::info('[Progress]') . ' '
             . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
             . ' '
             . 'done=' . (int)($snapshot['completed'] ?? 0) . '/' . (int)($snapshot['total'] ?? 0)
@@ -153,8 +156,51 @@ final class ConsoleReporter
             . ' '
             . 'eta=' . (is_int($etaMs) ? self::formatDurationMs($etaMs) : 'n/a')
             . ' '
-            . 'jobs=' . (int)($snapshot['jobs'] ?? 1)
-            . "\n";
+            . 'jobs=' . (int)($snapshot['jobs'] ?? 1);
+
+        $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
+        if ($workers !== '') {
+            $line .= ' workers=' . UI::gray($workers);
+        }
+
+        echo $line . "\n";
+    }
+
+    /**
+     * @param array<string,mixed> $snapshot
+     */
+    public static function printPerTestProgress(array $snapshot): void
+    {
+        $rel = trim((string)($snapshot['rel'] ?? ''));
+        $status = strtoupper(trim((string)($snapshot['status'] ?? 'done')));
+        $status = $status !== '' ? $status : 'DONE';
+
+        $line = UI::info('[Test]') . ' '
+            . 'status=' . self::renderTestStatus($status)
+            . ' '
+            . 'worker=' . (int)($snapshot['worker'] ?? 0)
+            . ' '
+            . 'done=' . (int)($snapshot['completed'] ?? 0) . '/' . (int)($snapshot['total'] ?? 0)
+            . ' '
+            . 'dur=' . self::formatDurationMs((int)($snapshot['duration_ms'] ?? 0))
+            . ' '
+            . 'rel=' . UI::gray(self::formatProgressPath($rel, self::MAX_TEST_REL_LEN))
+            . ' '
+            . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
+            . ' '
+            . 'p/f/s/to=' . (int)($snapshot['pass'] ?? 0)
+            . '/' . (int)($snapshot['fail'] ?? 0)
+            . '/' . (int)($snapshot['skip'] ?? 0)
+            . '/' . (int)($snapshot['timeout'] ?? 0)
+            . ' '
+            . 'jobs=' . (int)($snapshot['jobs'] ?? 1);
+
+        $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
+        if ($workers !== '') {
+            $line .= ' active=' . UI::gray($workers);
+        }
+
+        echo $line . "\n";
     }
 
     public static function printLongRunningTest(array $warning): void
@@ -845,6 +891,19 @@ final class ConsoleReporter
         return UI::failure($normalized);
     }
 
+    private static function renderTestStatus(string $status): string
+    {
+        if (in_array($status, ['PASS', 'DONE'], true)) {
+            return UI::success($status);
+        }
+
+        if (in_array($status, ['SKIP', 'SKIPPED', 'TIMEOUT'], true)) {
+            return UI::warning($status);
+        }
+
+        return UI::failure($status);
+    }
+
     private static function formatDurationMs(int $durationMs): string
     {
         $totalSeconds = max(0, (int)floor($durationMs / 1000));
@@ -893,6 +952,57 @@ final class ConsoleReporter
         }
 
         return self::truncateMiddle($normalized, $maxLen);
+    }
+
+    /**
+     * @param mixed $workersValue
+     */
+    private static function formatWorkersSummary(mixed $workersValue): string
+    {
+        if (!is_array($workersValue) || $workersValue === []) {
+            return '';
+        }
+
+        $rows = [];
+        foreach ($workersValue as $worker) {
+            if (!is_array($worker)) {
+                continue;
+            }
+
+            $workerId = (int)($worker['worker'] ?? 0);
+            if ($workerId <= 0) {
+                continue;
+            }
+
+            $rows[] = [
+                'worker' => $workerId,
+                'rel' => (string)($worker['rel'] ?? ''),
+                'elapsed_ms' => max(0, (int)($worker['elapsed_ms'] ?? 0)),
+            ];
+        }
+
+        if ($rows === []) {
+            return '';
+        }
+
+        usort(
+            $rows,
+            static fn(array $left, array $right): int => ((int)$left['worker']) <=> ((int)$right['worker'])
+        );
+
+        $pieces = [];
+        $hidden = max(0, count($rows) - 3);
+        foreach (array_slice($rows, 0, 3) as $row) {
+            $pieces[] = 'w' . (int)$row['worker']
+                . ':' . self::formatProgressPath((string)$row['rel'], self::MAX_PROGRESS_WORKER_PATH_LEN)
+                . '@' . self::formatDurationMs((int)$row['elapsed_ms']);
+        }
+
+        if ($hidden > 0) {
+            $pieces[] = '+' . $hidden;
+        }
+
+        return self::truncateMiddle(implode(', ', $pieces), self::MAX_PROGRESS_WORKERS_LEN);
     }
 
     private static function truncateMiddle(string $value, int $maxLen): string

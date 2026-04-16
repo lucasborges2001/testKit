@@ -19,7 +19,7 @@ final class SuiteExecutor
     public static function progressPolicy(): array
     {
         $mode = strtolower(Env::string('TESTKIT_PROGRESS_MODE', 'heartbeat'));
-        if (!in_array($mode, ['heartbeat', 'quiet'], true)) {
+        if (!in_array($mode, ['heartbeat', 'quiet', 'per_test'], true)) {
             $mode = 'heartbeat';
         }
 
@@ -27,6 +27,28 @@ final class SuiteExecutor
             'mode' => $mode,
             'interval_sec' => max(1, Env::int('TESTKIT_PROGRESS_INTERVAL_SEC', 15)),
             'long_test_warn_sec' => max(1, Env::int('TESTKIT_LONG_TEST_WARN_SEC', 60)),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @return array<string,int|null>
+     */
+    public static function executionMetricsSnapshot(array $result): array
+    {
+        $selected = (int)($result['tests_total'] ?? 0);
+        $completed = self::completedTestCount(is_array($result['tests'] ?? null) ? $result['tests'] : []);
+        $durationMs = isset($result['duration_ms']) ? max(0, (int)$result['duration_ms']) : null;
+        $avgMs = ($durationMs !== null && $completed > 0)
+            ? (int)round($durationMs / $completed)
+            : null;
+        $estimatedTotalMs = $avgMs !== null ? $avgMs * $selected : null;
+
+        return [
+            'selected_test_count' => $selected,
+            'completed_test_count' => $completed,
+            'avg_test_ms' => $avgMs,
+            'estimated_total_ms' => $estimatedTotalMs,
         ];
     }
 
@@ -147,6 +169,7 @@ final class SuiteExecutor
             $finished = ProcessRunner::finish($row['job']);
             $entry = self::buildEntryFromJob($row['test'], $row['launch'], $finished, $config);
             self::attach($result, $entry);
+            self::emitPerTestProgressIfNeeded($result, $progressState, $row, $entry, $running);
 
             $freeWorkers[] = (int)$row['worker'];
             sort($freeWorkers);
@@ -197,13 +220,17 @@ final class SuiteExecutor
             return;
         }
 
-        if ((string)($progressState['mode'] ?? 'heartbeat') !== 'heartbeat') {
+        $mode = (string)($progressState['mode'] ?? 'heartbeat');
+        if ($mode === 'quiet') {
             return;
         }
 
         $now = self::nowMs();
-
         self::emitLongRunningWarningIfNeeded($progressState, $running, $now);
+
+        if ($mode !== 'heartbeat') {
+            return;
+        }
 
         $lastEmitMs = (int)($progressState['last_progress_emit_ms'] ?? 0);
         $intervalMs = max(1, (int)($progressState['progress_interval_ms'] ?? 15000));
@@ -213,6 +240,28 @@ final class SuiteExecutor
 
         ConsoleReporter::printSuiteProgress(self::buildProgressSnapshot($result, $progressState, $running, $now));
         $progressState['last_progress_emit_ms'] = $now;
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $progressState
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $entry
+     * @param array<int,array<string,mixed>> $running
+     */
+    private static function emitPerTestProgressIfNeeded(
+        array $result,
+        array $progressState,
+        array $row,
+        array $entry,
+        array $running
+    ): void {
+        if ((string)($progressState['mode'] ?? 'heartbeat') !== 'per_test') {
+            return;
+        }
+
+        $now = self::nowMs();
+        ConsoleReporter::printPerTestProgress(self::buildCompletedTestSnapshot($result, $progressState, $row, $entry, $running, $now));
     }
 
     /**
@@ -260,7 +309,7 @@ final class SuiteExecutor
      */
     private static function buildProgressSnapshot(array $result, array $progressState, array $running, int $nowMs): array
     {
-        $completed = count($result['tests']);
+        $completed = self::completedTestCount(is_array($result['tests'] ?? null) ? $result['tests'] : []);
         $total = (int)($progressState['total'] ?? ($result['tests_total'] ?? 0));
         $elapsedMs = max(0, $nowMs - (int)($progressState['suite_started_ms'] ?? $nowMs));
         $avgMs = $completed > 0 ? (int)round($elapsedMs / $completed) : null;
@@ -286,7 +335,68 @@ final class SuiteExecutor
             'avg_ms_per_test' => $avgMs,
             'eta_ms' => $etaMs,
             'jobs' => (int)($progressState['jobs'] ?? ($result['jobs'] ?? 1)),
+            'workers' => self::buildWorkerSnapshots($running, $nowMs),
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $progressState
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $entry
+     * @param array<int,array<string,mixed>> $running
+     * @return array<string,mixed>
+     */
+    private static function buildCompletedTestSnapshot(
+        array $result,
+        array $progressState,
+        array $row,
+        array $entry,
+        array $running,
+        int $nowMs
+    ): array {
+        return [
+            'status' => (string)($entry['status'] ?? 'fail'),
+            'worker' => (int)($row['worker'] ?? 0),
+            'rel' => (string)($entry['rel'] ?? ($row['test']['rel'] ?? '')),
+            'duration_ms' => (int)($entry['duration_ms'] ?? 0),
+            'elapsed_ms' => max(0, $nowMs - (int)($progressState['suite_started_ms'] ?? $nowMs)),
+            'completed' => self::completedTestCount(is_array($result['tests'] ?? null) ? $result['tests'] : []),
+            'total' => (int)($progressState['total'] ?? ($result['tests_total'] ?? 0)),
+            'pass' => (int)($result['pass'] ?? 0),
+            'fail' => (int)($result['fail'] ?? 0),
+            'skip' => (int)($result['skip'] ?? 0),
+            'timeout' => (int)($result['timeout'] ?? 0),
+            'jobs' => (int)($progressState['jobs'] ?? ($result['jobs'] ?? 1)),
+            'workers' => self::buildWorkerSnapshots($running, $nowMs),
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $running
+     * @return array<int,array<string,mixed>>
+     */
+    private static function buildWorkerSnapshots(array $running, int $nowMs): array
+    {
+        $workers = [];
+        foreach ($running as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $workers[] = [
+                'worker' => (int)($row['worker'] ?? 0),
+                'rel' => (string)($row['test']['rel'] ?? ''),
+                'elapsed_ms' => max(0, $nowMs - (int)($row['job']['start_ms'] ?? $nowMs)),
+            ];
+        }
+
+        usort(
+            $workers,
+            static fn(array $left, array $right): int => ((int)($left['worker'] ?? 0)) <=> ((int)($right['worker'] ?? 0))
+        );
+
+        return $workers;
     }
 
     /**
@@ -535,31 +645,9 @@ final class SuiteExecutor
 
         $result['slow_tests'] = $slow;
         $result['progress_policy'] = self::progressPolicy();
-        $result['execution_metrics'] = self::buildExecutionMetrics($result);
+        $result['execution_metrics'] = self::executionMetricsSnapshot($result);
 
         return $result;
-    }
-
-    /**
-     * @param array<string,mixed> $result
-     * @return array<string,int|null>
-     */
-    private static function buildExecutionMetrics(array $result): array
-    {
-        $selected = (int)($result['tests_total'] ?? 0);
-        $completed = is_array($result['tests'] ?? null) ? count($result['tests']) : 0;
-        $durationMs = isset($result['duration_ms']) ? max(0, (int)$result['duration_ms']) : null;
-        $avgMs = ($durationMs !== null && $completed > 0)
-            ? (int)round($durationMs / $completed)
-            : null;
-        $estimatedTotalMs = $avgMs !== null ? $avgMs * $selected : null;
-
-        return [
-            'selected_test_count' => $selected,
-            'completed_test_count' => $completed,
-            'avg_test_ms' => $avgMs,
-            'estimated_total_ms' => $estimatedTotalMs,
-        ];
     }
 
     /**
@@ -630,6 +718,26 @@ final class SuiteExecutor
 
         ksort($summary);
         return $summary;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $tests
+     */
+    private static function completedTestCount(array $tests): int
+    {
+        $count = 0;
+        foreach ($tests as $test) {
+            if (!is_array($test)) {
+                continue;
+            }
+
+            $status = (string)($test['status'] ?? '');
+            if (in_array($status, ['pass', 'fail', 'skip', 'timeout'], true)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

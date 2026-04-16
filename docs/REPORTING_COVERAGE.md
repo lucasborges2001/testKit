@@ -35,7 +35,7 @@ Para eso, leer:
 | JSON suite/meta bajo `.testkit/reports/` | automatización y evidencia persistida | superficie principal |
 | `canonical_report` dentro del JSON | normalización derivada del reporte persistido | útil, pero no sustituye el top-level |
 | consola del runner | lectura rápida humana | no consumir como contrato de automatización |
-| `[Progress]` y `[Phase Timings]` en consola | observabilidad operatoria durante la corrida | semántica estable para humanos, no parser stable |
+| `[Progress]`, `[Test]` y `[Phase Timings]` en consola | observabilidad operatoria durante la corrida | semántica estable para humanos, no parser stable |
 | `php scripts/report.php` | resumen humano agregado | no consumir como contrato estable |
 | `inspect` | diagnóstico asistido sobre reportes existentes | interfaz operativa, no formato persistido |
 | artifacts de coverage | diagnóstico de cobertura | útiles para lectura y tooling, no gate implícito |
@@ -72,7 +72,7 @@ Coverage PHP:
 - historial por test para fragility hints y regression delta
 - `suite_runs[]` con métricas resumidas por corrida para baseline futuro
 
-No guarda heartbeats individuales.
+No guarda heartbeats individuales ni eventos de progreso uno por uno.
 
 ## 4) Qué consumir para automatización
 
@@ -154,7 +154,7 @@ No leerlo como explicación general de cualquier fallo.
 
 ### 6.1) `[Progress]` en consola
 
-`[Progress]` es una señal operatoria humana emitida durante `execution`.
+`[Progress]` es una señal operatoria humana emitida durante `execution` cuando `progress_policy.mode=heartbeat`.
 
 Semántica estable de los campos:
 
@@ -166,17 +166,55 @@ Semántica estable de los campos:
 - `avg`: promedio simple `elapsed / completed`
 - `eta`: `avg * remaining`
 - `jobs`: paralelismo efectivo de la suite
+- `workers`: resumen compacto de workers activos cuando `TEST_JOBS > 1`
 
 No estable:
 
 - colores ANSI
 - spacing exacto
 - largo exacto del path
-- política visual de truncado/compactación del path
+- política visual exacta de truncado/compactación del path
 
 No consumir esta línea con parsers frágiles. El contrato fuerte para automatización está en el JSON final.
 
-### 6.2) `[Phase Timings]` en consola
+### 6.2) `[Test]` en consola
+
+`[Test]` es una señal operatoria humana emitida por cada test completado cuando `progress_policy.mode=per_test`.
+
+Semántica estable de los campos:
+
+- `status`: estado final del test completado
+- `worker`: worker que cerró ese test
+- `done`: tests completados / tests seleccionados
+- `dur`: duración del test completado
+- `rel`: path relativo del test completado; puede aparecer compactado o truncado
+- `el`: elapsed total de la fase de ejecución al momento de cerrar ese test
+- `p/f/s/to`: contadores acumulados
+- `jobs`: paralelismo efectivo de la suite
+- `active`: resumen compacto de workers que siguen corriendo, si los hay
+
+No estable:
+
+- colores ANSI
+- spacing exacto
+- largo exacto del path
+- forma exacta del truncado
+
+`per_test` sigue siendo una superficie humana. No persiste cada evento en JSON.
+
+### 6.3) Warnings de long-running test
+
+`[WARN] long_running_test` es una advertencia operatoria, no una policy de fallo.
+
+Contrato:
+
+- no cambia exit code
+- no cambia `suite_status`
+- bucketiza por thresholds razonables para no spammear
+- aplica en `heartbeat` y `per_test`
+- se suprime en `quiet`
+
+### 6.4) `[Phase Timings]` en consola
 
 `[Phase Timings]` resume tiempos gruesos de la corrida por fase:
 
@@ -187,9 +225,31 @@ No consumir esta línea con parsers frágiles. El contrato fuerte para automatiz
 
 Sirve para lectura humana rápida y para contrastar contra `phase_timings_ms` del JSON.
 
-### 6.3) Campos JSON nuevos de observabilidad
+### 6.5) `progress_policy`
 
-#### `phase_timings_ms`
+```json
+{
+  "progress_policy": {
+    "mode": "per_test",
+    "interval_sec": 15,
+    "long_test_warn_sec": 60
+  }
+}
+```
+
+Contrato:
+
+- describe la política activa usada por el runner
+- no implica persistencia de heartbeats ni eventos por test
+- `mode` estable hoy:
+  - `heartbeat`
+  - `per_test`
+  - `quiet`
+- `heartbeat` usa `interval_sec`
+- `per_test` mantiene `interval_sec` como parte de la policy estable, aunque no emita heartbeats periódicos
+- `quiet` suprime progreso operatorio, pero no elimina el reporte final
+
+### 6.6) `phase_timings_ms`
 
 ```json
 {
@@ -209,25 +269,7 @@ Contrato:
 - útiles para comparación relativa y baseline operativo
 - no prometen precisión de microbenchmark
 
-#### `progress_policy`
-
-```json
-{
-  "progress_policy": {
-    "mode": "heartbeat",
-    "interval_sec": 15,
-    "long_test_warn_sec": 60
-  }
-}
-```
-
-Contrato:
-
-- describe la política activa usada por el runner
-- no implica persistencia de heartbeats
-- `mode=quiet` deshabilita heartbeats y warnings de test largo, pero no elimina el reporte final
-
-#### `execution_metrics`
+### 6.7) `execution_metrics`
 
 ```json
 {
@@ -243,11 +285,15 @@ Contrato:
 Contrato:
 
 - `selected_test_count`: cantidad seleccionada para la suite
-- `completed_test_count`: cantidad efectivamente ejecutada/completada
-- `avg_test_ms`: promedio simple final; puede ser `null` si no hubo completados
+- `completed_test_count`: cantidad efectivamente completada en ejecución real
+- `avg_test_ms`: promedio simple final; puede ser `null` si no hubo tests completados
 - `estimated_total_ms`: estimado simple derivado del promedio final; puede ser `null` si no aplica
 
-No hay baseline histórico ni heurística sofisticada en este campo.
+Importante:
+
+- `list_only` y `no_tests` pueden dejar `avg_test_ms=null`
+- no hay baseline histórico ni heurística sofisticada en este campo
+- no se persisten heartbeats individuales para reconstruir timelines detallados
 
 ## 7) Campos principales
 
@@ -339,6 +385,7 @@ Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
 
 - consola del runner
 - `[Progress]`
+- `[Test]`
 - `[Phase Timings]`
 - `php scripts/report.php`
 - `inspect`
@@ -436,6 +483,6 @@ Si necesitás entender rápido qué pasó:
 1. `inspect latest`
 2. `inspect failure`
 3. `php scripts/report.php`
-4. revisar `[Phase Timings]` y, durante la corrida, `[Progress]`
+4. revisar `[Phase Timings]` y, durante la corrida, `[Progress]` o `[Test]`
 
 No mezclar ambas capas como si fueran el mismo contrato.
