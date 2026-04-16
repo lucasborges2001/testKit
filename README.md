@@ -63,6 +63,7 @@ What exists:
 - `[Phase Timings]` at the end of the suite
 - summarized observability fields persisted in suite JSON and local history
 - a config-visible capability section in `doctor` for generic store constraints and the closed `migration-contract` path
+- structured capability fields in `doctor --dump` (`TESTKIT_CAPABILITY_STATUS`, `TESTKIT_CAPABILITY_CHECK_COUNT`, `TESTKIT_CAPABILITY_CHECK_<n>_*`)
 
 What does **not** exist here:
 
@@ -83,7 +84,7 @@ This repository does not try to hide its current limits. The detailed contract l
 - `TEST_DB_STRATEGY=clean` is rejected
 - `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
 - `migration-contract` is a narrow technical suite, not a general functional suite
-- capability checks in `doctor` are config-visible only and do not replace a real run
+- capability checks in `doctor` are config-visible only, advisory and do not replace a real run
 - fragility hints, failure families and similar triage signals are heuristics, not source of truth
 
 ## Artifact ownership

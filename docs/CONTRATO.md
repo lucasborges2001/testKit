@@ -172,6 +172,15 @@ Eso **no** cambia este contrato:
 
 Sirve para detectar contradicciones visibles y para no vender compatibilidad que el wrapper no puede demostrar todavía.
 
+Semántica de capability:
+
+- `PASS`: ruta visible cerrada
+- `WARN`: señal visible degradada o poco confiable
+- `UNKNOWN`: no hay evidencia suficiente para afirmar compatibilidad
+- `FAIL`: contradicción visible con el contrato
+
+`UNKNOWN` no es `PASS` disfrazado y `WARN` no vuelve soportada una ruta no cerrada.
+
 ## 7) Qué no soporta o no garantiza hoy
 
 - throughput normal basado en varios runners top-level concurrentes sobre la misma DB

@@ -1,0 +1,163 @@
+[
+  {
+    "id": "generic_simple_shared",
+    "target": "",
+    "dump": false,
+    "env": {},
+    "expect_exit": 0,
+    "expect_capability_status": "PASS",
+    "require_codes": [
+      "SHARED_STRATEGY_DECLARED",
+      "SINGLE_WORKER_PATH",
+      "MYSQL_CLOSED_PATH"
+    ],
+    "forbid_codes": [
+      "CLEAN_STRATEGY_UNSUPPORTED"
+    ]
+  },
+  {
+    "id": "clean_rejected",
+    "target": "",
+    "dump": false,
+    "env": {
+      "TEST_DB_STRATEGY": "clean"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "FAIL",
+    "require_codes": [
+      "CLEAN_STRATEGY_UNSUPPORTED"
+    ],
+    "forbid_codes": []
+  },
+  {
+    "id": "migration_contract_valid",
+    "target": "migration-contract",
+    "dump": false,
+    "env": {
+      "TEST_BASELINE_MODE": "snapshot",
+      "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz",
+      "TEST_DB_STRATEGY": "shared",
+      "TEST_JOBS": "1",
+      "TEST_STORE_DRIVER": "mysql"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "PASS",
+    "require_codes": [
+      "MIGRATION_CONTRACT_SNAPSHOT",
+      "MIGRATION_CONTRACT_SHARED",
+      "MIGRATION_CONTRACT_MYSQL",
+      "SNAPSHOT_SOURCE_VISIBLE"
+    ],
+    "forbid_codes": [
+      "MIGRATION_CONTRACT_NEEDS_SNAPSHOT",
+      "MIGRATION_CONTRACT_NEEDS_MYSQL",
+      "MIGRATION_CONTRACT_NEEDS_SINGLE_WORKER"
+    ]
+  },
+  {
+    "id": "migration_contract_invalid_baseline",
+    "target": "migration-contract",
+    "dump": false,
+    "env": {
+      "TEST_BASELINE_MODE": "layered",
+      "TEST_DB_STRATEGY": "shared",
+      "TEST_STORE_DRIVER": "mysql"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "FAIL",
+    "require_codes": [
+      "MIGRATION_CONTRACT_NEEDS_SNAPSHOT"
+    ],
+    "forbid_codes": []
+  },
+  {
+    "id": "migration_contract_invalid_engine",
+    "target": "migration-contract",
+    "dump": false,
+    "env": {
+      "TEST_BASELINE_MODE": "snapshot",
+      "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz",
+      "TEST_DB_STRATEGY": "shared",
+      "TEST_STORE_DRIVER": "pg"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "FAIL",
+    "require_codes": [
+      "MIGRATION_CONTRACT_NEEDS_MYSQL"
+    ],
+    "forbid_codes": []
+  },
+  {
+    "id": "migration_contract_parallel_rejected",
+    "target": "migration-contract",
+    "dump": false,
+    "env": {
+      "TEST_BASELINE_MODE": "snapshot",
+      "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz",
+      "TEST_DB_STRATEGY": "shared",
+      "TEST_JOBS": "2",
+      "TEST_STORE_DRIVER": "mysql"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "FAIL",
+    "require_codes": [
+      "MIGRATION_CONTRACT_NEEDS_SINGLE_WORKER"
+    ],
+    "forbid_codes": []
+  },
+  {
+    "id": "unknown_partial_target",
+    "target": "back-php",
+    "dump": false,
+    "env": {},
+    "expect_exit": 0,
+    "expect_capability_status": "UNKNOWN",
+    "require_codes": [
+      "TARGET_RULESET_PARTIAL"
+    ],
+    "forbid_codes": []
+  },
+  {
+    "id": "dump_structured_output",
+    "target": "migration-contract",
+    "dump": true,
+    "env": {
+      "TEST_BASELINE_MODE": "snapshot",
+      "TEST_BASELINE_SNAPSHOT_METADATA": "artifact.metadata.json",
+      "TEST_DB_STRATEGY": "shared",
+      "TEST_STORE_DRIVER": "mysql"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "PASS",
+    "require_codes": [
+      "SNAPSHOT_SOURCE_VISIBLE"
+    ],
+    "forbid_codes": [],
+    "require_dump_fields": [
+      "TESTKIT_CAPABILITY_STATUS: PASS",
+      "TESTKIT_CAPABILITY_CHECK_COUNT:",
+      "TESTKIT_CAPABILITY_CHECK_1_STATUS:",
+      "TESTKIT_CAPABILITY_CHECK_1_CODE:"
+    ]
+  },
+  {
+    "id": "generic_per_worker_multiworker_not_false_positive",
+    "target": "",
+    "dump": false,
+    "env": {
+      "TEST_DB_STRATEGY": "per_worker",
+      "TEST_JOBS": "4",
+      "TEST_STORE_DRIVER": "mysql"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "PASS",
+    "require_codes": [
+      "PER_WORKER_STRATEGY_DECLARED",
+      "MULTIWORKER_PER_WORKER",
+      "MYSQL_CLOSED_PATH"
+    ],
+    "forbid_codes": [
+      "MULTIWORKER_NEEDS_SUITE_CONTEXT"
+    ]
+  }
+]

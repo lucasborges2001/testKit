@@ -341,6 +341,16 @@ _dump_config() {
   echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
   echo "TESTKIT_DOCTOR_TARGET: ${DOCTOR_REQUESTED_TARGET:-}"
   echo "TESTKIT_CAPABILITY_STATUS: ${CAPABILITY_STATUS:-PASS}"
+  local capability_count="${#CAPABILITY_CHECK_CODES[@]}"
+  echo "TESTKIT_CAPABILITY_CHECK_COUNT: ${capability_count}"
+  local idx n
+  for idx in "${!CAPABILITY_CHECK_CODES[@]}"; do
+    n=$((idx + 1))
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_STATUS: ${CAPABILITY_CHECK_STATUSES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_CODE: ${CAPABILITY_CHECK_CODES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_SUMMARY: ${CAPABILITY_CHECK_SUMMARIES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_ACTION: ${CAPABILITY_CHECK_ACTIONS[$idx]}"
+  done
   echo ""
 }
 
@@ -360,6 +370,17 @@ env_present_any() {
   env_any "$@" >/dev/null 2>&1
 }
 
+snapshot_source_visible() {
+  env_present_any     TEST_BASELINE_SNAPSHOT_FILE     TEST_BASELINE_SNAPSHOT_METADATA_FILE     TEST_BASELINE_SNAPSHOT_REPORT_FILE     TEST_BASELINE_SNAPSHOT_METADATA     TEST_BASELINE_SNAPSHOT_REPORT     TEST_BASELINE_SNAPSHOT_JSON
+}
+
+snapshot_source_hint_label() {
+  if env_present_any TEST_BASELINE_SNAPSHOT_FILE; then echo "TEST_BASELINE_SNAPSHOT_FILE"; return 0; fi
+  if env_present_any TEST_BASELINE_SNAPSHOT_METADATA_FILE TEST_BASELINE_SNAPSHOT_METADATA; then echo "snapshot metadata"; return 0; fi
+  if env_present_any TEST_BASELINE_SNAPSHOT_REPORT_FILE TEST_BASELINE_SNAPSHOT_REPORT TEST_BASELINE_SNAPSHOT_JSON; then echo "snapshot report/json"; return 0; fi
+  echo "ninguno visible"
+}
+
 path_is_under_root() {
   local root="$1"
   local target="$2"
@@ -368,6 +389,20 @@ path_is_under_root() {
 
 normalize_simple_token() {
   echo "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs
+}
+
+CAPABILITY_STATUS="PASS"
+declare -a CAPABILITY_CHECK_STATUSES=()
+declare -a CAPABILITY_CHECK_CODES=()
+declare -a CAPABILITY_CHECK_SUMMARIES=()
+declare -a CAPABILITY_CHECK_ACTIONS=()
+
+capability_reset() {
+  CAPABILITY_STATUS="PASS"
+  CAPABILITY_CHECK_STATUSES=()
+  CAPABILITY_CHECK_CODES=()
+  CAPABILITY_CHECK_SUMMARIES=()
+  CAPABILITY_CHECK_ACTIONS=()
 }
 
 capability_status_rank() {
@@ -396,6 +431,10 @@ capability_emit() {
   local summary="$3"
   local action="${4:-}"
   capability_update_status "$status"
+  CAPABILITY_CHECK_STATUSES+=("$status")
+  CAPABILITY_CHECK_CODES+=("$code")
+  CAPABILITY_CHECK_SUMMARIES+=("$summary")
+  CAPABILITY_CHECK_ACTIONS+=("$action")
   echo "[$status] $code - $summary"
   if [[ -n "$action" ]]; then
     echo "       Acción: $action"
@@ -475,7 +514,7 @@ doctor_capability_checks() {
   local jobs_raw="${TEST_JOBS:-1}"
   local jobs=1
 
-  CAPABILITY_STATUS="PASS"
+  capability_reset
 
   echo ""
   echo -e "\033[1m== CAPABILITY DOCTOR ==\033[0m"
@@ -495,38 +534,40 @@ doctor_capability_checks() {
       echo "       Nota: no vuelve seguras corridas top-level concurrentes sobre el mismo store base."
       ;;
     clean)
-      capability_emit FAIL CLEAN_STRATEGY_UNSUPPORTED "TEST_DB_STRATEGY=clean no está implementado como modo operativo."
+      capability_emit FAIL CLEAN_STRATEGY_UNSUPPORTED "TEST_DB_STRATEGY=clean no está implementado como modo operativo." "Usar TEST_DB_STRATEGY=shared o TEST_DB_STRATEGY=per_worker según el nivel de aislamiento que necesite la suite."
       ;;
     "")
       capability_emit PASS DEFAULT_SHARED_STRATEGY "No se declaró TEST_DB_STRATEGY; doctor asume shared como default actual."
       db_strategy="shared"
       ;;
     *)
-      capability_emit FAIL INVALID_DB_STRATEGY "TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-} no pertenece al contrato visible."
+      capability_emit FAIL INVALID_DB_STRATEGY "TEST_DB_STRATEGY=${TEST_DB_STRATEGY:-} no pertenece al contrato visible." "Usar TEST_DB_STRATEGY=shared o TEST_DB_STRATEGY=per_worker."
       ;;
   esac
 
   if [[ "$jobs_raw" =~ ^[0-9]+$ ]]; then
     jobs="$jobs_raw"
     if (( jobs < 1 )); then
-      capability_emit WARN NON_POSITIVE_TEST_JOBS "TEST_JOBS=${jobs_raw} no es una cantidad operativa normal; doctor tratará la lectura como no confiable."
+      capability_emit WARN NON_POSITIVE_TEST_JOBS "TEST_JOBS=${jobs_raw} no es una cantidad operativa normal; doctor tratará la lectura como no confiable." "Usar un entero >= 1."
     elif (( jobs == 1 )); then
       capability_emit PASS SINGLE_WORKER_PATH "TEST_JOBS=1 mantiene la ruta secuencial simple."
+    elif [[ "$requested_target" == "migration-contract" ]]; then
+      capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SINGLE_WORKER "migration-contract no tiene una ruta cerrada con TEST_JOBS=${jobs_raw}; usar shared no vuelve seguro el paralelismo intra-suite." "Usar TEST_JOBS=1 para migration-contract."
     elif [[ "$db_strategy" == "per_worker" ]]; then
       capability_emit PASS MULTIWORKER_PER_WORKER "TEST_JOBS=${jobs_raw} con per_worker declara aislamiento intra-suite por worker."
     else
-      capability_emit UNKNOWN MULTIWORKER_NEEDS_SUITE_CONTEXT "TEST_JOBS=${jobs_raw} sin per_worker requiere saber si la suite toca DB real; doctor no puede cerrarlo solo con config visible."
+      capability_emit UNKNOWN MULTIWORKER_NEEDS_SUITE_CONTEXT "TEST_JOBS=${jobs_raw} sin per_worker requiere saber si la suite toca DB real; doctor no puede cerrarlo solo con config visible." "Volver a TEST_JOBS=1 o usar TEST_DB_STRATEGY=per_worker si la suite necesita DB real con paralelismo."
       echo "       Nota: aun con per_worker, doctor no observa corridas top-level concurrentes."
     fi
   else
-    capability_emit WARN TEST_JOBS_UNPARSEABLE "TEST_JOBS=${jobs_raw} no es un entero visible para doctor."
+    capability_emit WARN TEST_JOBS_UNPARSEABLE "TEST_JOBS=${jobs_raw} no es un entero visible para doctor." "Usar un entero visible para doctor."
   fi
 
   if [[ "$store_driver" == "mysql" || -z "$store_driver" ]]; then
     capability_emit PASS MYSQL_CLOSED_PATH "MySQL es la ruta principal cerrada del contrato actual."
     store_driver="${store_driver:-mysql}"
   else
-    capability_emit UNKNOWN ENGINE_NOT_CLOSED "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase."
+    capability_emit UNKNOWN ENGINE_NOT_CLOSED "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase." "Usar MySQL si querés la ruta cerrada actual."
   fi
 
   case "$requested_target" in
@@ -536,39 +577,39 @@ doctor_capability_checks() {
       if [[ "$baseline_mode" == "snapshot" ]]; then
         capability_emit PASS MIGRATION_CONTRACT_SNAPSHOT "migration-contract declara TEST_BASELINE_MODE=snapshot."
       else
-        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SNAPSHOT "migration-contract exige TEST_BASELINE_MODE=snapshot."
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SNAPSHOT "migration-contract exige TEST_BASELINE_MODE=snapshot." "Cambiar a TEST_BASELINE_MODE=snapshot."
       fi
 
       if [[ "$db_strategy" == "shared" ]]; then
         capability_emit PASS MIGRATION_CONTRACT_SHARED "migration-contract declara TEST_DB_STRATEGY=shared."
       else
-        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SHARED "migration-contract exige TEST_DB_STRATEGY=shared."
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_SHARED "migration-contract exige TEST_DB_STRATEGY=shared." "Cambiar a TEST_DB_STRATEGY=shared para migration-contract."
       fi
 
       if [[ "$store_driver" == "mysql" ]]; then
         capability_emit PASS MIGRATION_CONTRACT_MYSQL "migration-contract queda cerrado en esta fase solo para MySQL."
       else
-        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_MYSQL "migration-contract queda fuera de contrato si el motor efectivo no es MySQL."
+        capability_emit FAIL MIGRATION_CONTRACT_NEEDS_MYSQL "migration-contract queda fuera de contrato si el motor efectivo no es MySQL." "Usar MySQL si querés la ruta cerrada de migration-contract."
       fi
 
-      if env_present_any TEST_BASELINE_SNAPSHOT_FILE; then
-        capability_emit PASS SNAPSHOT_SOURCE_VISIBLE "Doctor ve TEST_BASELINE_SNAPSHOT_FILE como fuente visible de snapshot."
+      if snapshot_source_visible; then
+        capability_emit PASS SNAPSHOT_SOURCE_VISIBLE "Doctor ve una fuente visible de snapshot ($(snapshot_source_hint_label))."
       else
-        capability_emit UNKNOWN SNAPSHOT_SOURCE_NOT_VISIBLE "Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales."
+        capability_emit UNKNOWN SNAPSHOT_SOURCE_NOT_VISIBLE "Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales." "Declarar TEST_BASELINE_SNAPSHOT_FILE o un hint visible de metadata/report JSON compatible."
       fi
       ;;
     all|back|back-php|back-py|front|front-php|front-js|smoke|perf|stress)
-      capability_emit UNKNOWN TARGET_RULESET_PARTIAL "El target ${requested_target} todavía no tiene mapa cerrado de sensibilidad DB en doctor."
+      capability_emit UNKNOWN TARGET_RULESET_PARTIAL "El target ${requested_target} todavía no tiene mapa cerrado de sensibilidad DB en doctor." "Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target."
       echo "       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite."
       ;;
     *)
-      capability_emit UNKNOWN TARGET_NOT_CLASSIFIED "Doctor no reconoce un ruleset cerrado para target=${requested_target}."
+      capability_emit UNKNOWN TARGET_NOT_CLASSIFIED "Doctor no reconoce un ruleset cerrado para target=${requested_target}." "Usar doctor sin target o registrar un ruleset explícito para ese target."
       ;;
   esac
 
   echo ""
   echo "Capability doctor: ${CAPABILITY_STATUS}"
-  echo "Nota: esta sección no cambia el exit code del wrapper en este primer corte; el exit sigue atado al contrato mínimo visible."
+  echo "Nota: esta sección no cambia el exit code del wrapper; el exit sigue atado al contrato mínimo visible."
 }
 
 doctor() {

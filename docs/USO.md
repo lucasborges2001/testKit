@@ -62,7 +62,7 @@ Observaciones duras:
 
 - el primer target no tiene que ser `all`; conviene empezar por una suite concreta
 - el primer intento operativo seguro es secuencial
-- `doctor` no reemplaza una corrida real; solo valida el contrato mínimo visible antes de entrar al runner
+- `doctor` no reemplaza una corrida real; valida contrato mínimo visible y, cuando corresponde, compatibilidad contractual visible antes de entrar al runner
 - el capability doctor de este primer corte no prueba bootstrap, restore ni seguridad runtime de concurrencia top-level
 
 ## 3) Secuencia segura para el primer diagnóstico
@@ -147,7 +147,7 @@ Qué no te garantiza:
 
 - que el bootstrap estructural cierre
 - que el snapshot sea restaurable
-- que una suite concreta no tenga conflictos de concurrencia
+- que una suite concreta no tenga conflictos de concurrencia solo porque capability diga `PASS`
 - que el proyecto haya definido seeds, migraciones o tests correctos
 - que `Capability doctor: PASS` vuelva segura una ruta runtime no observada por `doctor`
 
@@ -256,3 +256,27 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 | por qué apareció un error concreto y qué revisar | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
 | cómo funcionan bootstrap, baseline y locks | [`ARQUITECTURA.md`](ARQUITECTURA.md) |
 | cómo leer reportes, estados, coverage y observabilidad persistida | [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) |
+
+
+### Capability doctor
+
+`doctor` ahora expone una segunda capa de lectura humana y estructurada:
+
+- `PASS`: ruta visible alineada con el contrato cerrado actual
+- `WARN`: hay una lectura visible rara o degradada, pero no necesariamente una contradicción contractual directa
+- `UNKNOWN`: el wrapper no tiene evidencia suficiente para afirmar compatibilidad
+- `FAIL`: la combinación visible contradice el contrato actual
+
+Reglas duras:
+
+- `UNKNOWN` no equivale a `PASS`
+- `WARN` no convierte una ruta no soportada en soportada
+- capability no cambia el exit code del wrapper; el exit sigue atado al doctor base
+
+En `doctor --dump`, además de `TESTKIT_CAPABILITY_STATUS`, quedan serializados los checks individuales:
+
+- `TESTKIT_CAPABILITY_CHECK_COUNT`
+- `TESTKIT_CAPABILITY_CHECK_<n>_STATUS`
+- `TESTKIT_CAPABILITY_CHECK_<n>_CODE`
+- `TESTKIT_CAPABILITY_CHECK_<n>_SUMMARY`
+- `TESTKIT_CAPABILITY_CHECK_<n>_ACTION`
