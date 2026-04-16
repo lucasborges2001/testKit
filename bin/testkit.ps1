@@ -1,3 +1,4 @@
+\
 Param(
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]]$Args
@@ -9,10 +10,10 @@ $Base = Join-Path $TestRoot "compose.yaml"
 $Mysql = Join-Path $TestRoot "compose.mysql.yaml"
 $Redis = Join-Path $TestRoot "compose.redis.yaml"
 $Pg = Join-Path $TestRoot "compose.pg.yaml"
+$Influx = Join-Path $TestRoot "compose.influx.yaml"
 
 $ProjectRoot = if ($env:TESTKIT_PROJECT_ROOT) { Resolve-Path $env:TESTKIT_PROJECT_ROOT } else { Resolve-Path (Join-Path $TestRoot "..") }
 $ResolvedTestkitRoot = if ($env:TESTKIT_ROOT) { Resolve-Path $env:TESTKIT_ROOT } else { $TestRoot }
-$DoctorDockerMode = if ($env:TESTKIT_DOCTOR_DOCKER_MODE) { $env:TESTKIT_DOCTOR_DOCKER_MODE } else { 'auto' }
 
 function Pick-EnvFile {
   if ($env:TESTKIT_ENV_FILE -and (Test-Path $env:TESTKIT_ENV_FILE)) {
@@ -78,7 +79,9 @@ function Normalize-StackCsv([string]$Raw) {
       'pg' {}
       'postgres' { $token = 'pg' }
       'postgresql' { $token = 'pg' }
-      default { throw "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg" }
+      'influx' {}
+      'influxdb' { $token = 'influx' }
+      default { throw "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg, influx" }
     }
 
     if (-not $seen.ContainsKey($token)) {
@@ -116,6 +119,10 @@ function Resolve-ComposeFiles([string]$StackCsv) {
     $files.Add('-f')
     $files.Add($Pg)
   }
+  if (Stack-Has $StackCsv 'influx') {
+    $files.Add('-f')
+    $files.Add($Influx)
+  }
 
   return ,$files.ToArray()
 }
@@ -150,6 +157,11 @@ function Rewrite-RunCommandArgs([string[]]$InputArgs) {
 
     if ($sawTestkit -and @('scripts/inspect.php', './scripts/inspect.php', '/workspace/project/scripts/inspect.php', '/workspace/testkit/scripts/inspect.php') -contains $rewritten[$i]) {
       $rewritten[$i] = '/workspace/testkit/scripts/inspect.php'
+      continue
+    }
+
+    if ($sawTestkit -and @('scripts/influx_router.php', './scripts/influx_router.php', '/workspace/project/scripts/influx_router.php', '/workspace/testkit/scripts/influx_router.php') -contains $rewritten[$i]) {
+      $rewritten[$i] = '/workspace/testkit/scripts/influx_router.php'
       continue
     }
 
@@ -258,24 +270,6 @@ function Test-EnvPresentAny([string[]]$Names) {
   return $false
 }
 
-function Test-SnapshotSourceVisible {
-  return (Test-EnvPresentAny @(
-    'TEST_BASELINE_SNAPSHOT_FILE',
-    'TEST_BASELINE_SNAPSHOT_METADATA_FILE',
-    'TEST_BASELINE_SNAPSHOT_REPORT_FILE',
-    'TEST_BASELINE_SNAPSHOT_METADATA',
-    'TEST_BASELINE_SNAPSHOT_REPORT',
-    'TEST_BASELINE_SNAPSHOT_JSON'
-  ))
-}
-
-function Get-SnapshotSourceHintLabel {
-  if (Test-EnvPresentAny @('TEST_BASELINE_SNAPSHOT_FILE')) { return 'TEST_BASELINE_SNAPSHOT_FILE' }
-  if (Test-EnvPresentAny @('TEST_BASELINE_SNAPSHOT_METADATA_FILE','TEST_BASELINE_SNAPSHOT_METADATA')) { return 'snapshot metadata' }
-  if (Test-EnvPresentAny @('TEST_BASELINE_SNAPSHOT_REPORT_FILE','TEST_BASELINE_SNAPSHOT_REPORT','TEST_BASELINE_SNAPSHOT_JSON')) { return 'snapshot report/json' }
-  return 'ninguno visible'
-}
-
 function Test-DirectoryWritable([string]$Path) {
   try {
     $probe = Join-Path $Path (".testkit_write_probe_" + [guid]::NewGuid().ToString('N'))
@@ -293,7 +287,7 @@ function Test-PathIsUnderRoot([string]$Root, [string]$Candidate) {
   return $candidateResolved.StartsWith($rootResolved, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
-function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath) {
+function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath, [string]$StackCsv) {
   $storeDriver = if ($env:TEST_STORE_DRIVER) { $env:TEST_STORE_DRIVER.ToLowerInvariant().Trim() } else { 'mysql' }
   $provisionMode = if ($env:TEST_STORE_PROVISION) { $env:TEST_STORE_PROVISION.ToLowerInvariant().Trim() } else { 'managed' }
 
@@ -326,6 +320,12 @@ function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath) {
     }
   }
 
+  if (Stack-Has $StackCsv 'influx') {
+    if (Test-EnvPresentAny @('TEST_INFLUX_ORG')) { Write-Host "[OK] Influx org present" } else { Write-Host "[FAIL] falta TEST_INFLUX_ORG para stack con influx"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('TEST_INFLUX_BUCKET')) { Write-Host "[OK] Influx bucket present" } else { Write-Host "[FAIL] falta TEST_INFLUX_BUCKET para stack con influx"; $Ok.Value = $false }
+    if (Test-EnvPresentAny @('TEST_INFLUX_TOKEN','TEST_INFLUX_ADMIN_TOKEN')) { Write-Host "[OK] Influx token present" } else { Write-Host "[FAIL] falta token de Influx (TEST_INFLUX_TOKEN o TEST_INFLUX_ADMIN_TOKEN)"; $Ok.Value = $false }
+  }
+
   if (Get-Command docker -ErrorAction SilentlyContinue) {
     Write-Host "[OK] docker command found"
   } else {
@@ -334,7 +334,7 @@ function Invoke-DoctorContractChecks([ref]$Ok, [string]$EnvFilePath) {
   }
 }
 
-function Invoke-DoctorCapabilityChecks([string]$DoctorTarget) {
+function Invoke-DoctorCapabilityChecks([string]$DoctorTarget, [string]$StackCsv) {
   Reset-CapabilityState
 
   $dbStrategy = if ($env:TEST_DB_STRATEGY) { Normalize-SimpleToken $env:TEST_DB_STRATEGY } else { 'shared' }
@@ -391,6 +391,11 @@ function Invoke-DoctorCapabilityChecks([string]$DoctorTarget) {
     Write-CapabilityLine 'UNKNOWN' 'ENGINE_NOT_CLOSED' "TEST_STORE_DRIVER=$($env:TEST_STORE_DRIVER) no pertenece a la ruta cerrada general de esta fase." 'Usar MySQL si querés la ruta cerrada actual.'
   }
 
+  if (Stack-Has $StackCsv 'influx') {
+    Write-CapabilityLine 'PASS' 'INFLUX_STACK_ENABLED' 'TESTKIT_STACK incluye influx: el wrapper puede levantar InfluxDB 2.7 como servicio auxiliar.'
+    Write-CapabilityLine 'UNKNOWN' 'INFLUX_NOT_STRUCTURAL_STORE' 'Influx queda integrado como servicio auxiliar HTTP; no reemplaza la ruta cerrada MySQL/StoreAdapter.' 'Usar scripts/influx_router.php o core/php/influx/* desde tests/proyecto.'
+  }
+
   switch ($DoctorTarget) {
     '' {}
     'migration-contract' {
@@ -412,22 +417,22 @@ function Invoke-DoctorCapabilityChecks([string]$DoctorTarget) {
         Write-CapabilityLine 'FAIL' 'MIGRATION_CONTRACT_NEEDS_MYSQL' 'migration-contract queda fuera de contrato si el motor efectivo no es MySQL.' 'Usar MySQL si querés la ruta cerrada de migration-contract.'
       }
 
-      if (Test-SnapshotSourceVisible) {
-        Write-CapabilityLine 'PASS' 'SNAPSHOT_SOURCE_VISIBLE' "Doctor ve una fuente visible de snapshot ($(Get-SnapshotSourceHintLabel))."
+      if (Test-EnvPresentAny @('TEST_BASELINE_SNAPSHOT_FILE','TEST_BASELINE_SNAPSHOT_METADATA_FILE','TEST_BASELINE_SNAPSHOT_REPORT_FILE','TEST_BASELINE_SNAPSHOT_METADATA','TEST_BASELINE_SNAPSHOT_REPORT','TEST_BASELINE_SNAPSHOT_JSON')) {
+        Write-CapabilityLine 'PASS' 'SNAPSHOT_SOURCE_VISIBLE' 'Doctor ve una fuente visible de snapshot.'
       } else {
         Write-CapabilityLine 'UNKNOWN' 'SNAPSHOT_SOURCE_NOT_VISIBLE' 'Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales.' 'Declarar TEST_BASELINE_SNAPSHOT_FILE o un hint visible de metadata/report JSON compatible.'
       }
     }
-    'all' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target all todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'back' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'back-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'back-py' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-py todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'front' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'front-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'front-js' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-js todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'smoke' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target smoke todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'perf' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target perf todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
-    'stress' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target stress todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.'; Write-Host '       Doctor sí conserva checks genéricos de estrategia/motor, pero no vende compatibilidad total de la suite.' }
+    'all' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target all todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'back' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'back-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'back-py' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target back-py todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'front' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'front-php' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-php todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'front-js' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target front-js todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'smoke' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target smoke todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'perf' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target perf todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
+    'stress' { Write-CapabilityLine 'UNKNOWN' 'TARGET_RULESET_PARTIAL' 'El target stress todavía no tiene mapa cerrado de sensibilidad DB en doctor.' 'Usar doctor sin target para constraints genéricas o cerrar un ruleset específico para este target.' }
     default { Write-CapabilityLine 'UNKNOWN' 'TARGET_NOT_CLASSIFIED' "Doctor no reconoce un ruleset cerrado para target=$DoctorTarget." 'Usar doctor sin target o registrar un ruleset explícito para ese target.' }
   }
 
@@ -489,8 +494,8 @@ function Run-Doctor {
   }
 
   if ($envFile) {
-    Invoke-DoctorContractChecks ([ref]$ok) $envFile.Path
-    Invoke-DoctorCapabilityChecks $doctorTargetResolved
+    Invoke-DoctorContractChecks ([ref]$ok) $envFile.Path $stackCsv
+    Invoke-DoctorCapabilityChecks $doctorTargetResolved $stackCsv
   }
 
   if ($Dump -and $envFile) {
@@ -522,7 +527,7 @@ if ($Args.Count -gt 0 -and $Args[0] -eq "doctor") {
 
 $envFile = Pick-EnvFile
 if (-not $envFile) {
-  Write-Error "Falta env de tests. Creá <project>/test/.env.test o <project>/.env.test. Podés usar docs/examples/.env.test.example como referencia."
+  Write-Error "Falta env de tests. Creá <project>/test/.env.test o <project>/.env.test."
   exit 1
 }
 
@@ -559,7 +564,6 @@ if ($Args.Count -gt 0 -and $Args[0] -eq "inspect") {
 }
 
 $runArgs = Rewrite-RunCommandArgs $Args
-
 $cmd = @("compose", "--env-file", $envFile) + $files + $runArgs
 & docker @cmd
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

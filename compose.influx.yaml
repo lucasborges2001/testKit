@@ -1,0 +1,27 @@
+services:
+  testkit:
+    depends_on:
+      influx_test:
+        condition: service_healthy
+
+  influx_test:
+    image: influxdb:2.7
+    ports:
+      - "${TEST_INFLUX_PORT:-38086}:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${TEST_INFLUX_INIT_USERNAME:-testkit}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${TEST_INFLUX_INIT_PASSWORD:-testkitpass}
+      DOCKER_INFLUXDB_INIT_ORG: ${TEST_INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${TEST_INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${TEST_INFLUX_ADMIN_TOKEN:-${TEST_INFLUX_TOKEN}}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8086/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - testkit_influx:/var/lib/influxdb2
+
+volumes:
+  testkit_influx:

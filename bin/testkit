@@ -6,6 +6,7 @@ BASE="${HERE}/compose.yaml"
 MYSQL="${HERE}/compose.mysql.yaml"
 REDIS="${HERE}/compose.redis.yaml"
 PG="${HERE}/compose.pg.yaml"
+INFLUX="${HERE}/compose.influx.yaml"
 
 PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-}"
 if [[ -z "${PROJECT_ROOT}" ]]; then
@@ -18,7 +19,6 @@ TESTKIT_ROOT_HOST="$(cd "${TESTKIT_ROOT_HOST}" && pwd)"
 TESTKIT_HOST_UID="${TESTKIT_HOST_UID:-$(id -u)}"
 TESTKIT_HOST_GID="${TESTKIT_HOST_GID:-$(id -g)}"
 
-DOCTOR_DOCKER_MODE="${TESTKIT_DOCTOR_DOCKER_MODE:-auto}"
 TESTKIT_COMPOSE_VERBOSE="${TESTKIT_COMPOSE_VERBOSE:-0}"
 TESTKIT_COMPOSE_FILTER="${TESTKIT_COMPOSE_FILTER:-1}"
 
@@ -45,29 +45,7 @@ env_file_to_container_db_env_path() {
   fi
   local rel
   rel="${env_file#"${PROJECT_ROOT}/"}"
-  echo "/workspace/project/${rel}"; return 0
-}
-
-port_in_use() {
-  local port="$1"
-  [[ -z "$port" ]] && return 2
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$port" <<'PY'
-import socket, sys
-port = int(sys.argv[1])
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-try:
-    s.bind(('127.0.0.1', port))
-except OSError:
-    sys.exit(0)
-finally:
-    try: s.close()
-    except Exception: pass
-sys.exit(1)
-PY
-    return $?
-  fi
-  return 2
+  echo "/workspace/project/${rel}"
 }
 
 load_env_kv_safe() {
@@ -98,15 +76,16 @@ normalize_stack_csv() {
     token="$(echo "$part" | tr '[:upper:]' '[:lower:]' | xargs)"
     [[ -z "$token" ]] && continue
     case "$token" in
-      mysql|redis|pg|postgres|postgresql)
+      mysql|redis|pg|postgres|postgresql|influx|influxdb)
         [[ "$token" == "postgres" || "$token" == "postgresql" ]] && token="pg"
+        [[ "$token" == "influxdb" ]] && token="influx"
         if [[ "$seen" != *",$token,"* ]]; then
           out+=("$token")
           seen+="$token,"
         fi
         ;;
       *)
-        echo "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg" >&2
+        echo "TESTKIT_STACK inválido: token no reconocido '$token'. Valores válidos: mysql, redis, pg, influx" >&2
         exit 1
         ;;
     esac
@@ -145,129 +124,13 @@ resolve_compose_files() {
   if stack_has "$stack_csv" "pg"; then
     out_ref+=( -f "$PG" )
   fi
-}
-
-artifact_paths_for_repair() {
-  printf '%s\n' \
-    "${PROJECT_ROOT}/.testkit" \
-    "${PROJECT_ROOT}/test/.testkit" \
-    "${PROJECT_ROOT}/test/history" \
-    "${PROJECT_ROOT}/test/reports"
-}
-
-artifact_ownership_needs_repair() {
-  local path
-  while IFS= read -r path; do
-    [[ -z "$path" ]] && continue
-    if [[ -e "$path" && ! -w "$path" ]]; then
-      return 0
-    fi
-  done < <(artifact_paths_for_repair)
-
-  return 1
-}
-
-compose_status_noise() {
-  local line="${1%$'\r'}"
-  [[ -z "$line" ]] && return 1
-
-  [[ "$line" =~ ^\[\+\] ]] && return 0
-  [[ "$line" =~ ^[[:space:]]*✔[[:space:]]+Container[[:space:]].*[[:space:]]+(Running|Healthy|Created|Started|Recreated)[[:space:]]+[0-9.]+s[[:space:]]*$ ]] && return 0
-  [[ "$line" =~ ^[[:space:]]*Container[[:space:]].*[[:space:]](Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)[[:space:]]*$ ]] && return 0
-  [[ "$line" =~ ^Found[[:space:]]orphan[[:space:]]containers ]] && return 0
-  [[ "$line" =~ ^To[[:space:]]remove[[:space:]]them,[[:space:]]run[[:space:]]this[[:space:]]command[[:space:]]with[[:space:]]the[[:space:]]--remove-orphans[[:space:]]flag\.[[:space:]]*$ ]] && return 0
-
-  return 1
+  if stack_has "$stack_csv" "influx"; then
+    out_ref+=( -f "$INFLUX" )
+  fi
 }
 
 run_docker_compose() {
-  if [[ "$TESTKIT_COMPOSE_VERBOSE" == "1" || "$TESTKIT_COMPOSE_FILTER" == "0" ]]; then
-    docker compose "$@"
-    return $?
-  fi
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    docker compose --ansi never "$@"
-    return $?
-  fi
-
-  python3 - "$@" <<'PY'
-import re
-import subprocess
-import sys
-
-noise_patterns = [
-    r'^\[\+\]',
-    r'^\s*✔\s+Container\s+.*\s+(?:Running|Healthy|Created|Started|Recreated)\s+[0-9.]+s\s*$',
-    r'^\s*Container\s+.*\s(?:Waiting|Healthy|Creating|Created|Started|Running|Recreated|Starting|Stopping|Stopped|Removing|Removed|Restarting)\s*$',
-    r'^Found\s+orphan\s+containers',
-    r'^To\s+remove\s+them,\s+run\s+this\s+command\s+with\s+the\s+--remove-orphans\s+flag\.\s*$',
-]
-
-
-def is_noise(line: str) -> bool:
-    line = line.rstrip('\r')
-    if not line:
-        return False
-    return any(re.match(pattern, line) for pattern in noise_patterns)
-
-
-cmd = ['docker', 'compose', '--ansi', 'never', *sys.argv[1:]]
-proc = subprocess.Popen(
-    cmd,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    bufsize=0,
-)
-assert proc.stdout is not None
-buffer = bytearray()
-
-while True:
-    chunk = proc.stdout.read(1)
-    if not chunk:
-        break
-    if chunk == b'\r':
-        line = buffer.decode('utf-8', errors='replace')
-        buffer.clear()
-        if line and not is_noise(line):
-            sys.stdout.write(line + '\n')
-            sys.stdout.flush()
-        continue
-    if chunk == b'\n':
-        line = buffer.decode('utf-8', errors='replace')
-        buffer.clear()
-        if not is_noise(line):
-            sys.stdout.write(line + '\n')
-            sys.stdout.flush()
-        continue
-    buffer.extend(chunk)
-
-if buffer:
-    line = buffer.decode('utf-8', errors='replace')
-    if not is_noise(line):
-        sys.stdout.write(line)
-        if not line.endswith('\n'):
-            sys.stdout.write('\n')
-        sys.stdout.flush()
-
-sys.exit(proc.wait())
-PY
-}
-
-
-repair_derived_artifact_ownership_if_needed() {
-  artifact_ownership_needs_repair || return 0
-
-  local repair_cmd="
-    mkdir -p /workspace/project/.testkit /workspace/project/test/.testkit /workspace/project/test/history /workspace/project/test/reports && \
-    chown -R ${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID} \
-      /workspace/project/.testkit \
-      /workspace/project/test/.testkit \
-      /workspace/project/test/history \
-      /workspace/project/test/reports
-  "
-
-  docker compose --env-file "$ENV_FILE" "${FILES[@]}" run --rm --user 0:0 testkit sh -lc "$repair_cmd" >/dev/null
+  docker compose "$@"
 }
 
 rewrite_run_command_args() {
@@ -309,6 +172,10 @@ rewrite_run_command_args() {
           rewritten+=("/workspace/testkit/scripts/agent-run.php")
           continue
           ;;
+        scripts/influx_router.php|./scripts/influx_router.php|/workspace/project/scripts/influx_router.php|/workspace/testkit/scripts/influx_router.php)
+          rewritten+=("/workspace/testkit/scripts/influx_router.php")
+          continue
+          ;;
         runners/runTest.php|./runners/runTest.php|/workspace/project/runners/runTest.php|/workspace/testkit/runners/runTest.php)
           rewritten+=("/workspace/testkit/runners/runTest.php")
           continue
@@ -320,38 +187,6 @@ rewrite_run_command_args() {
   done
 
   printf '%s\0' "${rewritten[@]}"
-}
-
-_dump_config() {
-  echo ""
-  echo "-- Effective TestKit config --"
-  echo "projectRoot: ${PROJECT_ROOT}"
-  echo "testkitRootHost: ${TESTKIT_ROOT_HOST}"
-  echo "envFile:  ${ENV_FILE}"
-  echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
-  echo ""
-  echo "TESTKIT_STACK: ${TESTKIT_STACK_EFFECTIVE}"
-  echo ""
-  echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
-  echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
-  echo ""
-  echo "TEST_JOBS: ${TEST_JOBS:-1}"
-  echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
-  echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
-  echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
-  echo "TESTKIT_DOCTOR_TARGET: ${DOCTOR_REQUESTED_TARGET:-}"
-  echo "TESTKIT_CAPABILITY_STATUS: ${CAPABILITY_STATUS:-PASS}"
-  local capability_count="${#CAPABILITY_CHECK_CODES[@]}"
-  echo "TESTKIT_CAPABILITY_CHECK_COUNT: ${capability_count}"
-  local idx n
-  for idx in "${!CAPABILITY_CHECK_CODES[@]}"; do
-    n=$((idx + 1))
-    echo "TESTKIT_CAPABILITY_CHECK_${n}_STATUS: ${CAPABILITY_CHECK_STATUSES[$idx]}"
-    echo "TESTKIT_CAPABILITY_CHECK_${n}_CODE: ${CAPABILITY_CHECK_CODES[$idx]}"
-    echo "TESTKIT_CAPABILITY_CHECK_${n}_SUMMARY: ${CAPABILITY_CHECK_SUMMARIES[$idx]}"
-    echo "TESTKIT_CAPABILITY_CHECK_${n}_ACTION: ${CAPABILITY_CHECK_ACTIONS[$idx]}"
-  done
-  echo ""
 }
 
 env_any() {
@@ -368,17 +203,6 @@ env_any() {
 
 env_present_any() {
   env_any "$@" >/dev/null 2>&1
-}
-
-snapshot_source_visible() {
-  env_present_any     TEST_BASELINE_SNAPSHOT_FILE     TEST_BASELINE_SNAPSHOT_METADATA_FILE     TEST_BASELINE_SNAPSHOT_REPORT_FILE     TEST_BASELINE_SNAPSHOT_METADATA     TEST_BASELINE_SNAPSHOT_REPORT     TEST_BASELINE_SNAPSHOT_JSON
-}
-
-snapshot_source_hint_label() {
-  if env_present_any TEST_BASELINE_SNAPSHOT_FILE; then echo "TEST_BASELINE_SNAPSHOT_FILE"; return 0; fi
-  if env_present_any TEST_BASELINE_SNAPSHOT_METADATA_FILE TEST_BASELINE_SNAPSHOT_METADATA; then echo "snapshot metadata"; return 0; fi
-  if env_present_any TEST_BASELINE_SNAPSHOT_REPORT_FILE TEST_BASELINE_SNAPSHOT_REPORT TEST_BASELINE_SNAPSHOT_JSON; then echo "snapshot report/json"; return 0; fi
-  echo "ninguno visible"
 }
 
 path_is_under_root() {
@@ -441,6 +265,38 @@ capability_emit() {
   fi
 }
 
+_dump_config() {
+  echo ""
+  echo "-- Effective TestKit config --"
+  echo "projectRoot: ${PROJECT_ROOT}"
+  echo "testkitRootHost: ${TESTKIT_ROOT_HOST}"
+  echo "envFile:  ${ENV_FILE}"
+  echo "DB_ENV_PATH(in-container): ${TESTKIT_DB_ENV_PATH}"
+  echo ""
+  echo "TESTKIT_STACK: ${TESTKIT_STACK_EFFECTIVE}"
+  echo ""
+  echo "TK_BACK_DIR:   ${TK_BACK_DIR:-back}"
+  echo "TK_PUBLIC_DIR: ${TK_PUBLIC_DIR:-public_html}"
+  echo ""
+  echo "TEST_JOBS: ${TEST_JOBS:-1}"
+  echo "TEST_DB_STRATEGY: ${TEST_DB_STRATEGY:-shared}"
+  echo "TEST_DB_WORKER_SUFFIX_FORMAT: ${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
+  echo "TEST_STORE_PROVISION: ${TEST_STORE_PROVISION:-managed}"
+  echo "TESTKIT_DOCTOR_TARGET: ${DOCTOR_REQUESTED_TARGET:-}"
+  echo "TESTKIT_CAPABILITY_STATUS: ${CAPABILITY_STATUS:-PASS}"
+  local capability_count="${#CAPABILITY_CHECK_CODES[@]}"
+  echo "TESTKIT_CAPABILITY_CHECK_COUNT: ${capability_count}"
+  local idx n
+  for idx in "${!CAPABILITY_CHECK_CODES[@]}"; do
+    n=$((idx + 1))
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_STATUS: ${CAPABILITY_CHECK_STATUSES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_CODE: ${CAPABILITY_CHECK_CODES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_SUMMARY: ${CAPABILITY_CHECK_SUMMARIES[$idx]}"
+    echo "TESTKIT_CAPABILITY_CHECK_${n}_ACTION: ${CAPABILITY_CHECK_ACTIONS[$idx]}"
+  done
+  echo ""
+}
+
 doctor_contract_checks() {
   local ok_ref_name="$1"
   local -n ok_ref="$ok_ref_name"
@@ -463,37 +319,31 @@ doctor_contract_checks() {
   fi
 
   if [[ "$store_driver" == "mysql" ]]; then
-    env_present_any DB_HOST TEST_MYSQL_HOST MYSQL_HOST \
-      && echo "[OK] MySQL host present" \
-      || { echo "[FAIL] falta host MySQL (DB_HOST / TEST_MYSQL_HOST / MYSQL_HOST)"; ok_ref=0; }
+    env_present_any DB_HOST TEST_MYSQL_HOST MYSQL_HOST       && echo "[OK] MySQL host present"       || { echo "[FAIL] falta host MySQL (DB_HOST / TEST_MYSQL_HOST / MYSQL_HOST)"; ok_ref=0; }
 
-    env_present_any DB_PORT TEST_MYSQL_PORT MYSQL_PORT \
-      && echo "[OK] MySQL port present" \
-      || { echo "[FAIL] falta puerto MySQL (DB_PORT / TEST_MYSQL_PORT / MYSQL_PORT)"; ok_ref=0; }
+    env_present_any DB_PORT TEST_MYSQL_PORT MYSQL_PORT       && echo "[OK] MySQL port present"       || { echo "[FAIL] falta puerto MySQL (DB_PORT / TEST_MYSQL_PORT / MYSQL_PORT)"; ok_ref=0; }
 
-    env_present_any DB_NAME TEST_MYSQL_DB MYSQL_DATABASE \
-      && echo "[OK] MySQL database name present" \
-      || { echo "[FAIL] falta nombre de DB MySQL (DB_NAME / TEST_MYSQL_DB / MYSQL_DATABASE)"; ok_ref=0; }
+    env_present_any DB_NAME TEST_MYSQL_DB MYSQL_DATABASE       && echo "[OK] MySQL database name present"       || { echo "[FAIL] falta nombre de DB MySQL (DB_NAME / TEST_MYSQL_DB / MYSQL_DATABASE)"; ok_ref=0; }
 
-    env_present_any DB_USER TEST_MYSQL_USER MYSQL_USER \
-      && echo "[OK] MySQL runtime user present" \
-      || { echo "[FAIL] falta usuario runtime MySQL (DB_USER / TEST_MYSQL_USER / MYSQL_USER)"; ok_ref=0; }
+    env_present_any DB_USER TEST_MYSQL_USER MYSQL_USER       && echo "[OK] MySQL runtime user present"       || { echo "[FAIL] falta usuario runtime MySQL (DB_USER / TEST_MYSQL_USER / MYSQL_USER)"; ok_ref=0; }
 
-    env_present_any DB_PASS TEST_MYSQL_PASSWORD MYSQL_PASSWORD \
-      && echo "[OK] MySQL runtime password present" \
-      || { echo "[FAIL] falta password runtime MySQL (DB_PASS / TEST_MYSQL_PASSWORD / MYSQL_PASSWORD)"; ok_ref=0; }
+    env_present_any DB_PASS TEST_MYSQL_PASSWORD MYSQL_PASSWORD       && echo "[OK] MySQL runtime password present"       || { echo "[FAIL] falta password runtime MySQL (DB_PASS / TEST_MYSQL_PASSWORD / MYSQL_PASSWORD)"; ok_ref=0; }
 
     if [[ "$provision_mode" == "managed" ]]; then
-      env_present_any TEST_MYSQL_ADMIN_USER MYSQL_ROOT_USER \
-        && echo "[OK] MySQL admin user present (managed provision)" \
-        || { echo "[FAIL] falta usuario admin MySQL (TEST_MYSQL_ADMIN_USER / MYSQL_ROOT_USER) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
+      env_present_any TEST_MYSQL_ADMIN_USER MYSQL_ROOT_USER         && echo "[OK] MySQL admin user present (managed provision)"         || { echo "[FAIL] falta usuario admin MySQL (TEST_MYSQL_ADMIN_USER / MYSQL_ROOT_USER) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
 
-      env_present_any TEST_MYSQL_ROOT_PASSWORD MYSQL_ROOT_PASSWORD \
-        && echo "[OK] MySQL admin password present (managed provision)" \
-        || { echo "[FAIL] falta password admin MySQL (TEST_MYSQL_ROOT_PASSWORD / MYSQL_ROOT_PASSWORD) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
+      env_present_any TEST_MYSQL_ROOT_PASSWORD MYSQL_ROOT_PASSWORD         && echo "[OK] MySQL admin password present (managed provision)"         || { echo "[FAIL] falta password admin MySQL (TEST_MYSQL_ROOT_PASSWORD / MYSQL_ROOT_PASSWORD) para TEST_STORE_PROVISION=managed"; ok_ref=0; }
     else
       echo "[INFO] TEST_STORE_PROVISION=external -> no se requieren credenciales admin MySQL"
     fi
+  fi
+
+  if stack_has "$TESTKIT_STACK_EFFECTIVE" "influx"; then
+    env_present_any TEST_INFLUX_ORG       && echo "[OK] Influx org present"       || { echo "[FAIL] falta TEST_INFLUX_ORG para stack con influx"; ok_ref=0; }
+
+    env_present_any TEST_INFLUX_BUCKET       && echo "[OK] Influx bucket present"       || { echo "[FAIL] falta TEST_INFLUX_BUCKET para stack con influx"; ok_ref=0; }
+
+    env_present_any TEST_INFLUX_TOKEN TEST_INFLUX_ADMIN_TOKEN       && echo "[OK] Influx token present"       || { echo "[FAIL] falta token de Influx (TEST_INFLUX_TOKEN o TEST_INFLUX_ADMIN_TOKEN)"; ok_ref=0; }
   fi
 
   if command -v docker >/dev/null 2>&1; then
@@ -570,6 +420,11 @@ doctor_capability_checks() {
     capability_emit UNKNOWN ENGINE_NOT_CLOSED "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase." "Usar MySQL si querés la ruta cerrada actual."
   fi
 
+  if stack_has "$TESTKIT_STACK_EFFECTIVE" "influx"; then
+    capability_emit PASS INFLUX_STACK_ENABLED "TESTKIT_STACK incluye influx: el wrapper puede levantar InfluxDB 2.7 como servicio auxiliar."
+    capability_emit UNKNOWN INFLUX_NOT_STRUCTURAL_STORE "Influx queda integrado como servicio auxiliar HTTP; no reemplaza la ruta cerrada MySQL/StoreAdapter." "Usar scripts/influx_router.php o core/php/influx/* desde tests/proyecto."
+  fi
+
   case "$requested_target" in
     "" )
       ;;
@@ -592,8 +447,8 @@ doctor_capability_checks() {
         capability_emit FAIL MIGRATION_CONTRACT_NEEDS_MYSQL "migration-contract queda fuera de contrato si el motor efectivo no es MySQL." "Usar MySQL si querés la ruta cerrada de migration-contract."
       fi
 
-      if snapshot_source_visible; then
-        capability_emit PASS SNAPSHOT_SOURCE_VISIBLE "Doctor ve una fuente visible de snapshot ($(snapshot_source_hint_label))."
+      if env_present_any TEST_BASELINE_SNAPSHOT_FILE TEST_BASELINE_SNAPSHOT_METADATA_FILE TEST_BASELINE_SNAPSHOT_REPORT_FILE TEST_BASELINE_SNAPSHOT_METADATA TEST_BASELINE_SNAPSHOT_REPORT TEST_BASELINE_SNAPSHOT_JSON; then
+        capability_emit PASS SNAPSHOT_SOURCE_VISIBLE "Doctor ve una fuente visible de snapshot."
       else
         capability_emit UNKNOWN SNAPSHOT_SOURCE_NOT_VISIBLE "Doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales." "Declarar TEST_BASELINE_SNAPSHOT_FILE o un hint visible de metadata/report JSON compatible."
       fi
@@ -734,7 +589,6 @@ export TESTKIT_HOST_GID
 
 FILES=()
 resolve_compose_files "$TESTKIT_STACK_EFFECTIVE" FILES
-repair_derived_artifact_ownership_if_needed
 
 if [[ "${1:-}" == "inspect" ]]; then
   shift
@@ -743,6 +597,5 @@ if [[ "${1:-}" == "inspect" ]]; then
 fi
 
 mapfile -d '' -t REWRITTEN_ARGS < <(rewrite_run_command_args "$@")
-
 run_docker_compose --env-file "$ENV_FILE" "${FILES[@]}" "${REWRITTEN_ARGS[@]}"
 exit $?
