@@ -125,7 +125,42 @@ Qué hacer:
 - declarar `TEST_BASELINE_SNAPSHOT_FILE`
 - o un hint visible de metadata/report JSON compatible
 
-## 5) Dump estructurado
+## 5) Síntomas PowerShell específicos
+
+### 5.1) `The term '' is not recognized` o `The term 'Param' is not recognized`
+
+Por qué pasa:
+
+- `bin/testkit.ps1` tenía una barra invertida espuria antes de `Param(...)`
+- eso rompe el bloque de parámetros del script al entrar por PowerShell
+
+Qué hacer:
+
+- actualizar `bin/testkit.ps1` por la versión corregida
+- verificar que la primera línea del archivo arranque directamente con `Param(`
+
+### 5.2) `exec: TEST_MATCH="alerta" php ...: not found`
+
+Por qué pasa:
+
+- Docker recibió toda la tail command como si fuera el nombre del ejecutable
+- eso ocurre cuando PowerShell pasa la tail command como un único string y el wrapper no la normaliza
+
+Qué hacer:
+
+- usar la versión corregida de `bin/testkit.ps1`
+- correr, por ejemplo:
+
+```powershell
+.in	estkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+```
+
+Lectura correcta:
+
+- el wrapper reescribe `runTest.php` a `/workspace/testkit/runTest.php`
+- y ejecuta la tail command con `sh -lc` dentro del contenedor
+
+## 6) Dump estructurado
 
 `doctor --dump` expone:
 
@@ -138,6 +173,6 @@ Qué hacer:
 
 Usarlo para tests del framework y para auditoría de decisiones del wrapper.
 
-## 6) Regla final
+## 7) Regla final
 
 No acumules variables hasta “hacerlo andar”. Si capability marca `FAIL` o `UNKNOWN`, corregí primero la contradicción visible o reducí la configuración a una ruta simple.

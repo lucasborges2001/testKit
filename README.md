@@ -52,6 +52,24 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 inspect latest
 ```
 
+### PowerShell: filtered runs inside the container
+
+When you need inline environment variables for the command that runs **inside** the container, prefer a shell-string command after `testkit`:
+
+```powershell
+.\bin\testkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+```
+
+The PowerShell wrapper rewrites `runTest.php` to `/workspace/testkit/runTest.php` and runs it through `sh -lc` when the tail command is passed as a single string or starts with inline `KEY=value` assignments.
+
+What you should **not** expect to work in PowerShell is treating this as if it were native PowerShell syntax:
+
+```powershell
+.in	estkit.ps1 run --rm testkit TEST_MATCH="alerta" php runTest.php back-php
+```
+
+Without wrapper support, Docker sees `TEST_MATCH="alerta"` as the executable. This repository now normalizes that case in `bin/testkit.ps1`.
+
 ## Execution observability
 
 Long suites now expose operator-facing progress and summarized execution metrics as part of the framework contract.

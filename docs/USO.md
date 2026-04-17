@@ -58,6 +58,27 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 inspect latest
 ```
 
+### PowerShell: filtros con variables inline dentro del contenedor
+
+Cuando el filtro o la suite necesitan variables para el proceso que corre **dentro** del contenedor, usar una tail command única después de `testkit`:
+
+```powershell
+.in	estkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+```
+
+Lectura correcta:
+
+- el wrapper detecta que la tail command fue pasada como un único string
+- la ejecuta con `sh -lc` dentro del contenedor
+- reescribe `runTest.php` a `/workspace/testkit/runTest.php`
+- tolera también la forma con assignments inline antes del comando
+
+No vender otra cosa:
+
+- PowerShell no interpreta `TEST_MATCH="alerta" php ...` como bash
+- si el wrapper no normaliza ese caso, Docker intenta ejecutar `TEST_MATCH="alerta"` como binario
+- el modo más explícito y portable en PowerShell es pasar la tail command como string único
+
 Observaciones duras:
 
 - el primer target no tiene que ser `all`; conviene empezar por una suite concreta

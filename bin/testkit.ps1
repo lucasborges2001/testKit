@@ -1,4 +1,3 @@
-\
 Param(
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]]$Args
@@ -127,56 +126,163 @@ function Resolve-ComposeFiles([string]$StackCsv) {
   return ,$files.ToArray()
 }
 
+function Rewrite-InnerCommandToken([string]$Token) {
+  switch ($Token) {
+    'runTest.php' { return '/workspace/testkit/runTest.php' }
+    './runTest.php' { return '/workspace/testkit/runTest.php' }
+    '/workspace/project/runTest.php' { return '/workspace/testkit/runTest.php' }
+    '/workspace/testkit/runTest.php' { return '/workspace/testkit/runTest.php' }
+
+    'scripts/report.php' { return '/workspace/testkit/scripts/report.php' }
+    './scripts/report.php' { return '/workspace/testkit/scripts/report.php' }
+    '/workspace/project/scripts/report.php' { return '/workspace/testkit/scripts/report.php' }
+    '/workspace/testkit/scripts/report.php' { return '/workspace/testkit/scripts/report.php' }
+
+    'scripts/query_report.php' { return '/workspace/testkit/scripts/query_report.php' }
+    './scripts/query_report.php' { return '/workspace/testkit/scripts/query_report.php' }
+    '/workspace/project/scripts/query_report.php' { return '/workspace/testkit/scripts/query_report.php' }
+    '/workspace/testkit/scripts/query_report.php' { return '/workspace/testkit/scripts/query_report.php' }
+
+    'scripts/inspect.php' { return '/workspace/testkit/scripts/inspect.php' }
+    './scripts/inspect.php' { return '/workspace/testkit/scripts/inspect.php' }
+    '/workspace/project/scripts/inspect.php' { return '/workspace/testkit/scripts/inspect.php' }
+    '/workspace/testkit/scripts/inspect.php' { return '/workspace/testkit/scripts/inspect.php' }
+
+    'scripts/influx_router.php' { return '/workspace/testkit/scripts/influx_router.php' }
+    './scripts/influx_router.php' { return '/workspace/testkit/scripts/influx_router.php' }
+    '/workspace/project/scripts/influx_router.php' { return '/workspace/testkit/scripts/influx_router.php' }
+    '/workspace/testkit/scripts/influx_router.php' { return '/workspace/testkit/scripts/influx_router.php' }
+
+    'scripts/agent-run.php' { return '/workspace/testkit/scripts/agent-run.php' }
+    './scripts/agent-run.php' { return '/workspace/testkit/scripts/agent-run.php' }
+    '/workspace/project/scripts/agent-run.php' { return '/workspace/testkit/scripts/agent-run.php' }
+    '/workspace/testkit/scripts/agent-run.php' { return '/workspace/testkit/scripts/agent-run.php' }
+
+    'runners/runTest.php' { return '/workspace/testkit/runners/runTest.php' }
+    './runners/runTest.php' { return '/workspace/testkit/runners/runTest.php' }
+    '/workspace/project/runners/runTest.php' { return '/workspace/testkit/runners/runTest.php' }
+    '/workspace/testkit/runners/runTest.php' { return '/workspace/testkit/runners/runTest.php' }
+    default { return $Token }
+  }
+}
+
+function Rewrite-InnerCommandString([string]$CommandString) {
+  if ([string]::IsNullOrWhiteSpace($CommandString)) { return $CommandString }
+
+  $rewritten = $CommandString
+  $patterns = @(
+    @{ Pattern = '(^|\s)runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runTest.php' },
+    @{ Pattern = '(^|\s)\./runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runTest.php' },
+    @{ Pattern = '(^|\s)/workspace/project/runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runTest.php' },
+
+    @{ Pattern = '(^|\s)scripts/report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/report.php' },
+    @{ Pattern = '(^|\s)\./scripts/report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/report.php' },
+    @{ Pattern = '(^|\s)/workspace/project/scripts/report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/report.php' },
+
+    @{ Pattern = '(^|\s)scripts/query_report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/query_report.php' },
+    @{ Pattern = '(^|\s)\./scripts/query_report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/query_report.php' },
+    @{ Pattern = '(^|\s)/workspace/project/scripts/query_report\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/query_report.php' },
+
+    @{ Pattern = '(^|\s)scripts/inspect\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/inspect.php' },
+    @{ Pattern = '(^|\s)\./scripts/inspect\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/inspect.php' },
+    @{ Pattern = '(^|\s)/workspace/project/scripts/inspect\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/inspect.php' },
+
+    @{ Pattern = '(^|\s)scripts/influx_router\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/influx_router.php' },
+    @{ Pattern = '(^|\s)\./scripts/influx_router\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/influx_router.php' },
+    @{ Pattern = '(^|\s)/workspace/project/scripts/influx_router\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/influx_router.php' },
+
+    @{ Pattern = '(^|\s)scripts/agent-run\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/agent-run.php' },
+    @{ Pattern = '(^|\s)\./scripts/agent-run\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/agent-run.php' },
+    @{ Pattern = '(^|\s)/workspace/project/scripts/agent-run\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/scripts/agent-run.php' },
+
+    @{ Pattern = '(^|\s)runners/runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runners/runTest.php' },
+    @{ Pattern = '(^|\s)\./runners/runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runners/runTest.php' },
+    @{ Pattern = '(^|\s)/workspace/project/runners/runTest\.php(?=\s|$)'; Replacement = '$1/workspace/testkit/runners/runTest.php' }
+  )
+
+  foreach ($entry in $patterns) {
+    $rewritten = [regex]::Replace($rewritten, $entry.Pattern, $entry.Replacement)
+  }
+
+  return $rewritten.Trim()
+}
+
+function Quote-ShToken([string]$Token) {
+  if ($null -eq $Token -or $Token.Length -eq 0) {
+    return '""'
+  }
+  $escaped = $Token -replace '(["$`\\])', '\\$1'
+  return '"' + $escaped + '"'
+}
+
+function Convert-TestkitRunTail([string[]]$TailArgs) {
+  if (-not $TailArgs -or $TailArgs.Count -eq 0) {
+    return @()
+  }
+
+  $tail = @($TailArgs)
+
+  if ($tail.Count -eq 1) {
+    $single = $tail[0].Trim()
+    if ($single -match '\s') {
+      $single = Rewrite-InnerCommandString $single
+      return @('sh', '-lc', $single)
+    }
+  }
+
+  $assignments = New-Object System.Collections.Generic.List[string]
+  $index = 0
+  while ($index -lt $tail.Count -and $tail[$index] -match '^[A-Za-z_][A-Za-z0-9_]*=.*$') {
+    $assignments.Add($tail[$index])
+    $index++
+  }
+
+  if ($assignments.Count -gt 0 -and $index -lt $tail.Count) {
+    $shellParts = New-Object System.Collections.Generic.List[string]
+    foreach ($assignment in $assignments) {
+      $shellParts.Add($assignment)
+    }
+    for ($j = $index; $j -lt $tail.Count; $j++) {
+      $shellParts.Add((Quote-ShToken (Rewrite-InnerCommandToken $tail[$j])))
+    }
+    return @('sh', '-lc', ($shellParts -join ' '))
+  }
+
+  $rewritten = New-Object System.Collections.Generic.List[string]
+  foreach ($token in $tail) {
+    $rewritten.Add((Rewrite-InnerCommandToken $token))
+  }
+
+  return ,$rewritten.ToArray()
+}
+
 function Rewrite-RunCommandArgs([string[]]$InputArgs) {
   if (-not $InputArgs -or $InputArgs.Count -eq 0) { return ,$InputArgs }
   if ($InputArgs[0] -ne 'run') { return ,$InputArgs }
 
-  $rewritten = @($InputArgs)
+  $rewritten = New-Object System.Collections.Generic.List[string]
   $sawTestkit = $false
+  $tail = New-Object System.Collections.Generic.List[string]
 
-  for ($i = 0; $i -lt $rewritten.Count; $i++) {
-    if ($rewritten[$i] -eq 'testkit') {
-      $sawTestkit = $true
+  foreach ($arg in $InputArgs) {
+    if (-not $sawTestkit) {
+      $rewritten.Add($arg)
+      if ($arg -eq 'testkit') {
+        $sawTestkit = $true
+      }
       continue
     }
 
-    if ($sawTestkit -and @('runTest.php', './runTest.php', '/workspace/project/runTest.php', '/workspace/testkit/runTest.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/runTest.php'
-      continue
-    }
+    $tail.Add($arg)
+  }
 
-    if ($sawTestkit -and @('scripts/report.php', './scripts/report.php', '/workspace/project/scripts/report.php', '/workspace/testkit/scripts/report.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/scripts/report.php'
-      continue
-    }
-
-    if ($sawTestkit -and @('scripts/query_report.php', './scripts/query_report.php', '/workspace/project/scripts/query_report.php', '/workspace/testkit/scripts/query_report.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/scripts/query_report.php'
-      continue
-    }
-
-    if ($sawTestkit -and @('scripts/inspect.php', './scripts/inspect.php', '/workspace/project/scripts/inspect.php', '/workspace/testkit/scripts/inspect.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/scripts/inspect.php'
-      continue
-    }
-
-    if ($sawTestkit -and @('scripts/influx_router.php', './scripts/influx_router.php', '/workspace/project/scripts/influx_router.php', '/workspace/testkit/scripts/influx_router.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/scripts/influx_router.php'
-      continue
-    }
-
-    if ($sawTestkit -and @('scripts/agent-run.php', './scripts/agent-run.php', '/workspace/project/scripts/agent-run.php', '/workspace/testkit/scripts/agent-run.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/scripts/agent-run.php'
-      continue
-    }
-
-    if ($sawTestkit -and @('runners/runTest.php', './runners/runTest.php', '/workspace/project/runners/runTest.php', '/workspace/testkit/runners/runTest.php') -contains $rewritten[$i]) {
-      $rewritten[$i] = '/workspace/testkit/runners/runTest.php'
-      continue
+  if ($sawTestkit) {
+    foreach ($arg in (Convert-TestkitRunTail $tail.ToArray())) {
+      $rewritten.Add($arg)
     }
   }
 
-  return ,$rewritten
+  return ,$rewritten.ToArray()
 }
 
 function Normalize-SimpleToken([string]$Raw) {
