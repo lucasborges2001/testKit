@@ -291,15 +291,16 @@ final class MetaRunner
 
         try {
             $decision = AgentRun::buildLatestDecision($runId, 'post_run');
+            $nextAction = is_array($decision['next_action'] ?? null) ? $decision['next_action'] : [];
             AgentRunArtifact::record($decision, [
                 'executed' => false,
-                'kind' => 'decision_only',
+                'kind' => (string)($nextAction['kind'] ?? 'decision_only'),
                 'reason' => 'auto_recorded_after_meta_run',
                 'command' => [
                     'argv' => [],
                     'cwd' => Paths::relativeToRepo(Paths::testkitRoot()),
-                    'env_overrides' => ['TESTKIT_MODE' => 'agent'],
-                    'display' => null,
+                    'env_overrides' => ['TESTKIT_MODE' => (string)($agentMode['mode'] ?? 'agent')],
+                    'display' => (string)($nextAction['command'] ?? '') !== '' ? (string)$nextAction['command'] : null,
                 ],
                 'result' => [
                     'exit_code' => 0,

@@ -25,7 +25,7 @@ final class AgentRunExecute
                 'command' => [
                     'argv' => [],
                     'cwd' => Paths::relativeToRepo((string)($plan['cwd'] ?? Paths::testkitRoot())),
-                    'env_overrides' => [],
+                    'env_overrides' => self::normalizeEnvOverrides($plan['env_overrides'] ?? []),
                     'display' => null,
                 ],
                 'result' => [
@@ -102,54 +102,76 @@ final class AgentRunExecute
         $firstFailure = is_array($decision['first_failure'] ?? null) ? $decision['first_failure'] : [];
         $php = PHP_BINARY;
         $cwd = Paths::testkitRoot();
+        $envOverrides = self::agentModeEnvOverrides($decision);
 
         return match ($kind) {
             'stop' => [
                 'should_execute' => false,
                 'cwd' => $cwd,
+                'env_overrides' => $envOverrides,
             ],
             'inspect_concurrency' => [
                 'should_execute' => true,
                 'cwd' => $cwd,
                 'argv' => [$php, 'scripts/inspect.php', 'concurrency', '--run=' . $runId, '--json'],
-                'env_overrides' => [],
+                'env_overrides' => $envOverrides,
                 'expects_json' => true,
             ],
             'inspect_failure' => [
                 'should_execute' => true,
                 'cwd' => $cwd,
                 'argv' => [$php, 'scripts/inspect.php', 'failure', '--run=' . $runId, '--json'],
-                'env_overrides' => [],
+                'env_overrides' => $envOverrides,
                 'expects_json' => true,
             ],
             'refine_selection' => [
                 'should_execute' => true,
                 'cwd' => $cwd,
                 'argv' => [$php, 'scripts/inspect.php', 'latest', '--run=' . $runId, '--json'],
-                'env_overrides' => [],
+                'env_overrides' => $envOverrides,
                 'expects_json' => true,
             ],
             'run_selected_tests' => [
                 'should_execute' => true,
                 'cwd' => $cwd,
                 'argv' => [$php, 'runTest.php', self::selectionTargetHint($selection)],
-                'env_overrides' => [],
+                'env_overrides' => $envOverrides,
                 'expects_json' => false,
             ],
             'rerun_single_file' => [
                 'should_execute' => true,
                 'cwd' => $cwd,
                 'argv' => [$php, 'runTest.php', self::suiteTargetHint($nextAction, $selection)],
-                'env_overrides' => [
+                'env_overrides' => array_merge($envOverrides, [
                     'TEST_MATCH' => trim((string)($nextAction['target'] ?? $firstFailure['file'] ?? '')),
-                ],
+                ]),
                 'expects_json' => false,
             ],
             default => [
                 'should_execute' => false,
                 'cwd' => $cwd,
+                'env_overrides' => $envOverrides,
             ],
         };
+    }
+
+    /**
+     * @param array<string,mixed> $decision
+     * @return array<string,string>
+     */
+    private static function agentModeEnvOverrides(array $decision): array
+    {
+        $agentMode = is_array($decision['agent_mode'] ?? null) ? $decision['agent_mode'] : [];
+        if (!(bool)($agentMode['enabled'] ?? false)) {
+            return [];
+        }
+
+        $mode = trim((string)($agentMode['mode'] ?? ''));
+        if ($mode === '') {
+            $mode = 'agent';
+        }
+
+        return ['TESTKIT_MODE' => $mode];
     }
 
     /**

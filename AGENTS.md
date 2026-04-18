@@ -49,7 +49,9 @@ TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-js
 
 ## Agent mode contract
 
-`TESTKIT_MODE=agent` enforces a deterministic first-pass execution profile:
+`TESTKIT_MODE=agent` is the single canonical activation signal.
+
+When active, the runner enforces this deterministic first-pass profile:
 
 - `TEST_JOBS=1`
 - `TEST_DB_STRATEGY=shared`
@@ -58,6 +60,8 @@ TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-js
 - `TEST_META_FAIL_FAST=0`
 - `TESTKIT_PROGRESS_MODE=quiet`
 - `NO_COLOR=1`
+
+The contract is not the console text. The contract lives in persisted JSON, canonical reports, agent decision JSON and agent artifacts.
 
 ## Canonical machine interfaces
 
@@ -77,6 +81,8 @@ Agent decision interface:
 ./bin/testkit run --rm testkit php scripts/agent-run.php execute --json
 ```
 
+When `agent-run` emits a next command in agent mode, that command keeps `TESTKIT_MODE=agent` explicitly so continuation does not silently fall back to standard mode.
+
 ## Canonical artifacts
 
 Read persisted artifacts from the host project repository:
@@ -88,6 +94,8 @@ Read persisted artifacts from the host project repository:
 When agent mode is enabled, the run also records an agent artifact under:
 
 - `<project>/.testkit/reports/runs/<run_id>/agent_runs/agent_run_execute_latest.json`
+
+That artifact is a persisted decision/execution envelope. After the meta run finishes, the auto-recorded artifact is a non-executed decision snapshot. After `agent-run.php execute`, the artifact contains the executed command envelope and child payload when applicable.
 
 ## Rules
 

@@ -29,6 +29,8 @@ $tests = [
     'Bootstrap visual dedupe'               => __DIR__ . '/test_bootstrap_visual_dedupe.php',
     'Meta action required renderer'         => __DIR__ . '/test_meta_action_required_renderer.php',
     'Meta rerun plan fallback'              => __DIR__ . '/test_meta_rerun_plan_fallback.php',
+    'Agent mode runtime contract'           => __DIR__ . '/test_agent_mode_contract.php',
+    'Agent run continuation contract'       => __DIR__ . '/test_agent_run_contract.php',
 ];
 
 $pass   = 0;

@@ -163,6 +163,7 @@ final class AgentRun
         $evidenceValid = self::deriveEvidenceValidity($meta, $suiteReports);
         $evidenceInvalidReason = self::deriveEvidenceInvalidReason($meta, $suiteReports);
         $firstFailure = self::deriveFirstFailure($meta, $suiteReports);
+        $agentMode = self::deriveAgentMode($meta, $suiteReports);
         $nextAction = self::nextAction(
             $context['run_id'],
             $finalStatus,
@@ -170,7 +171,8 @@ final class AgentRun
             $evidenceInvalidReason,
             $firstFailure,
             $selection,
-            $suiteReports
+            $suiteReports,
+            $agentMode
         );
 
         return [
@@ -185,6 +187,7 @@ final class AgentRun
             'evidence_invalid_reason' => $evidenceInvalidReason,
             'selection' => $selection,
             'first_failure' => $firstFailure,
+            'agent_mode' => $agentMode,
             'next_action' => $nextAction,
             'decision_basis' => [
                 'uses_canonical_report_only' => true,
@@ -209,13 +212,14 @@ final class AgentRun
         ?string $evidenceInvalidReason,
         ?array $firstFailure,
         array $selection,
-        array $suiteReports
+        array $suiteReports,
+        array $agentMode
     ): array {
         if (!$evidenceValid) {
             return [
                 'kind' => 'inspect_concurrency',
                 'reason' => 'evidence_invalid' . ($evidenceInvalidReason !== null && $evidenceInvalidReason !== '' ? ':' . $evidenceInvalidReason : ''),
-                'command' => 'php scripts/inspect.php concurrency --run=' . $runId . ' --json',
+                'command' => self::commandWithAgentMode('php scripts/inspect.php concurrency --run=' . $runId . ' --json', $agentMode),
                 'target' => $runId,
             ];
         }
@@ -230,7 +234,7 @@ final class AgentRun
                 'reason' => 'first_actionable_failure',
                 'target' => $file,
                 'suite_id' => $suiteId,
-                'command' => 'TEST_MATCH=' . self::shellQuote($file) . ' php runTest.php ' . $suiteTarget,
+                'command' => self::commandWithAgentMode('TEST_MATCH=' . self::shellQuote($file) . ' php runTest.php ' . $suiteTarget, $agentMode),
             ];
         }
 
@@ -248,7 +252,7 @@ final class AgentRun
                 'kind' => 'refine_selection',
                 'reason' => 'selection_empty',
                 'target' => $selection['match'] !== '' ? $selection['match'] : ($selection['selected_module_scope'] !== '' ? $selection['selected_module_scope'] : null),
-                'command' => 'php scripts/inspect.php latest --run=' . $runId . ' --json',
+                'command' => self::commandWithAgentMode('php scripts/inspect.php latest --run=' . $runId . ' --json', $agentMode),
             ];
         }
 
@@ -257,7 +261,7 @@ final class AgentRun
                 'kind' => 'run_selected_tests',
                 'reason' => 'selection_only_listed',
                 'target' => null,
-                'command' => 'php runTest.php ' . self::selectionTargetHint($selection, $suiteReports),
+                'command' => self::commandWithAgentMode('php runTest.php ' . self::selectionTargetHint($selection, $suiteReports), $agentMode),
             ];
         }
 
@@ -265,7 +269,7 @@ final class AgentRun
             'kind' => 'inspect_failure',
             'reason' => 'failure_without_actionable_first_failure',
             'target' => $runId,
-            'command' => 'php scripts/inspect.php failure --run=' . $runId . ' --json',
+            'command' => self::commandWithAgentMode('php scripts/inspect.php failure --run=' . $runId . ' --json', $agentMode),
         ];
     }
 
@@ -449,6 +453,73 @@ final class AgentRun
         }
 
         return null;
+    }
+
+    /**
+     * @param array<string,mixed>|null $meta
+     * @param array<int,array<string,mixed>> $suiteReports
+     * @return array<string,mixed>
+     */
+    private static function deriveAgentMode(?array $meta, array $suiteReports): array
+    {
+        if (is_array($meta)) {
+            $canonical = self::requireCanonicalReport($meta, 'meta report');
+            $payload = $canonical['agent_mode'] ?? $meta['agent_mode'] ?? null;
+            if (is_array($payload)) {
+                return self::normalizeAgentMode($payload);
+            }
+        }
+
+        $fallback = null;
+        foreach ($suiteReports as $report) {
+            $canonical = self::requireCanonicalReport($report, 'suite report');
+            $payload = $canonical['agent_mode'] ?? $report['agent_mode'] ?? null;
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $normalized = self::normalizeAgentMode($payload);
+            if ((bool)($normalized['enabled'] ?? false)) {
+                return $normalized;
+            }
+
+            $fallback ??= $normalized;
+        }
+
+        return $fallback ?? [
+            'enabled' => false,
+            'mode' => 'standard',
+            'enforced' => [],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private static function normalizeAgentMode(array $payload): array
+    {
+        $enabled = (bool)($payload['enabled'] ?? false);
+        $mode = strtolower(trim((string)($payload['mode'] ?? '')));
+        if ($mode === '') {
+            $mode = $enabled ? 'agent' : 'standard';
+        }
+
+        $enforced = [];
+        if (is_array($payload['enforced'] ?? null)) {
+            foreach ($payload['enforced'] as $key => $value) {
+                if (!is_string($key) || trim($key) === '') {
+                    continue;
+                }
+                $enforced[$key] = (string)$value;
+            }
+        }
+
+        return [
+            'enabled' => $enabled,
+            'mode' => $mode,
+            'enforced' => $enforced,
+        ];
     }
 
     /**
@@ -703,6 +774,37 @@ final class AgentRun
         return "'" . str_replace("'", "'\\''", $value) . "'";
     }
 
+    private static function shellEnvValue(string $value): string
+    {
+        return preg_match('/^[A-Za-z0-9._-]+$/', $value) === 1 ? $value : self::shellQuote($value);
+    }
+
+    /**
+     * @param array<string,mixed> $agentMode
+     */
+    private static function commandWithAgentMode(?string $command, array $agentMode): ?string
+    {
+        $command = trim((string)$command);
+        if ($command === '') {
+            return null;
+        }
+
+        if (!(bool)($agentMode['enabled'] ?? false)) {
+            return $command;
+        }
+
+        if (preg_match('/(^|\s)TESTKIT_MODE=/', $command) === 1) {
+            return $command;
+        }
+
+        $mode = trim((string)($agentMode['mode'] ?? ''));
+        if ($mode === '') {
+            $mode = 'agent';
+        }
+
+        return 'TESTKIT_MODE=' . self::shellEnvValue($mode) . ' ' . $command;
+    }
+
     /**
      * @param array<string,mixed> $payload
      */
@@ -737,6 +839,11 @@ final class AgentRun
             . ' category=' . (string)($selection['category'] ?? '')
             . ' match=' . (string)($selection['match'] ?? '')
             . PHP_EOL;
+
+        $agentMode = is_array($payload['agent_mode'] ?? null) ? $payload['agent_mode'] : [];
+        if ($agentMode !== []) {
+            echo 'agent_mode: ' . ((bool)($agentMode['enabled'] ?? false) ? (string)($agentMode['mode'] ?? 'agent') : 'standard') . PHP_EOL;
+        }
 
         $firstFailure = $payload['first_failure'] ?? null;
         if (is_array($firstFailure)) {
