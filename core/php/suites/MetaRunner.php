@@ -3,10 +3,13 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Suites;
 
+use Testkit\Core\Common\AgentMode;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Execution\ParallelGuard;
+use Testkit\Core\Reporting\AgentRun;
+use Testkit\Core\Reporting\AgentRunArtifact;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
@@ -130,12 +133,16 @@ final class MetaRunner
                 'category' => Env::string('TEST_CATEGORY', 'all'),
                 'match' => Env::string('TEST_MATCH', ''),
             ];
+            $meta['agent_mode'] = is_array($config['agent_mode'] ?? null)
+                ? $config['agent_mode']
+                : AgentMode::reportPayload();
             $meta = ReportSummary::enrichReport($meta);
 
             $currentPhase = 'reporting';
             ConsoleReporter::printMeta($meta);
 
             self::safeWriteMeta($meta, 'meta.run');
+            self::safeRecordAgentDecision($config, $runId);
 
             if ($overallFail) {
                 self::safePrintActionRequired($meta);
@@ -154,8 +161,12 @@ final class MetaRunner
                 phase: $currentPhase,
                 error: $e
             );
+            $meta['agent_mode'] = is_array($config['agent_mode'] ?? null)
+                ? $config['agent_mode']
+                : AgentMode::reportPayload();
             ConsoleReporter::printMeta($meta);
             self::safeWriteMeta($meta, 'meta.operational_failure');
+            self::safeRecordAgentDecision($config, $runId);
             return 1;
         } finally {
             $resourceLease?->release();
@@ -262,6 +273,45 @@ final class MetaRunner
             $runId = trim((string)($meta['run_id'] ?? ''));
             $scope = $runId !== '' ? ' run=' . $runId : '';
             fwrite(STDERR, 'WARN[ACTION_REQUIRED_RENDER_FAILED] meta.run' . $scope . ': ' . $e->getMessage() . PHP_EOL);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     */
+    private static function safeRecordAgentDecision(array $config, string $runId): void
+    {
+        $agentMode = is_array($config['agent_mode'] ?? null)
+            ? $config['agent_mode']
+            : AgentMode::reportPayload();
+
+        if (!(bool)($agentMode['enabled'] ?? false)) {
+            return;
+        }
+
+        try {
+            $decision = AgentRun::buildLatestDecision($runId, 'post_run');
+            AgentRunArtifact::record($decision, [
+                'executed' => false,
+                'kind' => 'decision_only',
+                'reason' => 'auto_recorded_after_meta_run',
+                'command' => [
+                    'argv' => [],
+                    'cwd' => Paths::relativeToRepo(Paths::testkitRoot()),
+                    'env_overrides' => ['TESTKIT_MODE' => 'agent'],
+                    'display' => null,
+                ],
+                'result' => [
+                    'exit_code' => 0,
+                    'duration_ms' => 0,
+                    'stdout_excerpt' => null,
+                    'stderr_excerpt' => null,
+                ],
+                'child_payload' => null,
+            ]);
+        } catch (\Throwable $e) {
+            $scope = $runId !== '' ? ' run=' . $runId : '';
+            fwrite(STDERR, 'WARN[AGENT_DECISION_RECORD_FAILED] meta.run' . $scope . ': ' . $e->getMessage() . PHP_EOL);
         }
     }
 }

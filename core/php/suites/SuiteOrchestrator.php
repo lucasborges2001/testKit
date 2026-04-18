@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\Suites;
 
 use Throwable;
+use Testkit\Core\Common\AgentMode;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Coverage\CoverageDiagnostics;
 use Testkit\Core\Coverage\CoverageMerger;
@@ -111,6 +112,9 @@ final class SuiteOrchestrator
                 'capabilities' => $config['runner_capabilities'] ?? [],
                 'hazards' => $config['runner_hazards'] ?? [],
             ];
+            $result['agent_mode'] = is_array($config['agent_mode'] ?? null)
+                ? $config['agent_mode']
+                : AgentMode::reportPayload();
             $result['report_root'] = $reportRoot;
             $result['report_scope_rel'] = Paths::relativeToRepo($reportRoot);
             $result['match'] = (string)($config['match'] ?? '');
@@ -236,6 +240,10 @@ final class SuiteOrchestrator
                     'no_tests_discovery_failure' => true,
                 ]
             );
+
+            $result['agent_mode'] = is_array($config['agent_mode'] ?? null)
+                ? $config['agent_mode']
+                : AgentMode::reportPayload();
 
             self::attachObservabilityDefaults($result, count($tests));
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());

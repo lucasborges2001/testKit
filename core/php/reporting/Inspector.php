@@ -109,7 +109,6 @@ final class Inspector
         return [$command, $positionals, $options];
     }
 
-    
     /**
      * @return array<string,mixed>
      */
@@ -133,13 +132,14 @@ final class Inspector
                 $suiteReports
             )),
             'first_failure' => self::deriveFirstFailure($meta, $suiteReports),
+            'agent_run_artifact' => self::loadAgentRunArtifact($context['report_root']),
             'artifacts' => [
                 'latest_run_manifest' => Paths::relativeToRepo(Paths::latestRunManifestPath()),
                 'runs_index' => Paths::relativeToRepo(Paths::reportsRoot() . '/runs_latest.json'),
             ],
         ];
     }
-    
+
     /**
      * @return array<string,mixed>
      */
@@ -168,9 +168,10 @@ final class Inspector
                 $suiteReports
             )),
             'first_failure' => self::deriveFirstFailure($meta, $suiteReports),
+            'agent_run_artifact' => self::loadAgentRunArtifact($context['report_root']),
         ];
     }
-    
+
     /**
      * @return array<string,mixed>
      */
@@ -195,7 +196,7 @@ final class Inspector
             'has_failure' => is_array($firstFailure),
         ];
     }
-    
+
     /**
      * @return array<string,mixed>
      */
@@ -245,7 +246,7 @@ final class Inspector
             'migration_contract' => $migrationContractPayload,
         ];
     }
-    
+
     /**
      * @return array<string,mixed>
      */
@@ -278,6 +279,7 @@ final class Inspector
             'suite_policies' => $suitePolicies,
         ];
     }
+
     /**
      * @return array<string,mixed>|null
      */
@@ -587,7 +589,6 @@ final class Inspector
         return self::loadJsonFile(Paths::latestRunManifestPath());
     }
 
-    
     /**
      * @return array<string,mixed>|null
      */
@@ -601,7 +602,7 @@ final class Inspector
 
         return self::assertCanonicalEnvelope($json, $candidate);
     }
-    
+
     /**
      * @return array<int,array<string,mixed>>
      */
@@ -634,7 +635,7 @@ final class Inspector
         usort($reports, static fn(array $a, array $b): int => strcmp((string)($a['suite_id'] ?? ''), (string)($b['suite_id'] ?? '')));
         return $reports;
     }
-    
+
     /**
      * @return array<string,mixed>|null
      */
@@ -650,6 +651,7 @@ final class Inspector
         $json['_source_file'] = $candidate;
         return $json;
     }
+
     /**
      * @return array<int,array<string,mixed>>
      */
@@ -713,7 +715,6 @@ final class Inspector
         return $rows;
     }
 
-    
     /**
      * @param array<string,mixed>|null $meta
      * @param array<int,array<string,mixed>> $suiteReports
@@ -760,7 +761,7 @@ final class Inspector
             'summary' => $summary,
         ];
     }
-    
+
     /**
      * @param array<string,mixed> $report
      * @return array<string,mixed>
@@ -786,7 +787,7 @@ final class Inspector
             'first_failure' => self::normalizeFirstFailure($report),
         ];
     }
-    
+
     /**
      * @param array<string,mixed>|null $meta
      * @param array<int,array<string,mixed>> $suiteReports
@@ -810,7 +811,7 @@ final class Inspector
 
         return null;
     }
-    
+
     /**
      * @param array<string,mixed> $report
      * @return array<string,mixed>|null
@@ -838,7 +839,7 @@ final class Inspector
 
         return $first;
     }
-    
+
     /**
      * @param array<string,mixed>|null $meta
      * @param array<int,array<string,mixed>> $suiteReports
@@ -859,7 +860,7 @@ final class Inspector
 
         return true;
     }
-    
+
     /**
      * @param array<string,mixed> $report
      */
@@ -869,7 +870,7 @@ final class Inspector
         $evidence = is_array($canonical['evidence'] ?? null) ? $canonical['evidence'] : [];
         return (bool)($evidence['valid'] ?? true);
     }
-    
+
     /**
      * @param array<string,mixed> $report
      * @return array<string,mixed>|null
@@ -937,7 +938,7 @@ final class Inspector
 
         return $report;
     }
-    
+
     private static function reportArtifactPath(array $report): string
     {
         $source = trim((string)($report['_source_file'] ?? ''));

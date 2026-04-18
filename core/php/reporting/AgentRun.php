@@ -31,7 +31,7 @@ final class AgentRun
         }
 
         try {
-            $decision = self::buildAgentDecision(
+            $decision = self::buildLatestDecision(
                 trim((string)($options['run'] ?? '')),
                 trim((string)($options['goal'] ?? ''))
             );
@@ -92,6 +92,17 @@ final class AgentRun
 
         self::printText($decision);
         return 0;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public static function buildLatestDecision(string $requestedRunId = '', string $goal = ''): array
+    {
+        return self::buildAgentDecision(
+            trim($requestedRunId),
+            trim($goal)
+        );
     }
 
     /**
@@ -793,8 +804,8 @@ final class AgentRun
     private static function printHelp(): void
     {
         echo "Usage:\n";
-        echo "  php scripts/agent-run.php [--run=<id>] [--goal=<text>] [--json]
-  php scripts/agent-run.php execute [--run=<id>] [--goal=<text>] [--json]\n";
+        echo "  php scripts/agent-run.php [--run=<id>] [--goal=<text>] [--json]\n";
+        echo "  php scripts/agent-run.php execute [--run=<id>] [--goal=<text>] [--json]\n";
     }
 
     /**

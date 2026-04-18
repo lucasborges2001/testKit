@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Config;
 
+use Testkit\Core\Common\AgentMode;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 
@@ -40,7 +41,7 @@ final class RunnerConfig
         $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
         $contract = SuiteContractRegistry::contractForSuite($suiteId, $language);
 
-        return [
+        $config = [
             'suite_id' => $suiteId,
             'language' => $language,
             'report_contract_version' => 2,
@@ -71,6 +72,8 @@ final class RunnerConfig
             'report_keep' => $reportKeep,
             'runs_index_keep' => $runsIndexKeep,
         ];
+
+        return AgentMode::suiteConfig($config);
     }
 
     /**
@@ -81,7 +84,7 @@ final class RunnerConfig
         $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
         $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
 
-        return [
+        $config = [
             'meta_fail_fast' => Env::bool('TEST_META_FAIL_FAST', false),
             'child_fail_fast' => Env::bool('TEST_CHILD_FAIL_FAST', false),
             'target' => strtolower(Env::string('TEST_TARGET', 'all')),
@@ -91,5 +94,7 @@ final class RunnerConfig
             'report_keep' => $reportKeep,
             'runs_index_keep' => $runsIndexKeep,
         ];
+
+        return AgentMode::metaConfig($config);
     }
 }

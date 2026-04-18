@@ -32,6 +32,7 @@ final class CanonicalReport
             'regression_delta' => self::regressionDelta($report),
             'recommended_actions' => self::recommendedActions($report),
             'agent_summary' => self::agentSummary($report),
+            'agent_mode' => self::agentMode($report),
             'warnings' => self::warnings($report),
             'runner' => self::runner($report),
         ];
@@ -218,6 +219,21 @@ final class CanonicalReport
 
     /**
      * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private static function agentMode(array $report): array
+    {
+        return is_array($report['agent_mode'] ?? null)
+            ? $report['agent_mode']
+            : [
+                'enabled' => false,
+                'mode' => 'standard',
+                'enforced' => [],
+            ];
+    }
+
+    /**
+     * @param array<string,mixed> $report
      * @return array<int,array<string,mixed>>
      */
     private static function warnings(array $report): array
@@ -236,10 +252,13 @@ final class CanonicalReport
      */
     private static function runner(array $report): array
     {
+        $agentMode = self::agentMode($report);
+
         return [
             'contract_version' => (int)($report['runner_contract_version'] ?? 1),
             'capabilities' => is_array($report['runner_capabilities'] ?? null) ? $report['runner_capabilities'] : [],
             'hazards' => is_array($report['runner_hazards'] ?? null) ? $report['runner_hazards'] : [],
+            'mode' => (string)($agentMode['mode'] ?? 'standard'),
         ];
     }
 }

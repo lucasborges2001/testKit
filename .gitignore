@@ -13,4 +13,5 @@ test/_out/
 .testkit/reports/
 *.zip
 
-./claude
+.claude/
+_out/

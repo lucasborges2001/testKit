@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/common/Env.php';
+require_once __DIR__ . '/common/AgentMode.php';
 require_once __DIR__ . '/common/Paths.php';
 require_once __DIR__ . '/common/Bootstrap.php';
 require_once __DIR__ . '/common/ProjectEnv.php';

@@ -23,5 +23,6 @@ services:
       DB_ENV_PATH: ${TESTKIT_DB_ENV_PATH:-/workspace/project/test/.env.test}
       TESTKIT_ROOT: /workspace/testkit
       TK_REPO_ROOT: /workspace/project
+      TESTKIT_MODE: ${TESTKIT_MODE:-}
       # Node: por default es OK si está. Si querés que falte node => FAIL:
       # TEST_JS_REQUIRE_NODE: "1"
