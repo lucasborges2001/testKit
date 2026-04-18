@@ -12,3 +12,5 @@ test/_out/
 .testkit/history/
 .testkit/reports/
 *.zip
+
+./claude
