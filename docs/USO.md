@@ -9,6 +9,7 @@ Usar esta guía para la operación normal:
 - secuencia segura de ejecución
 - lectura operativa mínima de lo que pasó
 - lectura humana de observabilidad durante una corrida larga
+- cómo usar `doctor` en modo `full` o `compact`
 
 No usarla para:
 
@@ -39,8 +40,8 @@ Supuestos mínimos:
 ```bash
 export TESTKIT_PROJECT_ROOT=/path/to/project
 
-./bin/testkit doctor
-./bin/testkit doctor migration-contract
+./bin/testkit doctor --compact
+./bin/testkit doctor --full migration-contract
 ./bin/testkit up -d
 ./bin/testkit run --rm testkit php runTest.php back-php
 ./bin/testkit inspect latest
@@ -51,51 +52,44 @@ export TESTKIT_PROJECT_ROOT=/path/to/project
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 
-.\bin\testkit.ps1 doctor
-.\bin\testkit.ps1 doctor migration-contract
+.\bin\testkit.ps1 doctor --compact
+.\bin\testkit.ps1 doctor --full migration-contract
 .\bin\testkit.ps1 up -d
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
 ```
 
-### PowerShell: filtros con variables inline dentro del contenedor
+### PowerShell: nota de alcance
 
-Cuando el filtro o la suite necesitan variables para el proceso que corre **dentro** del contenedor, usar una tail command única después de `testkit`:
+Este cambio de doctor no redefine el contrato general de `run` en PowerShell.
+
+Para inyectar variables al contenedor de forma soportada por el wrapper, seguir usando flags `-e`, por ejemplo:
 
 ```powershell
-.\bin\testkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+.\bin\testkit.ps1 run --rm -e TEST_MATCH=alerta testkit php runTest.php back-php
 ```
 
-Lectura correcta:
-
-- el wrapper detecta que la tail command fue pasada como un único string
-- la ejecuta con `sh -lc` dentro del contenedor
-- reescribe `runTest.php` a `/workspace/testkit/runTest.php`
-- tolera también la forma con assignments inline antes del comando
-
-No vender otra cosa:
-
-- PowerShell no interpreta `TEST_MATCH="alerta" php ...` como bash
-- si el wrapper no normaliza ese caso, Docker intenta ejecutar `TEST_MATCH="alerta"` como binario
-- el modo más explícito y portable en PowerShell es pasar la tail command como string único
+No mezclar mejoras de `doctor` con promesas nuevas sobre parsing de runtime que este zip no toca.
 
 Observaciones duras:
 
 - el primer target no tiene que ser `all`; conviene empezar por una suite concreta
 - el primer intento operativo seguro es secuencial
 - `doctor` no reemplaza una corrida real; valida contrato mínimo visible y, cuando corresponde, compatibilidad contractual visible antes de entrar al runner
-- el capability doctor de este primer corte no prueba bootstrap, restore ni seguridad runtime de concurrencia top-level
+- el capability doctor no prueba bootstrap, restore ni seguridad runtime de concurrencia top-level
+- `compact` no cambia checks; solo cambia densidad de salida
 
 ## 3) Secuencia segura para el primer diagnóstico
 
-1. correr `doctor`
-2. si necesitás validar un contrato más angosto, correr `doctor migration-contract`
-3. si falla, corregir el primer `[FAIL]`
-4. levantar el stack con `up -d`
-5. correr una sola suite con la ruta simple:
+1. correr `doctor --compact`
+2. si necesitás detalle fino o vas a trabajar sobre el wrapper, correr `doctor --full`
+3. si necesitás validar un contrato más angosto, correr `doctor --full migration-contract`
+4. si falla, corregir el primer `[FAIL]`
+5. levantar el stack con `up -d`
+6. correr una sola suite con la ruta simple:
    - `TEST_JOBS=1`
    - `TEST_DB_STRATEGY=shared`
-6. recién después probar filtros, `per_worker`, snapshot o suites agregadas
+7. recién después probar filtros, `per_worker`, snapshot o suites agregadas
 
 Ejemplo seguro:
 
@@ -116,10 +110,11 @@ Eso no es un uso soportado del store compartido.
 
 | Necesidad | Comando | Lectura correcta |
 |---|---|---|
-| validar setup mínimo | `doctor` | contrato mínimo del wrapper, no del baseline completo |
-| validar un path contractual angosto | `doctor migration-contract` | lectura visible por config del target pedido |
-| ver configuración efectiva | `doctor --dump` | cómo quedó resuelto env/root/stack |
-| ver configuración efectiva de un target | `doctor --dump migration-contract` | dump + status capability visible por config |
+| validar setup mínimo con poco ruido | `doctor --compact` | resumen operador-first; útil para loops repetidos |
+| validar setup mínimo con detalle | `doctor --full` | contrato mínimo del wrapper + detalle por check |
+| validar un path contractual angosto | `doctor --full migration-contract` | lectura visible por config del target pedido |
+| ver configuración efectiva | `doctor --dump --full` | cómo quedó resuelto env/root/stack + checks serializados |
+| ver configuración efectiva de un target | `doctor --dump --full migration-contract` | dump + status capability visible por config |
 | levantar servicios | `up -d` | `docker compose` del stack elegido |
 | correr una suite concreta | `php runTest.php back-php` | una sola suite, no todo el proyecto |
 | correr resumen agregado | `php runTest.php all` | varias suites bajo un solo runner top-level |
@@ -129,30 +124,74 @@ Eso no es un uso soportado del store compartido.
 | ver locks/concurrencia | `inspect concurrency` | útil para contention o dudas sobre `per_worker` |
 | leer reporte humano consolidado | `php scripts/report.php` | salida para personas, no contrato estable de automatización |
 
-## 5) Lectura operativa mínima
+## 5) Cómo leer `doctor`
 
-### `doctor`
+### 5.1) Dos modos de render
 
-Comando base:
+`doctor` tiene un solo set de checks, pero dos vistas:
+
+- `--full`
+- `--compact`
+
+Reglas:
+
+- si no declarás nada, el default es `full`
+- `TESTKIT_DOCTOR_MODE=compact|full` puede fijar default de entorno
+- `--compact` o `--full` en CLI pisan el env
+- `--dump` funciona en ambos, pero operativamente tiene más sentido con `--full`
+
+Ejemplos:
 
 ```bash
-./bin/testkit doctor
+./bin/testkit doctor --compact
+./bin/testkit doctor --full
+./bin/testkit doctor --full migration-contract
+./bin/testkit doctor --dump --full migration-contract
 ```
 
-Con target explícito:
-
-```bash
-./bin/testkit doctor migration-contract
+```powershell
+.\bin\testkit.ps1 doctor --compact
+.\bin\testkit.ps1 doctor --full
+.\bin\testkit.ps1 doctor --full migration-contract
+.\bin\testkit.ps1 doctor --dump --full migration-contract
 ```
 
-Dump útil:
+### 5.2) Qué muestra `full`
 
-```bash
-./bin/testkit doctor --dump
-./bin/testkit doctor --dump migration-contract
-```
+`full` muestra:
 
-Qué te dice de forma confiable:
+- bloque `== TESTKIT DOCTOR ==`
+- contexto (`mode`, `target`, `stack`, roots)
+- sección `== BASE CHECKS ==`
+- sección `== CAPABILITY DOCTOR ==` cuando aplica
+- cada check con `status`, `code`, `summary` y opcionalmente `action`
+
+Usarlo cuando:
+
+- estás corrigiendo setup
+- estás desarrollando el wrapper
+- necesitás ver exactamente qué regla disparó `WARN`, `UNKNOWN` o `FAIL`
+
+### 5.3) Qué muestra `compact`
+
+`compact` muestra:
+
+- contexto resumido (`mode`, `target`)
+- agregados por estado para base y capability
+- solo problemas relevantes:
+  - `FAIL`
+  - `WARN`
+  - `UNKNOWN` en capability
+
+No muestra por defecto todos los `PASS` individuales.
+
+Usarlo cuando:
+
+- querés menos ruido en terminal chica
+- repetís `doctor` muchas veces durante iteración
+- querés señal rápida sin leer toda la narrativa
+
+### 5.4) Qué te dice de forma confiable
 
 - si encontró el env
 - si el env quedó dentro del repo montado
@@ -164,7 +203,7 @@ Qué te dice de forma confiable:
 - si la config visible contradice reglas genéricas de estrategia/motor
 - si `migration-contract` contradice snapshot/shared/MySQL cuando lo pedís explícitamente
 
-Qué no te garantiza:
+### 5.5) Qué no te garantiza
 
 - que el bootstrap estructural cierre
 - que el snapshot sea restaurable
@@ -172,15 +211,33 @@ Qué no te garantiza:
 - que el proyecto haya definido seeds, migraciones o tests correctos
 - que `Capability doctor: PASS` vuelva segura una ruta runtime no observada por `doctor`
 
-Lectura correcta del nuevo bloque capability:
+### 5.6) Lectura correcta del capability block
 
 - `PASS`: no ve contradicción visible en esa regla
 - `WARN`: la config visible es rara o incompleta, pero no alcanza para marcar contradicción dura
 - `UNKNOWN`: falta contexto observable para cerrar compatibilidad
 - `FAIL`: hay contradicción contractual visible
-- en este primer corte, el exit code del wrapper sigue atado al contrato mínimo del doctor base, no al bloque capability
+- el exit code del wrapper sigue atado al doctor base, no al bloque capability
 
-### `inspect`
+### 5.7) Dump útil
+
+```bash
+./bin/testkit doctor --dump --full
+./bin/testkit doctor --dump --full migration-contract
+```
+
+El dump expone, entre otros:
+
+- `TESTKIT_DOCTOR_MODE`
+- `TESTKIT_DOCTOR_TARGET`
+- `TESTKIT_DOCTOR_BASE_STATUS`
+- `TESTKIT_CAPABILITY_STATUS`
+- `TESTKIT_DOCTOR_BASE_CHECK_<n>_*`
+- `TESTKIT_CAPABILITY_CHECK_<n>_*`
+
+`compact` también puede usarse con dump, pero el objetivo del dump no es “compactar” sino serializar la lectura efectiva.
+
+### 5.8) `inspect`
 
 Después de una corrida, `inspect` da rutas de diagnóstico más cortas que leer JSON a mano.
 
@@ -217,7 +274,7 @@ Ejemplo verbose:
 [Test] status=PASS done=24/267 dur=00:00:09 rel=test/back/.../BarTest.php worker=2 el=00:03:50 p/f/s/to=23/1/0/0 jobs=3 active=w1:...@00:00:46, w3:...@00:00:13
 ```
 
-Además, cuando una suite falla, el reporte final ahora prioriza una lectura operador-first al inicio del bloque de resultado:
+Además, cuando una suite falla, el reporte final prioriza una lectura operador-first al inicio del bloque de resultado:
 
 - `Operator Summary` con `status`, `primary_problem`, `focus`, `next_action` y `report_root`
 - menos eco entre primera falla, acción principal y comandos de rerun
@@ -243,14 +300,6 @@ Configuración mínima:
 - `TESTKIT_PROGRESS_INTERVAL_SEC` (default `15`)
 - `TESTKIT_LONG_TEST_WARN_SEC` (default `60`)
 
-Lectura de modos:
-
-- `heartbeat`: habilita heartbeats periódicos, warnings de test largo y visibilidad compacta de workers activos
-- `per_test`: emite una línea por test completado, mantiene warnings de test largo y muestra workers activos cuando aplica
-- `quiet`: suprime `[Progress]`, `[Test]` y warnings de test largo, pero no elimina el reporte final ni `phase_timings_ms`
-- `compact`: prioriza señal mínima para lectura rápida; es el valor por defecto para no saturar la consola
-- `verbose`: vuelve a mostrar `cur`, `cur_el`, `avg`, `workers`, `active` y el resto del contexto fino de progreso
-
 ## 7) Qué comportamiento sí es esperado
 
 | Situación | Lectura correcta |
@@ -261,6 +310,7 @@ Lectura de modos:
 | `TEST_DB_STRATEGY=clean` rechazado | comportamiento esperado; no es un modo soportado |
 | `migration-contract` rechazado fuera de snapshot/shared/MySQL | comportamiento esperado; es una suite técnica acotada |
 | `Capability doctor: UNKNOWN` | doctor no tiene evidencia visible suficiente para cerrar esa compatibilidad |
+| `doctor --compact` muestra menos líneas que `--full` | esperado; cambia render, no semántica |
 
 Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
@@ -269,6 +319,7 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - `TEST_LIST=1` imprime selección, pero no debe venderse como dry-run puro del lifecycle de store; según la suite, el bootstrap puede ocurrir igual.
 - `doctor` no prueba restore de snapshot ni migraciones.
 - `doctor migration-contract` solo evalúa contradicciones visibles por config; no ejecuta restore ni seed-state.
+- `doctor --compact` no implica menos checks; solo menos verbosidad.
 - `scripts/report.php` no es el contrato estable para automatización.
 - `per_worker` no habilita varios runners top-level en paralelo.
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
@@ -296,27 +347,3 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 | por qué apareció un error concreto y qué revisar | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
 | cómo funcionan bootstrap, baseline y locks | [`ARQUITECTURA.md`](ARQUITECTURA.md) |
 | cómo leer reportes, estados, coverage y observabilidad persistida | [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md) |
-
-
-### Capability doctor
-
-`doctor` ahora expone una segunda capa de lectura humana y estructurada:
-
-- `PASS`: ruta visible alineada con el contrato cerrado actual
-- `WARN`: hay una lectura visible rara o degradada, pero no necesariamente una contradicción contractual directa
-- `UNKNOWN`: el wrapper no tiene evidencia suficiente para afirmar compatibilidad
-- `FAIL`: la combinación visible contradice el contrato actual
-
-Reglas duras:
-
-- `UNKNOWN` no equivale a `PASS`
-- `WARN` no convierte una ruta no soportada en soportada
-- capability no cambia el exit code del wrapper; el exit sigue atado al doctor base
-
-En `doctor --dump`, además de `TESTKIT_CAPABILITY_STATUS`, quedan serializados los checks individuales:
-
-- `TESTKIT_CAPABILITY_CHECK_COUNT`
-- `TESTKIT_CAPABILITY_CHECK_<n>_STATUS`
-- `TESTKIT_CAPABILITY_CHECK_<n>_CODE`
-- `TESTKIT_CAPABILITY_CHECK_<n>_SUMMARY`
-- `TESTKIT_CAPABILITY_CHECK_<n>_ACTION`

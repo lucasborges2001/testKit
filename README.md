@@ -33,8 +33,8 @@ Use one concrete suite first. Do not start with `all`.
 ```bash
 export TESTKIT_PROJECT_ROOT=/path/to/project
 
-./bin/testkit doctor
-./bin/testkit doctor migration-contract
+./bin/testkit doctor --compact
+./bin/testkit doctor --full migration-contract
 ./bin/testkit up -d
 ./bin/testkit run --rm testkit php runTest.php back-php
 ./bin/testkit inspect latest
@@ -45,30 +45,60 @@ export TESTKIT_PROJECT_ROOT=/path/to/project
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 
-.\bin\testkit.ps1 doctor
-.\bin\testkit.ps1 doctor migration-contract
+.\bin\testkit.ps1 doctor --compact
+.\bin\testkit.ps1 doctor --full migration-contract
 .\bin\testkit.ps1 up -d
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
 ```
 
-### PowerShell: filtered runs inside the container
+## Doctor modes
 
-When you need inline environment variables for the command that runs **inside** the container, prefer a shell-string command after `testkit`:
+`doctor` now has two operator-facing modes over the same underlying checks.
 
-```powershell
-.\bin\testkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+- `--full`: full narrative output. Prints base checks, capability checks and explicit status per rule.
+- `--compact`: compressed operator summary. Keeps status totals and only surfaces relevant warnings, unknowns and failures.
+
+Default behavior:
+
+- if no mode is provided, `doctor` uses `full`
+- `TESTKIT_DOCTOR_MODE=compact|full` can provide a default
+- explicit CLI flags override the env default
+
+Examples:
+
+```bash
+./bin/testkit doctor --compact
+./bin/testkit doctor --full
+./bin/testkit doctor --compact migration-contract
+./bin/testkit doctor --dump --full migration-contract
 ```
 
-The PowerShell wrapper rewrites `runTest.php` to `/workspace/testkit/runTest.php` and runs it through `sh -lc` when the tail command is passed as a single string or starts with inline `KEY=value` assignments.
-
-What you should **not** expect to work in PowerShell is treating this as if it were native PowerShell syntax:
-
 ```powershell
-.\bin\testkit.ps1 run --rm testkit TEST_MATCH="alerta" php runTest.php back-php
+.\bin\testkit.ps1 doctor --compact
+.\bin\testkit.ps1 doctor --full
+.\bin\testkit.ps1 doctor --compact migration-contract
+.\bin\testkit.ps1 doctor --dump --full migration-contract
 ```
 
-Without wrapper support, Docker sees `TEST_MATCH="alerta"` as the executable. This repository now normalizes that case in `bin/testkit.ps1`.
+Reading guidance:
+
+- `full` is the better default for framework debugging and wrapper work
+- `compact` is better for repeated operator runs or CI logs where you want lower noise
+- `Capability doctor: PASS` still does **not** prove runtime safety; it only reports visible config alignment
+- `Doctor: FAIL` still follows the base doctor status, not the capability advisory status
+
+## PowerShell note
+
+This doctor update does **not** change the runtime command contract outside doctor itself.
+
+For wrapper-safe container env injection, keep using explicit `-e` flags on `run`, for example:
+
+```powershell
+.\bin\testkit.ps1 run --rm -e TEST_MATCH=alerta testkit php runTest.php back-php
+```
+
+Do not assume that doctor-mode work also changes unrelated runtime parsing semantics.
 
 ## Execution observability
 
@@ -82,7 +112,8 @@ What exists:
 - operator-first failed suite summaries that surface status, focus and next action near the top of the report
 - summarized observability fields persisted in suite JSON and local history
 - a config-visible capability section in `doctor` for generic store constraints and the closed `migration-contract` path
-- structured capability fields in `doctor --dump` (`TESTKIT_CAPABILITY_STATUS`, `TESTKIT_CAPABILITY_CHECK_COUNT`, `TESTKIT_CAPABILITY_CHECK_<n>_*`)
+- dual `doctor` render modes: `full` and `compact`
+- structured capability fields in `doctor --dump` (`TESTKIT_CAPABILITY_CHECK_<n>_*`)
 
 What does **not** exist here:
 
@@ -103,7 +134,8 @@ This repository does not try to hide its current limits. The detailed contract l
 - `TEST_DB_STRATEGY=clean` is rejected
 - `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
 - `migration-contract` is a narrow technical suite, not a general functional suite
-- capability checks in `doctor` are config-visible only, advisory and do not replace a real run
+- capability checks in `doctor` are config-visible only and do not replace a real run
+- `compact` changes rendering density, not the underlying doctor semantics
 - fragility hints, failure families and similar triage signals are heuristics, not source of truth
 
 ## Artifact ownership
