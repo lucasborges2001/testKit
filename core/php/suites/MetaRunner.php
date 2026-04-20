@@ -10,10 +10,10 @@ use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Reporting\AgentRun;
 use Testkit\Core\Reporting\AgentRunArtifact;
+use Testkit\Core\Reporting\CommandSuggestion;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
-use Testkit\Core\Reporting\SuggestedCommandBuilder;
 
 final class MetaRunner
 {
@@ -207,7 +207,7 @@ final class MetaRunner
             $suiteId = trim((string)($firstFailure['suite_id'] ?? $suiteReport['suite_id'] ?? ''));
             if ($file !== '' && $suiteId !== '') {
                 return [[
-                    'command' => SuggestedCommandBuilder::rerunFiltered($suiteId, $file),
+                    'command' => CommandSuggestion::rerun(str_replace('_', '-', $suiteId), $file),
                     'reason' => 'aislar el primer archivo fallido',
                 ]];
             }

@@ -56,7 +56,7 @@ require_once __DIR__ . '/reporting/OutcomeDiagnostics.php';
 require_once __DIR__ . '/reporting/SelectionManifestBuilder.php';
 require_once __DIR__ . '/reporting/RegressionDeltaBuilder.php';
 require_once __DIR__ . '/reporting/ArtifactNormalizer.php';
-require_once __DIR__ . '/reporting/SuggestedCommandBuilder.php';
+require_once __DIR__ . '/reporting/CommandSuggestion.php';
 require_once __DIR__ . '/reporting/RecommendedActionBuilder.php';
 require_once __DIR__ . '/reporting/AgentSummaryBuilder.php';
 require_once __DIR__ . '/reporting/MetaReportBuilder.php';

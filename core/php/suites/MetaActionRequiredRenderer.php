@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Suites;
 
+use Testkit\Core\Reporting\CommandSuggestion;
 use Testkit\Core\Reporting\ReportSummary;
-use Testkit\Core\Reporting\SuggestedCommandBuilder;
 
 final class MetaActionRequiredRenderer
 {
@@ -37,7 +37,7 @@ final class MetaActionRequiredRenderer
             . ' resolved=' . $resolvedFailures
             . ' transitions=' . $statusTransitions
             . "\n";
-        echo '  Reporte detallado: ' . SuggestedCommandBuilder::aggregateReport() . "\n";
+        echo '  Reporte detallado: ' . CommandSuggestion::aggregateReport() . "\n";
 
         if ($suiteReruns !== []) {
             echo "  rerun by suite:\n";
@@ -145,7 +145,7 @@ final class MetaActionRequiredRenderer
             }
 
             if ($command === '') {
-                $command = SuggestedCommandBuilder::rerunSuite($suiteId);
+                $command = CommandSuggestion::suite(str_replace('_', '-', $suiteId));
                 $reason = $reason !== '' ? $reason : 'rerun suite with issues';
             }
 
@@ -176,7 +176,7 @@ final class MetaActionRequiredRenderer
         }
 
         return [
-            'command' => SuggestedCommandBuilder::rerunFiltered($suiteId, $file),
+            'command' => CommandSuggestion::rerun(str_replace('_', '-', $suiteId), $file),
             'reason' => 'aislar el primer archivo fallido',
         ];
     }

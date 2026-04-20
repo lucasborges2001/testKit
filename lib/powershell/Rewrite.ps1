@@ -19,15 +19,35 @@ function Get-TestkitSuggestedReportCommand {
   }
 }
 
+function Get-TestkitSuggestedListCommand([string]$Target) {
+  switch (Get-TestkitShellKind) {
+    'powershell' { return ".\bin\testkit.ps1 run --rm testkit php runTest.php $Target --list" }
+    'bash' { return "./bin/testkit run --rm testkit php runTest.php $Target --list" }
+    default { return "php runTest.php $Target --list" }
+  }
+}
+
+function Get-TestkitSuggestedTraceCommand([string]$Target) {
+  switch (Get-TestkitShellKind) {
+    'powershell' { return ".\bin\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php $Target" }
+    'bash' { return "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php $Target" }
+    default { return "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php $Target" }
+  }
+}
+
 function Convert-TestkitRunArgs([string[]]$InputArgs) {
   if (-not $InputArgs -or $InputArgs.Count -eq 0) { return ,$InputArgs }
   if ($InputArgs[0] -ne 'run') { return ,$InputArgs }
 
   $rewritten = New-Object System.Collections.Generic.List[string]
   $sawTestkit = $false
+  $wrapperKind = if ($env:TESTKIT_WRAPPER_KIND) { $env:TESTKIT_WRAPPER_KIND } else { 'powershell' }
+
   foreach ($arg in $InputArgs) {
     if ($arg -eq 'testkit' -and -not $sawTestkit) {
       $sawTestkit = $true
+      $rewritten.Add('-e') | Out-Null
+      $rewritten.Add(("TESTKIT_WRAPPER_KIND={0}" -f $wrapperKind)) | Out-Null
       $rewritten.Add($arg) | Out-Null
       continue
     }
@@ -39,6 +59,7 @@ function Convert-TestkitRunArgs([string[]]$InputArgs) {
         'scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue }
         './scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue }
         'scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue }
+        './scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue }
       }
     }
 

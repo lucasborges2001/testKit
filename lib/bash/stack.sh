@@ -9,7 +9,7 @@ testkit_normalize_stack_csv() {
   fi
 
   local out=()
-  local seen=","
+  local seen="," 
   local IFS=','
   read -r -a parts <<< "${raw}"
   for part in "${parts[@]}"; do
@@ -39,7 +39,7 @@ testkit_normalize_stack_csv() {
   local joined=""
   local i
   for i in "${!out[@]}"; do
-    [[ $i -gt 0 ]] && joined+=","
+    [[ $i -gt 0 ]] && joined+="," 
     joined+="${out[$i]}"
   done
   echo "${joined}"
@@ -57,8 +57,22 @@ testkit_resolve_compose_files() {
   local root="${TESTKIT_ROOT_HOST}"
 
   out_ref=(-f "${root}/compose.yaml")
-  testkit_stack_has "${stack_csv}" "mysql" && out_ref+=(-f "${root}/compose.mysql.yaml")
-  testkit_stack_has "${stack_csv}" "redis" && out_ref+=(-f "${root}/compose.redis.yaml")
-  testkit_stack_has "${stack_csv}" "pg" && out_ref+=(-f "${root}/compose.pg.yaml")
-  testkit_stack_has "${stack_csv}" "influx" && out_ref+=(-f "${root}/compose.influx.yaml")
+
+  if testkit_stack_has "${stack_csv}" "mysql"; then
+    out_ref+=(-f "${root}/compose.mysql.yaml")
+  fi
+
+  if testkit_stack_has "${stack_csv}" "redis"; then
+    out_ref+=(-f "${root}/compose.redis.yaml")
+  fi
+
+  if testkit_stack_has "${stack_csv}" "pg"; then
+    out_ref+=(-f "${root}/compose.pg.yaml")
+  fi
+
+  if testkit_stack_has "${stack_csv}" "influx"; then
+    out_ref+=(-f "${root}/compose.influx.yaml")
+  fi
+
+  return 0
 }

@@ -16,14 +16,14 @@ final class RecommendedActionBuilder
         $actions = [];
 
         $suiteId = trim((string)($report['suite_id'] ?? ''));
-        $targetSuiteId = $suiteId !== '' ? $suiteId : ((string)($report['target'] ?? 'all') ?: 'all');
+        $target = $suiteId !== '' ? str_replace('_', '-', $suiteId) : ((string)($report['target'] ?? 'all') ?: 'all');
         $firstFailure = is_array($report['first_failure'] ?? null) ? $report['first_failure'] : FailureNormalizer::firstFailure($report);
         $firstFile = trim((string)($firstFailure['file'] ?? ''));
 
         if ($firstFile !== '') {
             $actions[] = [
                 'kind' => 'rerun_filtered',
-                'command' => SuggestedCommandBuilder::rerunFiltered($targetSuiteId, $firstFile),
+                'command' => CommandSuggestion::rerun($target, $firstFile),
                 'reason' => 'aislar el primer archivo fallido',
             ];
         }
@@ -32,7 +32,7 @@ final class RecommendedActionBuilder
         if (in_array($primaryPhase, ['bootstrap', 'store_setup'], true)) {
             $actions[] = [
                 'kind' => 'enable_seed_trace',
-                'command' => SuggestedCommandBuilder::enableSeedTrace($targetSuiteId),
+                'command' => CommandSuggestion::trace($target),
                 'reason' => 'ampliar evidencia en bootstrap/seeding',
             ];
         }
@@ -40,7 +40,7 @@ final class RecommendedActionBuilder
         if ($primaryPhase === 'discovery') {
             $actions[] = [
                 'kind' => 'list_selection',
-                'command' => SuggestedCommandBuilder::listSelection($targetSuiteId),
+                'command' => CommandSuggestion::listSelection($target),
                 'reason' => 'ver selección efectiva y validar filtros',
             ];
         }
@@ -56,7 +56,7 @@ final class RecommendedActionBuilder
 
         $actions[] = [
             'kind' => 'aggregate_report',
-            'command' => SuggestedCommandBuilder::aggregateReport(),
+            'command' => CommandSuggestion::aggregateReport(),
             'reason' => 'ver resumen consolidado de fallas y coverage',
         ];
 

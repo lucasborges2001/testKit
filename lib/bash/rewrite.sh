@@ -82,9 +82,11 @@ testkit_rewrite_run_command_args() {
   local -a rewritten=()
   local saw_testkit=0
   local saw_container=0
+  local wrapper_kind="${TESTKIT_WRAPPER_KIND:-bash}"
 
   for arg in "${args[@]}"; do
     if [[ "${arg}" == "testkit" && $saw_container -eq 0 ]]; then
+      rewritten+=("-e" "TESTKIT_WRAPPER_KIND=${wrapper_kind}")
       saw_testkit=1
       saw_container=1
       rewritten+=("${arg}")
