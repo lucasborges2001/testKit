@@ -1,40 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-testkit_doctor() {
+_testkit_doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/doctor"
+
+# shellcheck source=/dev/null
+source "${_testkit_doctor_dir}/shared.sh"
+# shellcheck source=/dev/null
+source "${_testkit_doctor_dir}/base_checks.sh"
+# shellcheck source=/dev/null
+source "${_testkit_doctor_dir}/capability_checks.sh"
+# shellcheck source=/dev/null
+source "${_testkit_doctor_dir}/render.sh"
+
+testkit_doctor_run() {
   local ok=1
-  local env_file
-  env_file="$(testkit_pick_env_file || true)"
 
-  echo ""
-  echo "== TESTKIT DOCTOR =="
+  testkit_doctor_parse_args "$@"
 
-  if [[ -n "${env_file}" && -f "${env_file}" ]]; then
-    env_file="$(cd "$(dirname "${env_file}")" && pwd)/$(basename "${env_file}")"
-    echo "[OK] env: ${env_file}"
-    testkit_load_env_kv_safe "${env_file}" || true
-  else
-    echo "[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root)."
-    ok=0
+  TESTKIT_STACK_EFFECTIVE="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || {
+    echo "TESTKIT_STACK inválido. Corregí TESTKIT_STACK antes de correr doctor." >&2
+    return 1
+  }
+
+  testkit_doctor_reset_state
+
+  ENV_FILE="$(testkit_pick_env_file || true)"
+  if [[ -n "${ENV_FILE}" && -f "${ENV_FILE}" ]]; then
+    ENV_FILE="$(cd "$(dirname "${ENV_FILE}")" && pwd)/$(basename "${ENV_FILE}")"
+    testkit_load_env_kv_safe "${ENV_FILE}" || true
   fi
 
-  local stack_csv
-  stack_csv="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || return 1
-  echo "[INFO] TESTKIT_STACK=${stack_csv}"
-  echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
-  echo "[INFO] TESTKIT_PROJECT_ROOT(host)=${PROJECT_ROOT}"
-  echo "[INFO] TESTKIT_HOST_UID:GID=${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID}"
+  testkit_doctor_run_base_checks ok
+  if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+    testkit_doctor_run_capability_checks "${TESTKIT_DOCTOR_TARGET}"
+  fi
 
-  [[ -f "${TESTKIT_ROOT_HOST}/runTest.php" ]] || { echo "[FAIL] TESTKIT_ROOT no parece repo completo"; ok=0; }
-  [[ -d "${PROJECT_ROOT}" ]] || { echo "[FAIL] TESTKIT_PROJECT_ROOT no existe"; ok=0; }
+  case "${TESTKIT_DOCTOR_MODE}" in
+    compact) testkit_doctor_render_compact ;;
+    *) testkit_doctor_render_full ;;
+  esac
+
+  if [[ "${TESTKIT_DOCTOR_DUMP}" == "1" && -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+    export TESTKIT_DB_ENV_PATH
+    TESTKIT_DB_ENV_PATH="$(testkit_env_file_to_container_path "${ENV_FILE}")"
+    export TESTKIT_PROJECT_ROOT="${PROJECT_ROOT}"
+    export TESTKIT_ROOT="${TESTKIT_ROOT_HOST}"
+    testkit_doctor_render_dump
+  fi
 
   if [[ "${ok}" -eq 1 ]]; then
-    echo ""
-    echo "Doctor: OK"
     return 0
   fi
 
-  echo ""
-  echo "Doctor: FAIL (ver arriba)" >&2
   return 1
 }

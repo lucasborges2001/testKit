@@ -1,26 +1,42 @@
-function Invoke-TestkitDoctor {
-  Write-Host ''
-  Write-Host '== TESTKIT DOCTOR =='
+$doctorShared = Join-Path $PSScriptRoot 'Doctor.Shared.ps1'
+$doctorBase = Join-Path $PSScriptRoot 'Doctor.BaseChecks.ps1'
+$doctorCapability = Join-Path $PSScriptRoot 'Doctor.CapabilityChecks.ps1'
+$doctorRender = Join-Path $PSScriptRoot 'Doctor.Render.ps1'
+
+. $doctorShared
+. $doctorBase
+. $doctorCapability
+. $doctorRender
+
+function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
+  Reset-TestkitDoctorState
+  $context = Parse-TestkitDoctorArgs $DoctorArgs
+  $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
 
   $envFile = Get-TestkitEnvFile
-  $ok = $true
   if ($envFile) {
-    Write-Host "[OK] env: $envFile"
     Import-TestkitEnvKV $envFile.Path
-  } else {
-    Write-Host '[FAIL] falta env de tests: test/.env.test (preferido) o .env.test (root).'
-    $ok = $false
   }
 
-  $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
-  Write-Host "[INFO] TESTKIT_STACK=$stackCsv"
-  Write-Host "[INFO] TESTKIT_ROOT(host)=$script:ResolvedTestkitRoot"
-  Write-Host "[INFO] TESTKIT_PROJECT_ROOT(host)=$script:ProjectRoot"
+  $ok = $true
+  Invoke-TestkitDoctorBaseChecks -Context $context -EnvFile $envFile -StackCsv $stackCsv -Ok ([ref]$ok)
+  if ($envFile) {
+    Invoke-TestkitDoctorCapabilityChecks -Context $context
+  }
 
-  if (-not (Test-Path (Join-Path $script:ResolvedTestkitRoot 'runTest.php'))) { Write-Host '[FAIL] TESTKIT_ROOT no parece repo completo'; $ok = $false }
-  if (-not (Test-Path $script:ProjectRoot)) { Write-Host '[FAIL] TESTKIT_PROJECT_ROOT no existe'; $ok = $false }
+  if ($context.Mode -eq 'compact') {
+    Show-TestkitDoctorCompact -Context $context -EnvFile $envFile -StackCsv $stackCsv
+  } else {
+    Show-TestkitDoctorFull -Context $context -EnvFile $envFile -StackCsv $stackCsv
+  }
 
-  if ($ok) { Write-Host "`nDoctor: OK"; return 0 }
-  Write-Host "`nDoctor: FAIL (ver arriba)"
+  if ($context.Dump -and $envFile) {
+    $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $envFile.Path
+    $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
+    $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
+    Show-TestkitDoctorDump -Context $context -EnvFile $envFile -StackCsv $stackCsv
+  }
+
+  if ($ok) { return 0 }
   return 1
 }
