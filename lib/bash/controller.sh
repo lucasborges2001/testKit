@@ -54,5 +54,19 @@ testkit_run_main() {
 
   local rewritten=()
   mapfile -d '' -t rewritten < <(testkit_rewrite_run_command_args "$@")
-  docker compose --env-file "${env_file}" "${files[@]}" "${rewritten[@]}"
+
+  local compose_cmd=(
+    docker compose
+    --env-file "${env_file}"
+    "${files[@]}"
+    "${rewritten[@]}"
+  )
+
+  if [[ "${TESTKIT_DEBUG_WRAPPER:-0}" == "1" ]]; then
+    printf '[testkit] exec:' >&2
+    printf ' %q' "${compose_cmd[@]}" >&2
+    printf '\n' >&2
+  fi
+
+  "${compose_cmd[@]}"
 }
