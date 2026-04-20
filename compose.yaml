@@ -24,5 +24,8 @@ services:
       TESTKIT_ROOT: /workspace/testkit
       TK_REPO_ROOT: /workspace/project
       TESTKIT_MODE: ${TESTKIT_MODE:-}
+      TESTKIT_INVOKER: ${TESTKIT_INVOKER:-}
+      TESTKIT_INVOKER_BIN: ${TESTKIT_INVOKER_BIN:-}
+      TESTKIT_INVOKER_RUN_FLAGS: ${TESTKIT_INVOKER_RUN_FLAGS:-}
       # Node: por default es OK si está. Si querés que falte node => FAIL:
       # TEST_JS_REQUIRE_NODE: "1"

@@ -13,6 +13,7 @@ use Testkit\Core\Reporting\AgentRunArtifact;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Reporting\SuggestedCommandBuilder;
 
 final class MetaRunner
 {
@@ -206,7 +207,7 @@ final class MetaRunner
             $suiteId = trim((string)($firstFailure['suite_id'] ?? $suiteReport['suite_id'] ?? ''));
             if ($file !== '' && $suiteId !== '') {
                 return [[
-                    'command' => "TEST_MATCH='" . self::shellSingleQuote($file) . "' php runTest.php " . str_replace('_', '-', $suiteId),
+                    'command' => SuggestedCommandBuilder::rerunFiltered($suiteId, $file),
                     'reason' => 'aislar el primer archivo fallido',
                 ]];
             }
@@ -241,11 +242,6 @@ final class MetaRunner
         }
 
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
-    }
-
-    private static function shellSingleQuote(string $value): string
-    {
-        return str_replace("'", "'\\''", $value);
     }
 
     /**

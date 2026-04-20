@@ -9,9 +9,10 @@
  */
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../core/php/reporting/ReportSummary.php';
+require_once __DIR__ . '/../../core/php/bootstrap.php';
 
 use Testkit\Core\Reporting\ReportSummary;
+use Testkit\Core\Reporting\SuggestedCommandBuilder;
 
 $errors = [];
 
@@ -109,7 +110,14 @@ assert_true(isset($enrichedSuite['agent_summary']) && is_array($enrichedSuite['a
 assert_true(($enrichedSuite['failure_clusters'][0]['family'] ?? null) === 'seed_drift', 'suite: first cluster should classify duplicate-entry seed drift', $errors);
 assert_true(($enrichedSuite['phase_timeline'][3]['phase'] ?? null) === 'execution', 'suite: execution phase should exist in phase_timeline', $errors);
 assert_true(($enrichedSuite['phase_timeline'][3]['primary'] ?? false) === true, 'suite: execution should be primary phase for runtime failures', $errors);
-assert_true(str_contains((string)($enrichedSuite['rerun_plan'][0]['command'] ?? ''), "TEST_MATCH='test/back/auth/integration/auth_entry_states_integration.test.php'"), 'suite: rerun plan should isolate first failing file', $errors);
+assert_true(
+    ((string)($enrichedSuite['rerun_plan'][0]['command'] ?? '')) === SuggestedCommandBuilder::rerunFiltered(
+        'back_php',
+        'test/back/auth/integration/auth_entry_states_integration.test.php'
+    ),
+    'suite: rerun plan should isolate first failing file',
+    $errors
+);
 assert_true(($enrichedSuite['run_delta']['new_failures_count'] ?? null) === 1, 'suite: run_delta should preserve new_failures_count', $errors);
 assert_true(($enrichedSuite['run_delta']['persistent_failures_count'] ?? null) === 1, 'suite: run_delta should compute persistent_failures_count', $errors);
 assert_true(($enrichedSuite['agent_summary']['primary_problem'] ?? null) === 'seed_drift', 'suite: agent_summary should prioritize the dominant cluster family', $errors);
@@ -153,7 +161,11 @@ $enrichedMeta = ReportSummary::enrichReport($metaReport);
 assert_true(($enrichedMeta['outcome_status'] ?? null) === 'failed', 'meta: outcome_status should become failed when summary.failed > 0', $errors);
 assert_true(isset($enrichedMeta['phase_timeline']) && count((array)$enrichedMeta['phase_timeline']) === 3, 'meta: phase_timeline should use admission/execution/reporting only', $errors);
 assert_true(isset($enrichedMeta['rerun_plan']) && is_array($enrichedMeta['rerun_plan']), 'meta: missing rerun_plan', $errors);
-assert_true(str_contains((string)($enrichedMeta['rerun_plan'][0]['command'] ?? ''), 'php runTest.php back-php'), 'meta: rerun_plan should collapse to first failed suite', $errors);
+assert_true(
+    str_contains((string)($enrichedMeta['rerun_plan'][0]['command'] ?? ''), 'back-php'),
+    'meta: rerun_plan should collapse to first failed suite',
+    $errors
+);
 assert_true(($enrichedMeta['run_delta']['new_failures_count'] ?? null) === 1, 'meta: run_delta should aggregate suite deltas', $errors);
 assert_true(($enrichedMeta['run_delta']['resolved_failures_count'] ?? null) === 1, 'meta: run_delta should aggregate resolved failures', $errors);
 assert_true(((string)($enrichedMeta['agent_summary']['primary_problem'] ?? '')) !== '', 'meta: agent_summary should expose a primary_problem', $errors);

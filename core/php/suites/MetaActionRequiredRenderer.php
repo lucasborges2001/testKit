@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\Suites;
 
 use Testkit\Core\Reporting\ReportSummary;
+use Testkit\Core\Reporting\SuggestedCommandBuilder;
 
 final class MetaActionRequiredRenderer
 {
@@ -36,7 +37,7 @@ final class MetaActionRequiredRenderer
             . ' resolved=' . $resolvedFailures
             . ' transitions=' . $statusTransitions
             . "\n";
-        echo "  Reporte detallado: php scripts/report.php\n";
+        echo '  Reporte detallado: ' . SuggestedCommandBuilder::aggregateReport() . "\n";
 
         if ($suiteReruns !== []) {
             echo "  rerun by suite:\n";
@@ -144,7 +145,7 @@ final class MetaActionRequiredRenderer
             }
 
             if ($command === '') {
-                $command = 'php runTest.php ' . str_replace('_', '-', $suiteId);
+                $command = SuggestedCommandBuilder::rerunSuite($suiteId);
                 $reason = $reason !== '' ? $reason : 'rerun suite with issues';
             }
 
@@ -175,13 +176,8 @@ final class MetaActionRequiredRenderer
         }
 
         return [
-            'command' => "TEST_MATCH='" . self::shellSingleQuote($file) . "' php runTest.php " . str_replace('_', '-', $suiteId),
+            'command' => SuggestedCommandBuilder::rerunFiltered($suiteId, $file),
             'reason' => 'aislar el primer archivo fallido',
         ];
-    }
-
-    private static function shellSingleQuote(string $value): string
-    {
-        return str_replace("'", "'\\''", $value);
     }
 }

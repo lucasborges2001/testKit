@@ -16,14 +16,14 @@ final class RecommendedActionBuilder
         $actions = [];
 
         $suiteId = trim((string)($report['suite_id'] ?? ''));
-        $target = $suiteId !== '' ? str_replace('_', '-', $suiteId) : ((string)($report['target'] ?? 'all') ?: 'all');
+        $targetSuiteId = $suiteId !== '' ? $suiteId : ((string)($report['target'] ?? 'all') ?: 'all');
         $firstFailure = is_array($report['first_failure'] ?? null) ? $report['first_failure'] : FailureNormalizer::firstFailure($report);
         $firstFile = trim((string)($firstFailure['file'] ?? ''));
 
         if ($firstFile !== '') {
             $actions[] = [
                 'kind' => 'rerun_filtered',
-                'command' => "TEST_MATCH='{$firstFile}' php runTest.php {$target}",
+                'command' => SuggestedCommandBuilder::rerunFiltered($targetSuiteId, $firstFile),
                 'reason' => 'aislar el primer archivo fallido',
             ];
         }
@@ -32,7 +32,7 @@ final class RecommendedActionBuilder
         if (in_array($primaryPhase, ['bootstrap', 'store_setup'], true)) {
             $actions[] = [
                 'kind' => 'enable_seed_trace',
-                'command' => "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php {$target}",
+                'command' => SuggestedCommandBuilder::enableSeedTrace($targetSuiteId),
                 'reason' => 'ampliar evidencia en bootstrap/seeding',
             ];
         }
@@ -40,7 +40,7 @@ final class RecommendedActionBuilder
         if ($primaryPhase === 'discovery') {
             $actions[] = [
                 'kind' => 'list_selection',
-                'command' => "php runTest.php {$target} --list",
+                'command' => SuggestedCommandBuilder::listSelection($targetSuiteId),
                 'reason' => 'ver selección efectiva y validar filtros',
             ];
         }
@@ -56,7 +56,7 @@ final class RecommendedActionBuilder
 
         $actions[] = [
             'kind' => 'aggregate_report',
-            'command' => 'php scripts/report.php',
+            'command' => SuggestedCommandBuilder::aggregateReport(),
             'reason' => 'ver resumen consolidado de fallas y coverage',
         ];
 
