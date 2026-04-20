@@ -32,7 +32,7 @@ final class RecommendedActionBuilder
         if (in_array($primaryPhase, ['bootstrap', 'store_setup'], true)) {
             $actions[] = [
                 'kind' => 'enable_seed_trace',
-                'command' => CommandSuggestion::trace($target),
+                'command' => CommandSuggestion::traceMigrations($target),
                 'reason' => 'ampliar evidencia en bootstrap/seeding',
             ];
         }
@@ -56,7 +56,7 @@ final class RecommendedActionBuilder
 
         $actions[] = [
             'kind' => 'aggregate_report',
-            'command' => CommandSuggestion::aggregateReport(),
+            'command' => CommandSuggestion::report(),
             'reason' => 'ver resumen consolidado de fallas y coverage',
         ];
 

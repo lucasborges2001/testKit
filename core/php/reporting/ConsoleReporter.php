@@ -20,9 +20,6 @@ final class ConsoleReporter
     private const MAX_WARNING_REL_LEN = 40;
     private const MAX_TEST_REL_LEN = 28;
 
-    /**
-     * @param array<string,mixed> $config
-     */
     public static function printSuiteStart(array $config, int $testsCount): void
     {
         $name = strtoupper(str_replace('_', ' ', (string)$config['suite_id']));
@@ -55,9 +52,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $tests
-     */
     public static function printList(array $tests): void
     {
         foreach ($tests as $test) {
@@ -65,9 +59,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     public static function printSuiteResult(array $result): void
     {
         $pass = (int)($result['pass'] ?? 0);
@@ -125,9 +116,6 @@ final class ConsoleReporter
         self::printPerfViolations($result);
     }
 
-    /**
-     * @param array<string,mixed> $snapshot
-     */
     public static function printSuiteProgress(array $snapshot): void
     {
         $currentRel = trim((string)($snapshot['current_test_rel'] ?? ''));
@@ -166,9 +154,6 @@ final class ConsoleReporter
         echo $line . "\n";
     }
 
-    /**
-     * @param array<string,mixed> $snapshot
-     */
     public static function printPerTestProgress(array $snapshot): void
     {
         $rel = trim((string)($snapshot['rel'] ?? ''));
@@ -230,9 +215,6 @@ final class ConsoleReporter
         echo '  reporting_ms=' . (int)($phaseTimings['reporting'] ?? 0) . "\n";
     }
 
-    /**
-     * @param array<string,mixed> $meta
-     */
     public static function printMeta(array $meta): void
     {
         UI::header('META SUMMARY');
@@ -272,9 +254,6 @@ final class ConsoleReporter
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printWarnings(array $result): void
     {
         $warnings = StructuredWarnings::canonicalize($result['warnings'] ?? ($result['parallel_policy']['warnings'] ?? null));
@@ -291,9 +270,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printSelectionSummary(array $result): void
     {
         $selection = is_array($result['selection_manifest'] ?? null)
@@ -319,9 +295,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printFirstFailure(array $result): void
     {
         $firstFailure = $result['first_failure'] ?? null;
@@ -342,10 +315,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     * @param array<string,mixed> $diagnostics
-     */
     private static function printDecision(array $result, array $diagnostics): void
     {
         $agentSummary = is_array($result['agent_summary'] ?? null)
@@ -374,10 +343,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     * @param array<string,mixed> $diagnostics
-     */
     private static function printRecommendedActions(array $result, array $diagnostics): void
     {
         $actions = is_array($result['recommended_actions'] ?? null)
@@ -404,9 +369,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printRegressionDelta(array $result): void
     {
         $delta = is_array($result['regression_delta'] ?? null)
@@ -451,9 +413,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printModuleSummary(array $result): void
     {
         $summary = $result['module_summary'] ?? [];
@@ -499,10 +458,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $left
-     * @param array<string,mixed> $right
-     */
     private static function compareModuleSummaryRows(array $left, array $right): int
     {
         foreach (['fail', 'timeout', 'skip', 'total'] as $field) {
@@ -515,9 +470,6 @@ final class ConsoleReporter
         return strcmp((string)$left['module'], (string)$right['module']);
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printFailures(array $result): void
     {
         $failures = ReportSummary::canonicalFailures($result);
@@ -540,7 +492,7 @@ final class ConsoleReporter
 
         $hidden = count($failures) - count($visible);
         if ($hidden > 0) {
-            echo '  ' . UI::gray('... ' . $hidden . ' more failures hidden; use php scripts/report.php for full detail') . "\n";
+            echo '  ' . UI::gray('... ' . $hidden . ' more failures hidden; use ' . CommandSuggestion::report() . ' for full detail') . "\n";
         }
 
         $first = $failures[0];
@@ -550,14 +502,11 @@ final class ConsoleReporter
             $target = str_replace('_', '-', $suiteId);
 
             UI::section('Next Step');
-            echo '  isolate first failing file: ' . UI::info("TEST_MATCH='{$firstFile}' php runTest.php {$target}") . "\n";
-            echo '  full aggregated report: ' . UI::info('php scripts/report.php') . "\n";
+            echo '  isolate first failing file: ' . UI::info(CommandSuggestion::rerun($target, $firstFile)) . "\n";
+            echo '  full aggregated report: ' . UI::info(CommandSuggestion::report()) . "\n";
         }
     }
 
-    /**
-     * @param array<string,mixed> $failure
-     */
     private static function printFailureSnippet(array $failure): void
     {
         foreach (['message', 'assertion', 'trace_excerpt', 'stderr_excerpt', 'stdout_excerpt'] as $field) {
@@ -584,9 +533,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $diagnostics
-     */
     private static function printDiagnostics(array $diagnostics, bool $compactPassed = false): void
     {
         $phaseCounts = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
@@ -642,9 +588,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printTriage(array $result): void
     {
         $failures = ReportSummary::canonicalFailures($result);
@@ -703,9 +646,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printSlow(array $result): void
     {
         $slow = $result['slow_tests'] ?? [];
@@ -730,9 +670,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printFragility(array $result): void
     {
         $hints = $result['fragility_hints'] ?? [];
@@ -778,9 +715,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function printPerfViolations(array $result): void
     {
         $violations = $result['perf_violations'] ?? [];
@@ -806,10 +740,6 @@ final class ConsoleReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $result
-     * @param array<string,mixed> $diagnostics
-     */
     private static function shouldUseCompactPassView(array $result, array $diagnostics): bool
     {
         $outcome = strtoupper(trim((string)($diagnostics['outcome_status'] ?? '')));
@@ -827,9 +757,6 @@ final class ConsoleReporter
             && $evidenceValid;
     }
 
-    /**
-     * @param array<string,mixed> $result
-     */
     private static function shouldPrintModuleSummary(array $result, bool $compactPassed): bool
     {
         $summary = $result['module_summary'] ?? [];
@@ -854,9 +781,6 @@ final class ConsoleReporter
         return false;
     }
 
-    /**
-     * @param array<string,mixed> $diagnostics
-     */
     private static function hasActionableDiagnostics(array $diagnostics): bool
     {
         $phaseCounts = is_array($diagnostics['phase_failure_counts'] ?? null) ? $diagnostics['phase_failure_counts'] : [];
@@ -954,9 +878,6 @@ final class ConsoleReporter
         return self::truncateMiddle($normalized, $maxLen);
     }
 
-    /**
-     * @param mixed $workersValue
-     */
     private static function formatWorkersSummary(mixed $workersValue): string
     {
         if (!is_array($workersValue) || $workersValue === []) {
@@ -985,10 +906,7 @@ final class ConsoleReporter
             return '';
         }
 
-        usort(
-            $rows,
-            static fn(array $left, array $right): int => ((int)$left['worker']) <=> ((int)$right['worker'])
-        );
+        usort($rows, static fn(array $left, array $right): int => ((int)$left['worker']) <=> ((int)$right['worker']));
 
         $pieces = [];
         $hidden = max(0, count($rows) - 3);

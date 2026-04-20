@@ -28,17 +28,17 @@ function Invoke-TestkitMain([string[]]$CliArgs) {
   if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'inspect') {
     $inspectArgs = if ($CliArgs.Count -gt 1) { $CliArgs[1..($CliArgs.Count-1)] } else { @() }
     $cmd = @('compose','--env-file',$envFile) + $files + @('run','--rm','-e','TESTKIT_WRAPPER_KIND=powershell','testkit','php','/workspace/testkit/scripts/inspect.php') + $inspectArgs
-    if ($env:TESTKIT_DEBUG_WRAPPER -eq '1') {
-      Write-Host ('[testkit] exec: docker ' + (($cmd | ForEach-Object { $_.ToString() }) -join ' '))
-    }
     & docker @cmd
     return $LASTEXITCODE
   }
 
   $runArgs = Convert-TestkitRunArgs $CliArgs
-  $cmd = @('compose','--env-file',$envFile) + $files + $runArgs
-  if ($env:TESTKIT_DEBUG_WRAPPER -eq '1') {
-    Write-Host ('[testkit] exec: docker ' + (($cmd | ForEach-Object { $_.ToString() }) -join ' '))
+  if ($runArgs.Count -gt 0 -and $runArgs[0] -eq 'run') {
+    $head = @($runArgs[0..0])
+    $tail = if ($runArgs.Count -gt 1) { @($runArgs[1..($runArgs.Count-1)]) } else { @() }
+    $cmd = @('compose','--env-file',$envFile) + $files + $head + @('-e','TESTKIT_WRAPPER_KIND=powershell') + $tail
+  } else {
+    $cmd = @('compose','--env-file',$envFile) + $files + $runArgs
   }
   & docker @cmd
   return $LASTEXITCODE

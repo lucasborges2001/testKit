@@ -37,7 +37,7 @@ final class MetaActionRequiredRenderer
             . ' resolved=' . $resolvedFailures
             . ' transitions=' . $statusTransitions
             . "\n";
-        echo '  Reporte detallado: ' . CommandSuggestion::aggregateReport() . "\n";
+        echo '  Reporte detallado: ' . CommandSuggestion::report() . "\n";
 
         if ($suiteReruns !== []) {
             echo "  rerun by suite:\n";
@@ -91,10 +91,6 @@ final class MetaActionRequiredRenderer
         }
     }
 
-    /**
-     * @param array<string,mixed> $meta
-     * @return array<int,string>
-     */
     private static function failedSuites(array $meta): array
     {
         $failed = [];
@@ -102,22 +98,15 @@ final class MetaActionRequiredRenderer
             if (!is_array($row)) {
                 continue;
             }
-
             $code = (int)($row['exit_code'] ?? 1);
             if ($code === 0 || $code === 2) {
                 continue;
             }
-
             $failed[] = (string)($row['suite_id'] ?? 'suite');
         }
-
         return $failed;
     }
 
-    /**
-     * @param array<string,mixed> $meta
-     * @return array<int,array{suite_id:string,command:string,reason:string}>
-     */
     private static function suiteRerunCommands(array $meta): array
     {
         $rows = [];
@@ -145,7 +134,7 @@ final class MetaActionRequiredRenderer
             }
 
             if ($command === '') {
-                $command = CommandSuggestion::suite(str_replace('_', '-', $suiteId));
+                $command = CommandSuggestion::rerun(str_replace('_', '-', $suiteId), (string)($row['failing_file'] ?? ''));
                 $reason = $reason !== '' ? $reason : 'rerun suite with issues';
             }
 
@@ -159,10 +148,6 @@ final class MetaActionRequiredRenderer
         return $rows;
     }
 
-    /**
-     * @param array<string,mixed>|null $firstFailure
-     * @return array{command:string,reason:string}|null
-     */
     private static function rerunFilteredCommand(?array $firstFailure): ?array
     {
         if (!is_array($firstFailure)) {

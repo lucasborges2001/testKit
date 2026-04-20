@@ -32,9 +32,23 @@ function Get-TestkitComposeFiles([string]$StackCsv) {
   $files = New-Object System.Collections.Generic.List[string]
   $files.Add('-f') | Out-Null
   $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.yaml')) | Out-Null
-  if (Test-TestkitStackHas $StackCsv 'mysql') { $files.Add('-f') | Out-Null; $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.mysql.yaml')) | Out-Null }
-  if (Test-TestkitStackHas $StackCsv 'redis') { $files.Add('-f') | Out-Null; $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.redis.yaml')) | Out-Null }
-  if (Test-TestkitStackHas $StackCsv 'pg') { $files.Add('-f') | Out-Null; $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.pg.yaml')) | Out-Null }
-  if (Test-TestkitStackHas $StackCsv 'influx') { $files.Add('-f') | Out-Null; $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.influx.yaml')) | Out-Null }
+
+  if (Test-TestkitStackHas $StackCsv 'mysql') {
+    $files.Add('-f') | Out-Null
+    $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.mysql.yaml')) | Out-Null
+  }
+  if (Test-TestkitStackHas $StackCsv 'redis') {
+    $files.Add('-f') | Out-Null
+    $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.redis.yaml')) | Out-Null
+  }
+  if (Test-TestkitStackHas $StackCsv 'pg') {
+    $files.Add('-f') | Out-Null
+    $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.pg.yaml')) | Out-Null
+  }
+  if (Test-TestkitStackHas $StackCsv 'influx') {
+    $files.Add('-f') | Out-Null
+    $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.influx.yaml')) | Out-Null
+  }
+
   return ,$files.ToArray()
 }

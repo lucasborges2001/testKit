@@ -244,9 +244,6 @@ final class MetaRunner
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
     }
 
-    /**
-     * @param array<string,mixed> $meta
-     */
     private static function safeWriteMeta(array $meta, string $context): void
     {
         try {
@@ -258,9 +255,6 @@ final class MetaRunner
         }
     }
 
-    /**
-     * @param array<string,mixed> $meta
-     */
     private static function safePrintActionRequired(array $meta): void
     {
         try {
@@ -272,9 +266,6 @@ final class MetaRunner
         }
     }
 
-    /**
-     * @param array<string,mixed> $config
-     */
     private static function safeRecordAgentDecision(array $config, string $runId): void
     {
         $agentMode = is_array($config['agent_mode'] ?? null)
