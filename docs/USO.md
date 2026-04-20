@@ -63,7 +63,7 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 Cuando el filtro o la suite necesitan variables para el proceso que corre **dentro** del contenedor, usar una tail command única después de `testkit`:
 
 ```powershell
-.in	estkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
+.\bin\testkit.ps1 run --rm testkit 'TEST_MATCH="alerta" php runTest.php back-php'
 ```
 
 Lectura correcta:
@@ -197,11 +197,11 @@ Usarlo cuando ya existe una corrida. No reemplaza `doctor`.
 
 Durante una suite larga, el runner puede emitir señales de progreso humano, advertencias de test largo y un resumen final de timings por fase.
 
-Ejemplo compacto:
+Ejemplo por defecto (compacto):
 
 ```text
-[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 cur=test/back/.../FooTest.php cur_el=00:00:37 avg=9.6s/test eta=00:39:12 jobs=3 workers=w1:...@00:00:37, w2:...@00:00:11, w3:...@00:00:04
-[Test] status=PASS worker=2 done=24/267 dur=00:00:09 rel=test/back/.../BarTest.php el=00:03:50 p/f/s/to=23/1/0/0 jobs=3 active=w1:...@00:00:46, w3:...@00:00:13
+[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 eta=00:39:12 jobs=3
+[Test] status=PASS done=24/267 dur=00:00:09 rel=test/back/.../BarTest.php worker=2
 [WARN] long_running_test elapsed=00:01:00 rel=test/back/.../FooTest.php worker=1
 [Phase Timings]
   discovery_ms=118
@@ -210,9 +210,23 @@ Ejemplo compacto:
   reporting_ms=352
 ```
 
+Ejemplo verbose:
+
+```text
+[Progress] el=00:03:41 done=23/267 p/f/s/to=22/1/0/0 eta=00:39:12 cur=test/back/.../FooTest.php cur_el=00:00:37 avg=9.6s/test jobs=3 workers=w1:...@00:00:37, w2:...@00:00:11, w3:...@00:00:04
+[Test] status=PASS done=24/267 dur=00:00:09 rel=test/back/.../BarTest.php worker=2 el=00:03:50 p/f/s/to=23/1/0/0 jobs=3 active=w1:...@00:00:46, w3:...@00:00:13
+```
+
+Además, cuando una suite falla, el reporte final ahora prioriza una lectura operador-first al inicio del bloque de resultado:
+
+- `Operator Summary` con `status`, `primary_problem`, `focus`, `next_action` y `report_root`
+- menos eco entre primera falla, acción principal y comandos de rerun
+- meta summary agregado con `focus_suite`, `focus_file` y hint para bajar a una suite concreta cuando corriste un target agregado con fallas
+
 Lectura correcta:
 
 - `[Progress]` es una señal humana de que la suite sigue viva; no es un formato para automatización
+- el modo por defecto debe ser escaneable en terminal chica; si necesitás contexto fino, subí a `verbose`
 - `workers=` resume workers activos cuando `TEST_JOBS > 1`; sirve para ver quién está ocupado y hace cuánto
 - `[Test]` aparece solo en `per_test` y emite una línea por test completado
 - `rel`, `cur`, `workers` y `active` pueden aparecer compactados o truncados con elipsis en terminales angostas; el contrato estable es el significado del campo, no el path raw completo
@@ -220,10 +234,12 @@ Lectura correcta:
 - `[WARN] long_running_test` es informativo; no cambia exit code ni estado final
 - `[WARN] long_running_test` aplica tanto en `heartbeat` como en `per_test`; `quiet` lo suprime
 - `[Phase Timings]` resume tiempos gruesos de `discovery`, `admission`, `execution` y `reporting`
+- `Possible Flaky Tests (heuristic)` sigue siendo señal histórica; no es diagnóstico firme
 
 Configuración mínima:
 
 - `TESTKIT_PROGRESS_MODE=heartbeat|per_test|quiet`
+- `TESTKIT_PROGRESS_DETAIL=compact|verbose` (default `compact`)
 - `TESTKIT_PROGRESS_INTERVAL_SEC` (default `15`)
 - `TESTKIT_LONG_TEST_WARN_SEC` (default `60`)
 
@@ -232,6 +248,8 @@ Lectura de modos:
 - `heartbeat`: habilita heartbeats periódicos, warnings de test largo y visibilidad compacta de workers activos
 - `per_test`: emite una línea por test completado, mantiene warnings de test largo y muestra workers activos cuando aplica
 - `quiet`: suprime `[Progress]`, `[Test]` y warnings de test largo, pero no elimina el reporte final ni `phase_timings_ms`
+- `compact`: prioriza señal mínima para lectura rápida; es el valor por defecto para no saturar la consola
+- `verbose`: vuelve a mostrar `cur`, `cur_el`, `avg`, `workers`, `active` y el resto del contexto fino de progreso
 
 ## 7) Qué comportamiento sí es esperado
 
@@ -256,6 +274,7 @@ Para causas y pasos concretos, leer [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - `clone-per-worker` no aísla filesystem, colas, APIs ni side effects externos.
 - `[Progress]` y `[Test]` no reemplazan `inspect`, el JSON persistido ni el reporte final.
 - esta capa no persiste heartbeats individuales ni telemetría por evento.
+- `Possible Flaky Tests (heuristic)` y familias de triage siguen siendo heurísticas; sirven para orientar, no para cerrar causa raíz.
 
 ## 9) Patrones seguros vs peligrosos
 

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+use Testkit\Core\Common\Env;
+
 final class ConsoleReporter
 {
     private const MAX_FAILURES = 8;
@@ -87,13 +89,16 @@ final class ConsoleReporter
             echo '  evidence: ' . UI::failure('invalid') . ' ' . UI::gray('reason=' . $reason) . "\n";
         }
 
+        if (!$compactPassed) {
+            self::printOperatorSummary($result, $diagnostics);
+        }
+
         self::printDiagnostics($diagnostics, $compactPassed);
         self::printWarnings($result);
         self::printSelectionSummary($result);
 
         if (!$compactPassed) {
             self::printFirstFailure($result);
-            self::printDecision($result, $diagnostics);
             self::printRecommendedActions($result, $diagnostics);
             self::printRegressionDelta($result);
         }
@@ -118,13 +123,9 @@ final class ConsoleReporter
 
     public static function printSuiteProgress(array $snapshot): void
     {
-        $currentRel = trim((string)($snapshot['current_test_rel'] ?? ''));
-        $currentElapsedMs = $currentRel !== '' ? (int)($snapshot['current_elapsed_ms'] ?? 0) : null;
         $avgMs = $snapshot['avg_ms_per_test'] ?? null;
         $etaMs = $snapshot['eta_ms'] ?? null;
-        $currentLabel = $currentRel !== ''
-            ? UI::gray(self::formatProgressPath($currentRel, self::MAX_PROGRESS_CURRENT_LEN))
-            : 'n/a';
+        $jobs = (int)($snapshot['jobs'] ?? 1);
 
         $line = UI::info('[Progress]') . ' '
             . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
@@ -136,19 +137,30 @@ final class ConsoleReporter
             . '/' . (int)($snapshot['skip'] ?? 0)
             . '/' . (int)($snapshot['timeout'] ?? 0)
             . ' '
-            . 'cur=' . $currentLabel
-            . ' '
-            . 'cur_el=' . ($currentElapsedMs !== null ? self::formatDurationMs($currentElapsedMs) : 'n/a')
-            . ' '
-            . 'avg=' . self::formatAvgMs(is_int($avgMs) ? $avgMs : null)
-            . ' '
-            . 'eta=' . (is_int($etaMs) ? self::formatDurationMs($etaMs) : 'n/a')
-            . ' '
-            . 'jobs=' . (int)($snapshot['jobs'] ?? 1);
+            . 'eta=' . (is_int($etaMs) ? self::formatDurationMs($etaMs) : 'n/a');
 
-        $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
-        if ($workers !== '') {
-            $line .= ' workers=' . UI::gray($workers);
+        if (self::progressDetail() === 'verbose') {
+            $currentRel = trim((string)($snapshot['current_test_rel'] ?? ''));
+            $currentElapsedMs = $currentRel !== '' ? (int)($snapshot['current_elapsed_ms'] ?? 0) : null;
+            $currentLabel = $currentRel !== ''
+                ? UI::gray(self::formatProgressPath($currentRel, self::MAX_PROGRESS_CURRENT_LEN))
+                : 'n/a';
+
+            $line .= ' '
+                . 'cur=' . $currentLabel
+                . ' '
+                . 'cur_el=' . ($currentElapsedMs !== null ? self::formatDurationMs($currentElapsedMs) : 'n/a')
+                . ' '
+                . 'avg=' . self::formatAvgMs(is_int($avgMs) ? $avgMs : null)
+                . ' '
+                . 'jobs=' . $jobs;
+
+            $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
+            if ($workers !== '') {
+                $line .= ' workers=' . UI::gray($workers);
+            }
+        } elseif ($jobs > 1) {
+            $line .= ' jobs=' . $jobs;
         }
 
         echo $line . "\n";
@@ -159,30 +171,36 @@ final class ConsoleReporter
         $rel = trim((string)($snapshot['rel'] ?? ''));
         $status = strtoupper(trim((string)($snapshot['status'] ?? 'done')));
         $status = $status !== '' ? $status : 'DONE';
+        $jobs = (int)($snapshot['jobs'] ?? 1);
 
         $line = UI::info('[Test]') . ' '
             . 'status=' . self::renderTestStatus($status)
-            . ' '
-            . 'worker=' . (int)($snapshot['worker'] ?? 0)
             . ' '
             . 'done=' . (int)($snapshot['completed'] ?? 0) . '/' . (int)($snapshot['total'] ?? 0)
             . ' '
             . 'dur=' . self::formatDurationMs((int)($snapshot['duration_ms'] ?? 0))
             . ' '
-            . 'rel=' . UI::gray(self::formatProgressPath($rel, self::MAX_TEST_REL_LEN))
-            . ' '
-            . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
-            . ' '
-            . 'p/f/s/to=' . (int)($snapshot['pass'] ?? 0)
-            . '/' . (int)($snapshot['fail'] ?? 0)
-            . '/' . (int)($snapshot['skip'] ?? 0)
-            . '/' . (int)($snapshot['timeout'] ?? 0)
-            . ' '
-            . 'jobs=' . (int)($snapshot['jobs'] ?? 1);
+            . 'rel=' . UI::gray(self::formatProgressPath($rel, self::MAX_TEST_REL_LEN));
 
-        $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
-        if ($workers !== '') {
-            $line .= ' active=' . UI::gray($workers);
+        if ($jobs > 1) {
+            $line .= ' worker=' . (int)($snapshot['worker'] ?? 0);
+        }
+
+        if (self::progressDetail() === 'verbose') {
+            $line .= ' '
+                . 'el=' . self::formatDurationMs((int)($snapshot['elapsed_ms'] ?? 0))
+                . ' '
+                . 'p/f/s/to=' . (int)($snapshot['pass'] ?? 0)
+                . '/' . (int)($snapshot['fail'] ?? 0)
+                . '/' . (int)($snapshot['skip'] ?? 0)
+                . '/' . (int)($snapshot['timeout'] ?? 0)
+                . ' '
+                . 'jobs=' . $jobs;
+
+            $workers = self::formatWorkersSummary($snapshot['workers'] ?? []);
+            if ($workers !== '') {
+                $line .= ' active=' . UI::gray($workers);
+            }
         }
 
         echo $line . "\n";
@@ -220,6 +238,12 @@ final class ConsoleReporter
         UI::header('META SUMMARY');
 
         $suites = is_array($meta['suites'] ?? null) ? $meta['suites'] : [];
+        $summary = is_array($meta['summary'] ?? null) ? $meta['summary'] : [];
+        $failedFiles = array_values(array_filter((array)($meta['failed_files'] ?? []), 'is_string'));
+        $diagnostics = is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : ReportSummary::diagnostics($meta);
+
+        self::printMetaSummary($meta, $suites, $failedFiles, $diagnostics);
+
         if ($suites !== []) {
             UI::section('Suites');
             foreach ($suites as $suite) {
@@ -232,10 +256,6 @@ final class ConsoleReporter
                 echo '  ' . str_pad($name, 24) . ' -> ' . $status . ' ' . UI::gray("(code={$code}, tests={$tests}, scope={$scopeLabel})") . "\n";
             }
         }
-
-        $summary = is_array($meta['summary'] ?? null) ? $meta['summary'] : [];
-        $failedFiles = is_array($meta['failed_files'] ?? null) ? $meta['failed_files'] : [];
-        $diagnostics = is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : ReportSummary::diagnostics($meta);
 
         UI::section('Meta');
         echo '  totals: '
@@ -250,7 +270,6 @@ final class ConsoleReporter
             . UI::gray('time_ms=' . (int)($summary['duration_ms'] ?? $meta['duration_ms'] ?? 0))
             . "\n";
         echo '  outcome: ' . self::renderOutcome(strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'))) . ' ' . UI::gray('phase=' . (string)($diagnostics['primary_phase'] ?? 'none') . ' cause=' . (string)($diagnostics['cause_code'] ?? 'none')) . "\n";
-        echo '  report_root: ' . UI::gray((string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? '')) . "\n";
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
     }
 
@@ -315,7 +334,7 @@ final class ConsoleReporter
         }
     }
 
-    private static function printDecision(array $result, array $diagnostics): void
+    private static function printOperatorSummary(array $result, array $diagnostics): void
     {
         $agentSummary = is_array($result['agent_summary'] ?? null)
             ? $result['agent_summary']
@@ -324,20 +343,40 @@ final class ConsoleReporter
             ? $result['first_failure']
             : ReportSummary::firstFailure($result);
 
-        UI::section('Decision');
-
-        echo '  status: ' . self::renderOutcome((string)($agentSummary['status'] ?? strtoupper((string)($diagnostics['outcome_status'] ?? 'passed')))) . "\n";
-        echo '  primary_problem: ' . UI::gray((string)($agentSummary['primary_problem'] ?? (string)($diagnostics['cause_code'] ?? 'none'))) . "\n";
-        echo '  focus: ' . UI::gray(implode(', ', array_values((array)($agentSummary['suggested_focus'] ?? [])))) . "\n";
-
+        $focus = '';
         if (is_array($firstFailure)) {
-            $file = trim((string)($firstFailure['file'] ?? ''));
-            if ($file !== '') {
-                echo '  failing_file: ' . UI::gray($file) . "\n";
+            $focus = trim((string)($firstFailure['file'] ?? $firstFailure['case'] ?? ''));
+        }
+
+        $primaryProblem = trim((string)($agentSummary['primary_problem'] ?? ''));
+        if ($primaryProblem === '' && is_array($firstFailure)) {
+            $primaryProblem = trim((string)($firstFailure['message'] ?? ''));
+        }
+        if ($primaryProblem === '') {
+            $primaryProblem = trim((string)($diagnostics['cause_code'] ?? 'none'));
+        }
+
+        $primaryAction = self::primaryActionCommand(self::collectRecommendedActions($result, $diagnostics));
+        if ($primaryAction === '' && $focus !== '') {
+            $suiteId = str_replace('_', '-', (string)($result['suite_id'] ?? ''));
+            if ($suiteId !== '') {
+                $primaryAction = CommandSuggestion::rerun($suiteId, $focus);
             }
         }
 
         $reportRoot = trim((string)($result['report_scope_rel'] ?? $result['report_root'] ?? ''));
+
+        UI::section('Operator Summary');
+        echo '  status: ' . self::renderOutcome((string)($agentSummary['status'] ?? strtoupper((string)($diagnostics['outcome_status'] ?? 'passed')))) . "\n";
+        if ($primaryProblem !== '') {
+            echo '  primary_problem: ' . UI::gray($primaryProblem) . "\n";
+        }
+        if ($focus !== '') {
+            echo '  focus: ' . UI::gray($focus) . "\n";
+        }
+        if ($primaryAction !== '') {
+            echo '  next_action: ' . UI::info($primaryAction) . "\n";
+        }
         if ($reportRoot !== '') {
             echo '  report_root: ' . UI::gray($reportRoot) . "\n";
         }
@@ -345,16 +384,27 @@ final class ConsoleReporter
 
     private static function printRecommendedActions(array $result, array $diagnostics): void
     {
-        $actions = is_array($result['recommended_actions'] ?? null)
-            ? array_values(array_filter($result['recommended_actions'], 'is_array'))
-            : ReportSummary::recommendedActions($result, $diagnostics);
-
+        $actions = self::collectRecommendedActions($result, $diagnostics);
         if ($actions === []) {
             return;
         }
 
+        $primaryCommand = self::primaryActionCommand($actions);
+        $remaining = [];
+        foreach ($actions as $action) {
+            $command = trim((string)($action['command'] ?? ''));
+            if ($command === '' || $command === $primaryCommand) {
+                continue;
+            }
+            $remaining[] = $action;
+        }
+
+        if ($remaining === []) {
+            return;
+        }
+
         UI::section('Recommended Actions');
-        foreach (array_slice($actions, 0, self::MAX_ACTIONS) as $action) {
+        foreach (array_slice($remaining, 0, self::MAX_ACTIONS) as $action) {
             $command = trim((string)($action['command'] ?? ''));
             $reason = trim((string)($action['reason'] ?? ''));
             if ($command === '') {
@@ -434,27 +484,40 @@ final class ConsoleReporter
 
         usort($rows, [self::class, 'compareModuleSummaryRows']);
 
+        $issueRows = array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => (int)$row['fail'] > 0 || (int)$row['skip'] > 0 || (int)$row['timeout'] > 0
+        ));
+        $visibleRows = $issueRows !== [] ? $issueRows : $rows;
+        $hiddenHealthy = max(0, count($rows) - count($visibleRows));
+
         UI::section('Module Summary');
         echo UI::gray(str_pad('Module', 30) . ' | Total | Pass | Fail | Skip | Timeout') . "\n";
         UI::separator();
 
-        foreach ($rows as $row) {
+        foreach ($visibleRows as $row) {
             $moduleStr = str_pad((string)$row['module'], 30);
             $fail = (int)$row['fail'];
             $timeout = (int)$row['timeout'];
+            $skip = (int)$row['skip'];
 
             $failStr = $fail > 0 ? UI::failure(sprintf('%4d', $fail)) : sprintf('%4d', $fail);
+            $skipStr = $skip > 0 ? UI::warning(sprintf('%4d', $skip)) : sprintf('%4d', $skip);
             $timeoutStr = $timeout > 0 ? UI::warning(sprintf('%7d', $timeout)) : sprintf('%7d', $timeout);
 
             echo sprintf(
-                "%s | %5d | %4d | %s | %4d | %s\n",
+                "%s | %5d | %4d | %s | %s | %s\n",
                 $moduleStr,
                 (int)$row['total'],
                 (int)$row['pass'],
                 $failStr,
-                (int)$row['skip'],
+                $skipStr,
                 $timeoutStr
             );
+        }
+
+        if ($hiddenHealthy > 0) {
+            echo '  ' . UI::gray('+ ' . $hiddenHealthy . ' modules without issues hidden') . "\n";
         }
     }
 
@@ -493,17 +556,6 @@ final class ConsoleReporter
         $hidden = count($failures) - count($visible);
         if ($hidden > 0) {
             echo '  ' . UI::gray('... ' . $hidden . ' more failures hidden; use ' . CommandSuggestion::report() . ' for full detail') . "\n";
-        }
-
-        $first = $failures[0];
-        $firstFile = (string)($first['file'] ?? $first['test_id'] ?? '');
-        if ($firstFile !== '') {
-            $suiteId = (string)($result['suite_id'] ?? '');
-            $target = str_replace('_', '-', $suiteId);
-
-            UI::section('Next Step');
-            echo '  isolate first failing file: ' . UI::info(CommandSuggestion::rerun($target, $firstFile)) . "\n";
-            echo '  full aggregated report: ' . UI::info(CommandSuggestion::report()) . "\n";
         }
     }
 
@@ -700,18 +752,18 @@ final class ConsoleReporter
 
         $visible = array_slice($flaky, 0, self::MAX_FRAGILITY);
 
-        UI::section('Fragility Hints');
+        UI::section('Possible Flaky Tests (heuristic)');
         foreach ($visible as $hint) {
-            echo '  - flaky: '
+            echo '  - '
                 . (string)$hint['test']
-                . ' (pass=' . (int)($hint['pass_count'] ?? 0)
-                . ', fail=' . (int)($hint['fail_count'] ?? 0)
-                . ")\n";
+                . ' '
+                . UI::gray('(pass=' . (int)($hint['pass_count'] ?? 0) . ', fail=' . (int)($hint['fail_count'] ?? 0) . ')')
+                . "\n";
         }
 
         $hidden = count($flaky) - count($visible);
         if ($hidden > 0) {
-            echo '  ' . UI::gray('... ' . $hidden . ' more fragility hints hidden') . "\n";
+            echo '  ' . UI::gray('... ' . $hidden . ' more heuristic hints hidden') . "\n";
         }
     }
 
@@ -937,5 +989,130 @@ final class ConsoleReporter
         $keepRight = ($maxLen - 3) - $keepLeft;
 
         return substr($value, 0, $keepLeft) . '...' . substr($value, -$keepRight);
+    }
+
+    private static function progressDetail(): string
+    {
+        return strtolower(Env::string('TESTKIT_PROGRESS_DETAIL', 'compact')) === 'verbose'
+            ? 'verbose'
+            : 'compact';
+    }
+
+    /**
+     * @return array<int,array{command:string,reason:string}>
+     */
+    private static function collectRecommendedActions(array $result, array $diagnostics): array
+    {
+        $actions = is_array($result['recommended_actions'] ?? null)
+            ? array_values(array_filter($result['recommended_actions'], 'is_array'))
+            : ReportSummary::recommendedActions($result, $diagnostics);
+
+        $normalized = [];
+        $seen = [];
+        foreach ($actions as $action) {
+            $command = trim((string)($action['command'] ?? ''));
+            $reason = trim((string)($action['reason'] ?? ''));
+            if ($command === '' || isset($seen[$command])) {
+                continue;
+            }
+            $seen[$command] = true;
+            $normalized[] = [
+                'command' => $command,
+                'reason' => $reason,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<int,array{command:string,reason:string}> $actions
+     */
+    private static function primaryActionCommand(array $actions): string
+    {
+        if ($actions === []) {
+            return '';
+        }
+
+        return trim((string)($actions[0]['command'] ?? ''));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suites
+     * @param array<int,string> $failedFiles
+     */
+    private static function printMetaSummary(array $meta, array $suites, array $failedFiles, array $diagnostics): void
+    {
+        $failedSuites = array_values(array_filter(
+            $suites,
+            static fn(array $suite): bool => (int)($suite['exit_code'] ?? 0) !== 0
+        ));
+        $firstFailedSuite = $failedSuites[0] ?? null;
+        $firstFailedFile = $failedFiles[0] ?? '';
+        $focusSuite = is_array($firstFailedSuite) ? trim((string)($firstFailedSuite['suite_id'] ?? '')) : '';
+        $focusFile = trim($firstFailedFile);
+        $reportRoot = trim((string)($meta['report_scope_rel'] ?? $meta['report_root'] ?? ''));
+        $nextAction = '';
+
+        if ($focusFile !== '') {
+            $target = self::guessTargetFromTestPath($focusFile);
+            if ($target !== '') {
+                $nextAction = CommandSuggestion::rerun($target, $focusFile);
+            }
+        }
+
+        UI::section('Operator Summary');
+        echo '  status: ' . self::renderOutcome(strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'))) . "\n";
+        echo '  failing_suites: ' . UI::gray(count($failedSuites) . '/' . max(1, count($suites))) . "\n";
+        if ($focusSuite !== '') {
+            echo '  focus_suite: ' . UI::gray($focusSuite) . "\n";
+        }
+        if ($focusFile !== '') {
+            echo '  focus_file: ' . UI::gray($focusFile) . "\n";
+        }
+        if ($nextAction !== '') {
+            echo '  next_action: ' . UI::info($nextAction) . "\n";
+        }
+        if ($reportRoot !== '') {
+            echo '  report_root: ' . UI::gray($reportRoot) . "\n";
+        }
+        if (self::shouldSuggestConcreteSuite($suites, $failedSuites)) {
+            echo '  hint: ' . UI::gray('start with one concrete suite before re-running the aggregate target') . "\n";
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $suites
+     * @param array<int,array<string,mixed>> $failedSuites
+     */
+    private static function shouldSuggestConcreteSuite(array $suites, array $failedSuites): bool
+    {
+        return count($suites) > 1 && $failedSuites !== [];
+    }
+
+    private static function guessTargetFromTestPath(string $path): string
+    {
+        $normalized = trim(str_replace('\\', '/', $path));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $isBack = str_starts_with($normalized, 'test/back/');
+        $isFront = str_starts_with($normalized, 'test/front/');
+
+        if ($isBack && str_ends_with($normalized, '.py')) {
+            return 'back-python';
+        }
+        if ($isBack) {
+            return 'back-php';
+        }
+        if ($isFront && str_ends_with($normalized, '.js')) {
+            return 'front-js';
+        }
+        if ($isFront) {
+            return 'front-php';
+        }
+
+        return '';
     }
 }

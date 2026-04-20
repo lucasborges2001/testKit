@@ -65,7 +65,7 @@ The PowerShell wrapper rewrites `runTest.php` to `/workspace/testkit/runTest.php
 What you should **not** expect to work in PowerShell is treating this as if it were native PowerShell syntax:
 
 ```powershell
-.in	estkit.ps1 run --rm testkit TEST_MATCH="alerta" php runTest.php back-php
+.\bin\testkit.ps1 run --rm testkit TEST_MATCH="alerta" php runTest.php back-php
 ```
 
 Without wrapper support, Docker sees `TEST_MATCH="alerta"` as the executable. This repository now normalizes that case in `bin/testkit.ps1`.
@@ -79,6 +79,7 @@ What exists:
 - periodic `[Progress]` heartbeats during execution
 - `[WARN] long_running_test` for tests that cross the configured threshold
 - `[Phase Timings]` at the end of the suite
+- operator-first failed suite summaries that surface status, focus and next action near the top of the report
 - summarized observability fields persisted in suite JSON and local history
 - a config-visible capability section in `doctor` for generic store constraints and the closed `migration-contract` path
 - structured capability fields in `doctor --dump` (`TESTKIT_CAPABILITY_STATUS`, `TESTKIT_CAPABILITY_CHECK_COUNT`, `TESTKIT_CAPABILITY_CHECK_<n>_*`)
