@@ -1,0 +1,6 @@
+$script:TestkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+. (Join-Path $script:TestkitRoot 'lib\powershell\Env.ps1')
+. (Join-Path $script:TestkitRoot 'lib\powershell\Stack.ps1')
+. (Join-Path $script:TestkitRoot 'lib\powershell\Rewrite.ps1')
+. (Join-Path $script:TestkitRoot 'lib\powershell\Doctor.ps1')
+. (Join-Path $script:TestkitRoot 'lib\powershell\Controller.ps1')
