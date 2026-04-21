@@ -72,10 +72,12 @@ function testkit_print_run_help(): void
     echo "Opciones soportadas:\n";
     echo "  --list     lista la selección efectiva y fuerza TEST_LIST=1 para esta corrida\n";
     echo "  --help     muestra esta ayuda\n\n";
-    echo "Configuración por env:\n";
+    echo "Configuración por env (resumen):\n";
     echo "  TEST_SCOPE, TEST_CATEGORY, TEST_MATCH, TEST_REQUIRE_TESTS, TEST_JOBS,\n";
-    echo "  TEST_FAIL_FAST, TEST_COVERAGE, TEST_DB_STRATEGY, TESTKIT_SKIP_STORE_BOOTSTRAP\n";
-    echo "  Para esquema detallado: php scripts/inspect.php config-schema\n";
+    echo "  TEST_FAIL_FAST, TEST_META_FAIL_FAST, TEST_CHILD_FAIL_FAST,\n";
+    echo "  TEST_COVERAGE, TEST_COVERAGE_FORMAT, TEST_DB_STRATEGY,\n";
+    echo "  TEST_BASELINE_MODE, TEST_STORE_DRIVER, TESTKIT_SKIP_STORE_BOOTSTRAP\n";
+    echo "  Para esquema detallado: php scripts/inspect.php config-schema [--json]\n";
 }
 
 [$target, $unknownArgs] = testkit_parse_run_args($argv);
