@@ -3,7 +3,6 @@ set -euo pipefail
 
 declare -ag TESTKIT_DOCTOR_BASE_CHECKS=()
 declare -ag TESTKIT_DOCTOR_CAPABILITY_CHECKS=()
-declare -ag TESTKIT_DOCTOR_INVALID_ARGS=()
 
 TESTKIT_DOCTOR_BASE_STATUS="PASS"
 TESTKIT_DOCTOR_CAPABILITY_STATUS="PASS"
@@ -50,7 +49,6 @@ testkit_doctor_update_status() {
 testkit_doctor_reset_state() {
   TESTKIT_DOCTOR_BASE_CHECKS=()
   TESTKIT_DOCTOR_CAPABILITY_CHECKS=()
-  TESTKIT_DOCTOR_INVALID_ARGS=()
   TESTKIT_DOCTOR_BASE_STATUS="PASS"
   TESTKIT_DOCTOR_CAPABILITY_STATUS="PASS"
 }
@@ -88,18 +86,28 @@ testkit_doctor_env_present_any() {
 }
 
 testkit_doctor_snapshot_source_visible() {
-  testkit_doctor_env_present_any \
-    TEST_BASELINE_SNAPSHOT_FILE \
-    TEST_BASELINE_SNAPSHOT_METADATA \
-    TEST_BASELINE_SNAPSHOT_REPORT \
-    TEST_BASELINE_SNAPSHOT_JSON
+  testkit_doctor_env_present_any     TEST_BASELINE_SNAPSHOT_FILE     TEST_BASELINE_SNAPSHOT_METADATA     TEST_BASELINE_SNAPSHOT_REPORT     TEST_BASELINE_SNAPSHOT_JSON
+}
+
+testkit_doctor_validate_target() {
+  local target="$1"
+  [[ -z "${target}" ]] && return 0
+
+  case "${target}" in
+    all|back|front|public_html|back-php|back-py|back-python|python|py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|migration|migrations)
+      return 0
+      ;;
+    *)
+      echo "doctor: target no soportado '${target}'. Usá uno de: all|back|front|back-php|back-py|back-python|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract." >&2
+      return 1
+      ;;
+  esac
 }
 
 testkit_doctor_parse_args() {
   TESTKIT_DOCTOR_MODE="$(testkit_doctor_normalize_token "${TESTKIT_DOCTOR_MODE:-full}")"
   TESTKIT_DOCTOR_TARGET=""
   TESTKIT_DOCTOR_DUMP="0"
-  TESTKIT_DOCTOR_INVALID_ARGS=()
 
   local arg
   for arg in "$@"; do
@@ -121,15 +129,19 @@ testkit_doctor_parse_args() {
         ;;
       --target=*)
         TESTKIT_DOCTOR_TARGET="$(testkit_doctor_normalize_token "${arg#--target=}")"
+        testkit_doctor_validate_target "${TESTKIT_DOCTOR_TARGET}" || return 1
         ;;
       --*)
-        TESTKIT_DOCTOR_INVALID_ARGS+=("${arg}")
+        echo "doctor: opción no soportada '${arg}'. Usá --full, --compact, --dump o --target=<target>." >&2
+        return 1
         ;;
       *)
         if [[ -z "${TESTKIT_DOCTOR_TARGET}" ]]; then
           TESTKIT_DOCTOR_TARGET="$(testkit_doctor_normalize_token "${arg}")"
+          testkit_doctor_validate_target "${TESTKIT_DOCTOR_TARGET}" || return 1
         else
-          TESTKIT_DOCTOR_INVALID_ARGS+=("${arg}")
+          echo "doctor: argumento extra no soportado '${arg}'." >&2
+          return 1
         fi
         ;;
     esac

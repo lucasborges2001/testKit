@@ -10,11 +10,10 @@ $doctorRender = Join-Path $PSScriptRoot 'Doctor.Render.ps1'
 
 function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
   Reset-TestkitDoctorState
-  $context = Parse-TestkitDoctorArgs $DoctorArgs
-
-  if ($context.InvalidArgs.Count -gt 0) {
-    Write-Error ("doctor args inválidos: {0}" -f ($context.InvalidArgs -join ' '))
-    Write-Error 'Usá solo: --full | --compact | --dump | --target=<target> | <target>'
+  try {
+    $context = Parse-TestkitDoctorArgs $DoctorArgs
+  } catch {
+    Write-Error $_
     return 1
   }
 

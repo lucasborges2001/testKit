@@ -61,13 +61,26 @@ function Add-TestkitDoctorCheck(
   }
 }
 
+function Assert-TestkitDoctorTarget([string]$Target) {
+  if ([string]::IsNullOrWhiteSpace($Target)) { return }
+  $valid = @(
+    'all','back','front','public_html',
+    'back-php','back-py','back-python','python','py',
+    'front-php','front-js','php','js',
+    'smoke','perf','stress','contract','critical','slow',
+    'migration-contract','migration','migrations'
+  )
+  if ($Target -notin $valid) {
+    throw "doctor: target no soportado '$Target'. Usá uno de: $($valid -join ', ')."
+  }
+}
+
 function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
   $mode = Normalize-TestkitDoctorToken $env:TESTKIT_DOCTOR_MODE
   if ($mode -notin @('compact','full')) { $mode = 'full' }
 
   $target = ''
   $dump = $false
-  $invalidArgs = New-Object System.Collections.Generic.List[string]
 
   foreach ($arg in $DoctorArgs) {
     switch -Regex ($arg) {
@@ -76,13 +89,18 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
       '^--full$' { $mode = 'full'; continue }
       '^--mode=compact$' { $mode = 'compact'; continue }
       '^--mode=full$' { $mode = 'full'; continue }
-      '^--target=(.+)$' { $target = Normalize-TestkitDoctorToken $Matches[1]; continue }
-      '^--' { $invalidArgs.Add($arg) | Out-Null; continue }
+      '^--target=(.+)$' {
+        $target = Normalize-TestkitDoctorToken $Matches[1]
+        Assert-TestkitDoctorTarget $target
+        continue
+      }
+      '^--' { throw "doctor: opción no soportada '$arg'. Usá --full, --compact, --dump o --target=<target>." }
       default {
         if ([string]::IsNullOrWhiteSpace($target)) {
           $target = Normalize-TestkitDoctorToken $arg
+          Assert-TestkitDoctorTarget $target
         } else {
-          $invalidArgs.Add($arg) | Out-Null
+          throw "doctor: argumento extra no soportado '$arg'."
         }
       }
     }
@@ -92,7 +110,6 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
     Mode = $mode
     Target = $target
     Dump = $dump
-    InvalidArgs = @($invalidArgs)
   }
 }
 
