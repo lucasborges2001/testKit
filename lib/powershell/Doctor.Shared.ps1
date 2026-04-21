@@ -67,6 +67,7 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
 
   $target = ''
   $dump = $false
+  $invalidArgs = New-Object System.Collections.Generic.List[string]
 
   foreach ($arg in $DoctorArgs) {
     switch -Regex ($arg) {
@@ -76,10 +77,12 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
       '^--mode=compact$' { $mode = 'compact'; continue }
       '^--mode=full$' { $mode = 'full'; continue }
       '^--target=(.+)$' { $target = Normalize-TestkitDoctorToken $Matches[1]; continue }
-      '^--' { continue }
+      '^--' { $invalidArgs.Add($arg) | Out-Null; continue }
       default {
         if ([string]::IsNullOrWhiteSpace($target)) {
           $target = Normalize-TestkitDoctorToken $arg
+        } else {
+          $invalidArgs.Add($arg) | Out-Null
         }
       }
     }
@@ -89,6 +92,7 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
     Mode = $mode
     Target = $target
     Dump = $dump
+    InvalidArgs = @($invalidArgs)
   }
 }
 

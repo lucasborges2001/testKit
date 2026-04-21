@@ -14,6 +14,8 @@ final class RunnerConfig
      */
     public static function forSuite(string $suiteId, string $testsDir, string $defaultCoverageDir, string $language): array
     {
+        Env::resetWarnings();
+
         $scope = strtolower(Env::string('TEST_SCOPE', defined('TEST_SCOPE_DEFAULT') ? (string)TEST_SCOPE_DEFAULT : 'all'));
         $category = strtolower(Env::string('TEST_CATEGORY', 'all'));
         if ($category === '') {
@@ -71,7 +73,11 @@ final class RunnerConfig
             'critical_tags' => Env::csv('TEST_CRITICAL_TAGS', 'critical,contract'),
             'report_keep' => $reportKeep,
             'runs_index_keep' => $runsIndexKeep,
+            'env_warnings' => [],
         ];
+
+        $config['env_warnings'] = Env::drainWarnings();
+        self::emitEnvWarnings($config['env_warnings']);
 
         return AgentMode::suiteConfig($config);
     }
@@ -81,6 +87,8 @@ final class RunnerConfig
      */
     public static function meta(): array
     {
+        Env::resetWarnings();
+
         $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
         $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
 
@@ -93,8 +101,24 @@ final class RunnerConfig
             'reports_root' => Paths::reportsRoot(),
             'report_keep' => $reportKeep,
             'runs_index_keep' => $runsIndexKeep,
+            'env_warnings' => [],
         ];
 
+        $config['env_warnings'] = Env::drainWarnings();
+        self::emitEnvWarnings($config['env_warnings']);
+
         return AgentMode::metaConfig($config);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $warnings
+     */
+    private static function emitEnvWarnings(array $warnings): void
+    {
+        foreach ($warnings as $warning) {
+            $code = (string)($warning['code'] ?? 'INVALID_ENV_VALUE');
+            $summary = (string)($warning['summary'] ?? 'invalid environment value');
+            fwrite(STDERR, 'WARN[' . $code . ']: ' . $summary . PHP_EOL);
+        }
     }
 }

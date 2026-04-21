@@ -5,6 +5,9 @@ namespace Testkit\Core\Common;
 
 final class Env
 {
+    /** @var array<int,array<string,mixed>> */
+    private static array $warnings = [];
+
     public static function string(string $key, string $default = ''): string
     {
         $value = getenv($key);
@@ -30,6 +33,14 @@ final class Env
             return false;
         }
 
+        self::recordWarning(
+            code: 'INVALID_ENV_BOOL',
+            key: $key,
+            received: (string)$value,
+            expected: '1|0|true|false|yes|no|on|off',
+            defaultApplied: $default ? 'true' : 'false'
+        );
+
         return $default;
     }
 
@@ -40,6 +51,13 @@ final class Env
             return $default;
         }
         if (!is_numeric($value)) {
+            self::recordWarning(
+                code: 'INVALID_ENV_INT',
+                key: $key,
+                received: (string)$value,
+                expected: 'integer',
+                defaultApplied: (string)$default
+            );
             return $default;
         }
         return (int)$value;
@@ -61,5 +79,43 @@ final class Env
         );
 
         return array_values(array_filter($values, static fn(string $item): bool => $item !== ''));
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public static function drainWarnings(): array
+    {
+        $warnings = self::$warnings;
+        self::$warnings = [];
+        return $warnings;
+    }
+
+    public static function resetWarnings(): void
+    {
+        self::$warnings = [];
+    }
+
+    private static function recordWarning(
+        string $code,
+        string $key,
+        string $received,
+        string $expected,
+        string $defaultApplied
+    ): void {
+        self::$warnings[] = [
+            'severity' => 'WARN',
+            'code' => $code,
+            'summary' => sprintf(
+                '%s=%s inválido; se aplica default=%s',
+                $key,
+                $received,
+                $defaultApplied
+            ),
+            'key' => $key,
+            'received' => $received,
+            'expected' => $expected,
+            'default_applied' => $defaultApplied,
+        ];
     }
 }

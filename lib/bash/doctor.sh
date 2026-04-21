@@ -17,6 +17,12 @@ testkit_doctor_run() {
 
   testkit_doctor_parse_args "$@"
 
+  if [[ ${#TESTKIT_DOCTOR_INVALID_ARGS[@]} -gt 0 ]]; then
+    echo "doctor args inválidos: ${TESTKIT_DOCTOR_INVALID_ARGS[*]}" >&2
+    echo "Usá solo: --full | --compact | --dump | --target=<target> | <target>" >&2
+    return 1
+  fi
+
   TESTKIT_STACK_EFFECTIVE="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || {
     echo "TESTKIT_STACK inválido. Corregí TESTKIT_STACK antes de correr doctor." >&2
     return 1

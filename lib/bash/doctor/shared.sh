@@ -3,6 +3,7 @@ set -euo pipefail
 
 declare -ag TESTKIT_DOCTOR_BASE_CHECKS=()
 declare -ag TESTKIT_DOCTOR_CAPABILITY_CHECKS=()
+declare -ag TESTKIT_DOCTOR_INVALID_ARGS=()
 
 TESTKIT_DOCTOR_BASE_STATUS="PASS"
 TESTKIT_DOCTOR_CAPABILITY_STATUS="PASS"
@@ -49,6 +50,7 @@ testkit_doctor_update_status() {
 testkit_doctor_reset_state() {
   TESTKIT_DOCTOR_BASE_CHECKS=()
   TESTKIT_DOCTOR_CAPABILITY_CHECKS=()
+  TESTKIT_DOCTOR_INVALID_ARGS=()
   TESTKIT_DOCTOR_BASE_STATUS="PASS"
   TESTKIT_DOCTOR_CAPABILITY_STATUS="PASS"
 }
@@ -97,6 +99,7 @@ testkit_doctor_parse_args() {
   TESTKIT_DOCTOR_MODE="$(testkit_doctor_normalize_token "${TESTKIT_DOCTOR_MODE:-full}")"
   TESTKIT_DOCTOR_TARGET=""
   TESTKIT_DOCTOR_DUMP="0"
+  TESTKIT_DOCTOR_INVALID_ARGS=()
 
   local arg
   for arg in "$@"; do
@@ -120,10 +123,13 @@ testkit_doctor_parse_args() {
         TESTKIT_DOCTOR_TARGET="$(testkit_doctor_normalize_token "${arg#--target=}")"
         ;;
       --*)
+        TESTKIT_DOCTOR_INVALID_ARGS+=("${arg}")
         ;;
       *)
         if [[ -z "${TESTKIT_DOCTOR_TARGET}" ]]; then
           TESTKIT_DOCTOR_TARGET="$(testkit_doctor_normalize_token "${arg}")"
+        else
+          TESTKIT_DOCTOR_INVALID_ARGS+=("${arg}")
         fi
         ;;
     esac
