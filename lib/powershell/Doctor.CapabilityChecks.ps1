@@ -1,36 +1,35 @@
-function Get-TestkitDoctorCanonicalTarget([string]$Target) {
-  $normalized = Normalize-TestkitDoctorToken $Target
-  switch ($normalized) {
-    'migration' { return 'migration-contract' }
-    'migrations' { return 'migration-contract' }
-    'back-python' { return 'back-py' }
-    'python' { return 'back-py' }
-    'py' { return 'back-py' }
-    'public_html' { return 'front' }
-    default { return $normalized }
-  }
+function Test-TestkitDoctorKnownTarget([string]$Target) {
+  return $Target -in @(
+    'all','back','front','public_html','back-php','back-py','back-python','python','py','front-php','front-js','php','js',
+    'smoke','perf','stress','contract','critical','slow','migration-contract','migration','migrations'
+  )
 }
 
-function Get-TestkitDoctorTargetClass([string]$Target) {
-  switch (Get-TestkitDoctorCanonicalTarget $Target) {
-    '' { return 'none' }
-    'migration-contract' { return 'migration_contract' }
-    'back-php' { return 'suite' }
-    'back-py' { return 'suite' }
-    'front-php' { return 'suite' }
-    'front-js' { return 'suite' }
-    'all' { return 'aggregate' }
-    'back' { return 'aggregate' }
-    'front' { return 'aggregate' }
-    'php' { return 'aggregate' }
-    'js' { return 'aggregate' }
-    'smoke' { return 'category' }
-    'perf' { return 'category' }
-    'stress' { return 'category' }
-    'contract' { return 'category' }
-    'critical' { return 'category' }
-    'slow' { return 'category' }
-    default { return 'unknown' }
+function Get-TestkitDoctorTargetKind([string]$Target) {
+  switch ($Target) {
+    'back-php' { 'suite' }
+    'back-py' { 'suite' }
+    'back-python' { 'suite' }
+    'python' { 'suite' }
+    'py' { 'suite' }
+    'front-php' { 'suite' }
+    'front-js' { 'suite' }
+    'migration-contract' { 'suite' }
+    'migration' { 'suite' }
+    'migrations' { 'suite' }
+    'all' { 'aggregate' }
+    'back' { 'aggregate' }
+    'front' { 'aggregate' }
+    'public_html' { 'aggregate' }
+    'php' { 'aggregate' }
+    'js' { 'aggregate' }
+    'smoke' { 'category' }
+    'perf' { 'category' }
+    'stress' { 'category' }
+    'contract' { 'category' }
+    'critical' { 'category' }
+    'slow' { 'category' }
+    default { 'unknown' }
   }
 }
 
@@ -39,9 +38,6 @@ function Invoke-TestkitDoctorCapabilityChecks {
     [Parameter(Mandatory=$true)]$Context
   )
 
-  $target = Get-TestkitDoctorCanonicalTarget $Context.Target
-  $targetClass = Get-TestkitDoctorTargetClass $target
-
   $dbStrategy = Normalize-TestkitDoctorToken $env:TEST_DB_STRATEGY
   if ([string]::IsNullOrWhiteSpace($dbStrategy)) { $dbStrategy = 'shared' }
 
@@ -49,7 +45,7 @@ function Invoke-TestkitDoctorCapabilityChecks {
   if ([string]::IsNullOrWhiteSpace($storeDriver)) { $storeDriver = 'mysql' }
 
   $baselineMode = Normalize-TestkitDoctorToken $env:TEST_BASELINE_MODE
-  $categoryEffective = Normalize-TestkitDoctorToken $env:TEST_CATEGORY
+  $categoryEnv = Normalize-TestkitDoctorToken $env:TEST_CATEGORY
   $jobsRaw = if ([string]::IsNullOrWhiteSpace($env:TEST_JOBS)) { '1' } else { $env:TEST_JOBS }
   $jobs = 1
 
@@ -77,27 +73,43 @@ function Invoke-TestkitDoctorCapabilityChecks {
     } elseif ($dbStrategy -eq 'per_worker') {
       Add-TestkitDoctorCheck 'capability' 'PASS' 'MULTIWORKER_PER_WORKER' "TEST_JOBS=$jobsRaw con per_worker declara aislamiento intra-suite por worker."
     } else {
-      Add-TestkitDoctorCheck 'capability' 'WARN' 'MULTIWORKER_SHARED_VISIBLE_RISK' "TEST_JOBS=$jobsRaw sin per_worker deja una ruta visible de riesgo sobre store compartido." 'Volvé a TEST_JOBS=1 o usá TEST_DB_STRATEGY=per_worker.'
+      Add-TestkitDoctorCheck 'capability' 'WARN' 'MULTIWORKER_SHARED_VISIBLE_RISK' "TEST_JOBS=$jobsRaw sin per_worker expone riesgo visible de shared DB en paralelo." 'Volvé a TEST_JOBS=1 o usá TEST_DB_STRATEGY=per_worker.'
     }
   } else {
     Add-TestkitDoctorCheck 'capability' 'WARN' 'TEST_JOBS_UNPARSEABLE' "TEST_JOBS=$jobsRaw no es un entero visible para doctor."
   }
 
-  if ($dbStrategy -eq 'per_worker' -and $jobs -eq 1) {
-    Add-TestkitDoctorCheck 'capability' 'WARN' 'PER_WORKER_SINGLE_WORKER_OVERCONFIGURED' 'TEST_DB_STRATEGY=per_worker con TEST_JOBS=1 agrega complejidad sin paralelismo efectivo visible.' 'Si no necesitás aislamiento por worker, simplificá a TEST_DB_STRATEGY=shared.'
-  }
-
   if ($storeDriver -eq 'mysql') {
     Add-TestkitDoctorCheck 'capability' 'PASS' 'MYSQL_CLOSED_PATH' 'MySQL es la ruta principal cerrada del contrato actual.'
   } else {
-    Add-TestkitDoctorCheck 'capability' 'WARN' 'ENGINE_NOT_CLOSED' "TEST_STORE_DRIVER=$($env:TEST_STORE_DRIVER) no pertenece a la ruta cerrada general de esta fase." 'Si querés el path más cerrado, usá MySQL.'
+    Add-TestkitDoctorCheck 'capability' 'UNKNOWN' 'ENGINE_NOT_CLOSED' "TEST_STORE_DRIVER=$($env:TEST_STORE_DRIVER) no pertenece a la ruta cerrada general de esta fase."
   }
 
-  switch ($targetClass) {
-    'none' { }
-    'migration_contract' {
-      Add-TestkitDoctorCheck 'capability' 'PASS' 'TARGET_CLASSIFIED' "doctor reconoce target=$target como ruta contractual técnica cerrada."
+  if (-not [string]::IsNullOrWhiteSpace($Context.Target) -and -not (Test-TestkitDoctorKnownTarget $Context.Target)) {
+    Add-TestkitDoctorCheck 'capability' 'FAIL' 'TARGET_NOT_SUPPORTED' "doctor no reconoce target=$($Context.Target)." 'Usá php runTest.php --help o inspect config-schema para ver targets válidos.'
+    return
+  }
 
+  $targetKind = Get-TestkitDoctorTargetKind $Context.Target
+  if ($targetKind -eq 'aggregate') {
+    Add-TestkitDoctorCheck 'capability' 'WARN' 'AGGREGATE_TARGET_NOISY_FIRST_DIAG' "el target $($Context.Target) es agregado: sirve, pero no es la primera corrida diagnóstica más nítida." 'Preferí una suite concreta como back-php o front-js para el primer corte.'
+  }
+
+  if ($targetKind -eq 'category') {
+    if (-not [string]::IsNullOrWhiteSpace($categoryEnv) -and $categoryEnv -ne $Context.Target) {
+      Add-TestkitDoctorCheck 'capability' 'FAIL' 'TARGET_CATEGORY_MISMATCH' "target=$($Context.Target) contradice TEST_CATEGORY=$categoryEnv." 'Quitá TEST_CATEGORY o alinealo con el target pedido.'
+    } else {
+      Add-TestkitDoctorCheck 'capability' 'PASS' 'CATEGORY_TARGET_ALIGNED' "target=$($Context.Target) cierra con la categoría visible actual."
+    }
+  }
+
+  if ($dbStrategy -eq 'per_worker' -and $jobs -eq 1) {
+    Add-TestkitDoctorCheck 'capability' 'WARN' 'PER_WORKER_SINGLE_WORKER_OVERCONFIGURED' 'TEST_DB_STRATEGY=per_worker con TEST_JOBS=1 no rompe contrato, pero agrega complejidad sin paralelismo visible.' 'Si no necesitás workers múltiples, simplificá a TEST_DB_STRATEGY=shared.'
+  }
+
+  switch ($Context.Target) {
+    '' {}
+    'migration-contract' {
       if ($baselineMode -eq 'snapshot') {
         Add-TestkitDoctorCheck 'capability' 'PASS' 'MIGRATION_CONTRACT_SNAPSHOT' 'migration-contract declara TEST_BASELINE_MODE=snapshot.'
       } else {
@@ -128,26 +140,19 @@ function Invoke-TestkitDoctorCapabilityChecks {
         Add-TestkitDoctorCheck 'capability' 'UNKNOWN' 'SNAPSHOT_SOURCE_NOT_VISIBLE' 'doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales.'
       }
     }
-    'suite' {
-      Add-TestkitDoctorCheck 'capability' 'PASS' 'TARGET_CLASSIFIED' "doctor reconoce target=$target como suite concreta."
-      if ($target -eq 'front-js' -and $storeDriver -ne 'mysql') {
-        Add-TestkitDoctorCheck 'capability' 'WARN' 'FRONT_JS_NON_CLOSED_ENGINE' 'front-js no cierra por sí solo una ruta contractual alternativa cuando el motor visible no es MySQL.'
-      }
+    'migration' {
+      Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'migration es alias de una suite concreta y representa una ruta diagnóstica cerrada.'
     }
-    'aggregate' {
-      Add-TestkitDoctorCheck 'capability' 'PASS' 'TARGET_CLASSIFIED' "doctor reconoce target=$target como target agregado."
-      Add-TestkitDoctorCheck 'capability' 'WARN' 'AGGREGATE_TARGET_NOISY_FIRST_DIAG' "target=$target agrega varias superficies y suele ser mala primera corrida de diagnóstico." 'Empezá por una suite concreta como back-php, back-py, front-php o front-js.'
+    'migrations' {
+      Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'migrations es alias de una suite concreta y representa una ruta diagnóstica cerrada.'
     }
-    'category' {
-      Add-TestkitDoctorCheck 'capability' 'PASS' 'TARGET_CLASSIFIED' "doctor reconoce target=$target como target por categoría."
-      if (-not [string]::IsNullOrWhiteSpace($categoryEffective) -and $categoryEffective -ne $target) {
-        Add-TestkitDoctorCheck 'capability' 'WARN' 'TARGET_CATEGORY_MISMATCH' "target=$target pero TEST_CATEGORY=$categoryEffective: la selección visible mezcla señales distintas." 'Alineá TEST_CATEGORY con el target o dejalo vacío para que el runner resuelva la categoría.'
-      } else {
-        Add-TestkitDoctorCheck 'capability' 'PASS' 'CATEGORY_TARGET_ALIGNED' "la categoría visible queda alineada con target=$target."
-      }
-    }
-    default {
-      Add-TestkitDoctorCheck 'capability' 'FAIL' 'TARGET_NOT_CLASSIFIED' "doctor no reconoce target=$($Context.Target) dentro del contrato visible." 'Usá all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract.'
-    }
+    'back-php' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'back-php es una suite concreta y representa una ruta diagnóstica más cerrada que un target agregado.' }
+    'back-py' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'back-py es una suite concreta y representa una ruta diagnóstica más cerrada que un target agregado.' }
+    'back-python' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'back-python es una suite concreta y representa una ruta diagnóstica más cerrada que un target agregado.' }
+    'python' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'python es alias de una suite concreta y representa una ruta diagnóstica cerrada.' }
+    'py' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'py es alias de una suite concreta y representa una ruta diagnóstica cerrada.' }
+    'front-php' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'front-php es una suite concreta y representa una ruta diagnóstica más cerrada que un target agregado.' }
+    'front-js' { Add-TestkitDoctorCheck 'capability' 'PASS' 'CONCRETE_SUITE_TARGET' 'front-js es una suite concreta y representa una ruta diagnóstica más cerrada que un target agregado.' }
+    default { }
   }
 }

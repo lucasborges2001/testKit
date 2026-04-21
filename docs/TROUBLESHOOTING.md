@@ -1,24 +1,56 @@
 # Troubleshooting operativo
 
-## 2) Comandos de referencia
+## Síntomas cubiertos en este corte
 
-```bash
-./bin/testkit inspect config-schema
-php runTest.php --help
-php runTest.php back-php --list
-```
+### 1) `doctor` marca `AGGREGATE_TARGET_NOISY_FIRST_DIAG`
 
-## 3) Reglas duras
+Lectura correcta:
 
-- una opción `--...` desconocida en `doctor` debe tratarse como error de uso
-- un target desconocido en `doctor` debe tratarse como error de uso
-
-## 6) Síntomas del runner
-
-### 6.3) “El comando sugerido con `--list` no era confiable”
+- el target es válido
+- el problema no es invalidez, sino ruido diagnóstico
 
 Qué hacer:
 
-- usar `php runTest.php --help`
-- usar `php runTest.php <target> --list` solo cuando el runner lo reconozca explícitamente
-- para catálogo de env/flags soportados, usar `inspect config-schema`
+- bajar a una suite concreta (`back-php`, `front-js`, etc.)
+
+### 2) `doctor` marca `TARGET_CATEGORY_MISMATCH`
+
+Lectura correcta:
+
+- pediste un target por categoría
+- pero también dejaste `TEST_CATEGORY` con otro valor visible
+
+Qué hacer:
+
+- quitar `TEST_CATEGORY`
+- o alinearlo con el target pedido
+
+### 3) `doctor` marca `MULTIWORKER_SHARED_VISIBLE_RISK`
+
+Lectura correcta:
+
+- `TEST_JOBS>1` con `shared` no queda cerrado como ruta segura
+
+Qué hacer:
+
+- volver a `TEST_JOBS=1`
+- o usar `TEST_DB_STRATEGY=per_worker`
+
+### 4) `doctor` marca `PER_WORKER_SINGLE_WORKER_OVERCONFIGURED`
+
+Lectura correcta:
+
+- no es contradicción dura
+- pero agrega complejidad sin ganancia visible
+
+Qué hacer:
+
+- simplificar a `shared` si no necesitás workers múltiples
+
+### 5) Necesito ver el esquema soportado real
+
+Usá:
+
+```bash
+./bin/testkit inspect config-schema --json
+```

@@ -1,14 +1,24 @@
 # Uso operativo de testkit
 
-## 4) Comandos base
+## Novedades de este corte
 
-| Necesidad | Comando | Lectura correcta |
-|---|---|---|
-| ver configuración soportada | `inspect config-schema` | catálogo ejecutable de env vars, defaults y valores válidos |
-| listar selección efectiva de una suite | `php runTest.php back-php --list` | lista la selección y fuerza `TEST_LIST=1` para esa corrida |
-| ayuda del runner | `php runTest.php --help` | muestra target, `--list` y guía hacia `inspect config-schema` |
+- `php runTest.php --help` muestra ayuda breve del runner.
+- `php runTest.php <target> --list` es una ruta explícita soportada para listar selección sin ejecutar tests.
+- `./bin/testkit inspect config-schema --json` expone el esquema soportado de configuración.
+- Warnings por env inválido deben quedar visibles en consola y en los reportes persistidos.
 
-## 5) Cómo leer `doctor`
+## Reglas operativas nuevas
 
-- opciones `--...` desconocidas deben tratarse como error de uso, no como hint ignorado
-- el target posicional de `doctor` debe pertenecer al set soportado
+- Targets agregados (`all`, `back`, `front`, `php`, `js`) son válidos, pero no son la primera corrida diagnóstica más nítida.
+- Category targets (`smoke`, `perf`, `stress`, `contract`, `critical`, `slow`) no deben mezclarse con `TEST_CATEGORY` explícito distinto.
+- `TEST_JOBS>1` con `TEST_DB_STRATEGY=shared` es una señal visible de riesgo; preferí `TEST_JOBS=1` o `per_worker`.
+- `TEST_DB_STRATEGY=per_worker` con `TEST_JOBS=1` no rompe contrato, pero suele ser sobreconfiguración.
+
+## Comandos de referencia
+
+```bash
+./bin/testkit doctor --compact
+./bin/testkit inspect config-schema --json
+./bin/testkit run --rm testkit php runTest.php --help
+./bin/testkit run --rm testkit php runTest.php back-php --list
+```
