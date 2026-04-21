@@ -1,8 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+testkit_doctor_canonical_target() {
+  local raw
+  raw="$(testkit_doctor_normalize_token "${1:-}")"
+  case "${raw}" in
+    migration|migrations) echo "migration-contract" ;;
+    back-python|python|py) echo "back-py" ;;
+    public_html) echo "front" ;;
+    *) echo "${raw}" ;;
+  esac
+}
+
+testkit_doctor_target_class() {
+  case "$(testkit_doctor_canonical_target "${1:-}")" in
+    "") echo "none" ;;
+    migration-contract) echo "migration_contract" ;;
+    back-php|back-py|front-php|front-js) echo "suite" ;;
+    all|back|front|php|js) echo "aggregate" ;;
+    smoke|perf|stress|contract|critical|slow) echo "category" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
 testkit_doctor_run_capability_checks() {
   local requested_target="${1:-}"
+  local target
+  target="$(testkit_doctor_canonical_target "${requested_target}")"
+  local target_class
+  target_class="$(testkit_doctor_target_class "${target}")"
+
   local db_strategy
   db_strategy="$(testkit_doctor_normalize_token "${TEST_DB_STRATEGY:-shared}")"
 
@@ -11,6 +38,9 @@ testkit_doctor_run_capability_checks() {
 
   local baseline_mode
   baseline_mode="$(testkit_doctor_normalize_token "${TEST_BASELINE_MODE:-}")"
+
+  local category_effective
+  category_effective="$(testkit_doctor_normalize_token "${TEST_CATEGORY:-}")"
 
   local jobs_raw="${TEST_JOBS:-1}"
   local jobs=1
@@ -53,12 +83,19 @@ testkit_doctor_run_capability_checks() {
       testkit_doctor_add_check capability PASS MULTIWORKER_PER_WORKER \
         "TEST_JOBS=${jobs_raw} con per_worker declara aislamiento intra-suite por worker."
     else
-      testkit_doctor_add_check capability UNKNOWN MULTIWORKER_NEEDS_SUITE_CONTEXT \
-        "TEST_JOBS=${jobs_raw} sin per_worker requiere contexto de suite y runtime DB real."
+      testkit_doctor_add_check capability WARN MULTIWORKER_SHARED_VISIBLE_RISK \
+        "TEST_JOBS=${jobs_raw} sin per_worker deja una ruta visible de riesgo sobre store compartido." \
+        "Volvé a TEST_JOBS=1 o usá TEST_DB_STRATEGY=per_worker."
     fi
   else
     testkit_doctor_add_check capability WARN TEST_JOBS_UNPARSEABLE \
       "TEST_JOBS=${jobs_raw} no es un entero visible para doctor."
+  fi
+
+  if [[ "${db_strategy}" == "per_worker" && "${jobs}" =~ ^[0-9]+$ ]] && (( jobs == 1 )); then
+    testkit_doctor_add_check capability WARN PER_WORKER_SINGLE_WORKER_OVERCONFIGURED \
+      "TEST_DB_STRATEGY=per_worker con TEST_JOBS=1 agrega complejidad sin paralelismo efectivo visible." \
+      "Si no necesitás aislamiento por worker, simplificá a TEST_DB_STRATEGY=shared."
   fi
 
   if [[ "${store_driver}" == "mysql" || -z "${store_driver}" ]]; then
@@ -66,14 +103,18 @@ testkit_doctor_run_capability_checks() {
       "MySQL es la ruta principal cerrada del contrato actual."
     store_driver="${store_driver:-mysql}"
   else
-    testkit_doctor_add_check capability UNKNOWN ENGINE_NOT_CLOSED \
-      "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase."
+    testkit_doctor_add_check capability WARN ENGINE_NOT_CLOSED \
+      "TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-} no pertenece a la ruta cerrada general de esta fase." \
+      "Si querés el path más cerrado, usá MySQL."
   fi
 
-  case "${requested_target}" in
-    "")
+  case "${target_class}" in
+    none)
       ;;
-    migration-contract)
+    migration_contract)
+      testkit_doctor_add_check capability PASS TARGET_CLASSIFIED \
+        "doctor reconoce target=${target} como ruta contractual técnica cerrada."
+
       if [[ "${baseline_mode}" == "snapshot" ]]; then
         testkit_doctor_add_check capability PASS MIGRATION_CONTRACT_SNAPSHOT \
           "migration-contract declara TEST_BASELINE_MODE=snapshot."
@@ -118,13 +159,40 @@ testkit_doctor_run_capability_checks() {
           "doctor no puede probar una fuente de snapshot resoluble solo con las variables visibles actuales."
       fi
       ;;
-    all|back|back-php|back-py|front|front-php|front-js|smoke|perf|stress|contract|critical|slow)
-      testkit_doctor_add_check capability UNKNOWN TARGET_RULESET_PARTIAL \
-        "el target ${requested_target} todavía no tiene mapa cerrado de sensibilidad DB en doctor."
+    suite)
+      testkit_doctor_add_check capability PASS TARGET_CLASSIFIED \
+        "doctor reconoce target=${target} como suite concreta."
+
+      if [[ "${target}" == "front-js" && "${store_driver}" != "mysql" ]]; then
+        testkit_doctor_add_check capability WARN FRONT_JS_NON_CLOSED_ENGINE \
+          "front-js no cierra por sí solo una ruta contractual alternativa cuando el motor visible no es MySQL."
+      fi
+      ;;
+    aggregate)
+      testkit_doctor_add_check capability PASS TARGET_CLASSIFIED \
+        "doctor reconoce target=${target} como target agregado."
+
+      testkit_doctor_add_check capability WARN AGGREGATE_TARGET_NOISY_FIRST_DIAG \
+        "target=${target} agrega varias superficies y suele ser mala primera corrida de diagnóstico." \
+        "Empezá por una suite concreta como back-php, back-py, front-php o front-js."
+      ;;
+    category)
+      testkit_doctor_add_check capability PASS TARGET_CLASSIFIED \
+        "doctor reconoce target=${target} como target por categoría."
+
+      if [[ -n "${category_effective}" && "${category_effective}" != "${target}" ]]; then
+        testkit_doctor_add_check capability WARN TARGET_CATEGORY_MISMATCH \
+          "target=${target} pero TEST_CATEGORY=${category_effective}: la selección visible mezcla señales distintas." \
+          "Alineá TEST_CATEGORY con el target o dejalo vacío para que el runner resuelva la categoría."
+      else
+        testkit_doctor_add_check capability PASS CATEGORY_TARGET_ALIGNED \
+          "la categoría visible queda alineada con target=${target}."
+      fi
       ;;
     *)
-      testkit_doctor_add_check capability UNKNOWN TARGET_NOT_CLASSIFIED \
-        "doctor no reconoce un ruleset cerrado para target=${requested_target}."
+      testkit_doctor_add_check capability FAIL TARGET_NOT_CLASSIFIED \
+        "doctor no reconoce target=${requested_target} dentro del contrato visible." \
+        "Usá all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract."
       ;;
   esac
 }
