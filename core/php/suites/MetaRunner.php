@@ -3,17 +3,18 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Suites;
 
+use RuntimeException;
 use Testkit\Core\Common\AgentMode;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
-use Testkit\Core\Config\RunnerConfig;
-use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Reporting\AgentRun;
 use Testkit\Core\Reporting\AgentRunArtifact;
 use Testkit\Core\Reporting\CommandSuggestion;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Execution\ParallelGuard;
+use Testkit\Core\Config\RunnerConfig;
 
 final class MetaRunner
 {
@@ -69,9 +70,11 @@ final class MetaRunner
                 $code = self::runSuite($suiteId);
                 $duration = max(0, self::nowMs() - $start);
 
+                $suiteReportMissing = false;
+                $suiteEffectiveCode = $code;
                 $suiteRow = [
                     'suite_id' => $suiteId,
-                    'exit_code' => $code,
+                    'exit_code' => $suiteEffectiveCode,
                     'duration_ms' => $duration,
                 ];
 
@@ -79,28 +82,38 @@ final class MetaRunner
                     Paths::reportRootForSuite($suiteId) ?? '',
                     Paths::aggregateMetaReportRoot(),
                 ]));
-                if (is_array($suiteReport)) {
-                    $suiteReports[] = $suiteReport;
-                    $suiteRow['report_root'] = (string)($suiteReport['report_root'] ?? '');
-                    $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
-                    $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
-                    $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
-                    $suiteRow['suite_status'] = (string)($suiteReport['suite_status'] ?? '');
-                    $suiteRow['outcome_status'] = (string)($suiteReport['outcome_status'] ?? '');
-                    $suiteRow['no_tests_reason'] = (string)($suiteReport['no_tests_reason'] ?? '');
-                    $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
-                    $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
-                    $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
-                    $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
-                    $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
-                    $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
-                    $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
-                    $suiteRow['rerun_plan'] = self::suiteRerunPlanFromReport($suiteReport);
+                if (!is_array($suiteReport)) {
+                    $suiteReportMissing = true;
+                    $suiteEffectiveCode = 1;
+                    $suiteRow['exit_code'] = $suiteEffectiveCode;
+                    $suiteReport = self::synthesizeMissingSuiteReport($suiteId, $code, $duration, $runId);
+                    $overallFail = true;
                 }
+
+                $suiteReports[] = $suiteReport;
+                $suiteRow['report_root'] = (string)($suiteReport['report_root'] ?? '');
+                $suiteRow['report_scope_rel'] = (string)($suiteReport['report_scope_rel'] ?? '');
+                $suiteRow['selected_module_scope'] = (string)($suiteReport['selected_module_scope'] ?? '');
+                $suiteRow['selected_test_count'] = (int)($suiteReport['selected_test_count'] ?? $suiteReport['tests_total'] ?? 0);
+                $suiteRow['suite_status'] = (string)($suiteReport['suite_status'] ?? '');
+                $suiteRow['outcome_status'] = (string)($suiteReport['outcome_status'] ?? '');
+                $suiteRow['no_tests_reason'] = (string)($suiteReport['no_tests_reason'] ?? '');
+                $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
+                $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
+                $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
+                $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
+                $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
+                $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
+                $suiteRow['resolved_failures_count'] = (int)($suiteReport['resolved_failures_count'] ?? 0);
+                $suiteRow['rerun_plan'] = self::suiteRerunPlanFromReport($suiteReport);
 
                 $suiteRows[] = $suiteRow;
 
-                if ($code !== 0 && $code !== 2) {
+                if ($suiteReportMissing && (bool)$config['meta_fail_fast']) {
+                    break;
+                }
+
+                if ($suiteEffectiveCode !== 0 && $suiteEffectiveCode !== 2) {
                     $overallFail = true;
                     if ((bool)$config['meta_fail_fast']) {
                         break;
@@ -301,5 +314,112 @@ final class MetaRunner
             $scope = $runId !== '' ? ' run=' . $runId : '';
             fwrite(STDERR, 'WARN[AGENT_DECISION_RECORD_FAILED] meta.run' . $scope . ': ' . $e->getMessage() . PHP_EOL);
         }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function synthesizeMissingSuiteReport(string $suiteId, int $exitCode, int $durationMs, string $runId): array
+    {
+        $reportRoot = Paths::reportRootForSuite($suiteId) ?? Paths::aggregateMetaReportRoot();
+        Paths::ensureDir($reportRoot);
+
+        $roots = array_values(array_filter([
+            Paths::reportRootForSuite($suiteId) ?? '',
+            Paths::aggregateMetaReportRoot(),
+            Paths::reportsRoot(),
+        ]));
+
+        $message = sprintf(
+            'Suite %s termino con exit=%d pero no se pudo cargar un suite report. roots=%s',
+            $suiteId,
+            $exitCode,
+            implode(',', array_unique($roots))
+        );
+
+        $failure = ReportSummary::buildThrowableFailure(
+            new RuntimeException($message),
+            [
+                'test_id' => $suiteId . '.report',
+                'test_name' => $suiteId . '.report',
+                'case' => $suiteId . '.report',
+                'suite_id' => $suiteId,
+                'suite' => $suiteId,
+                'scope' => Env::string('TEST_SCOPE', 'all'),
+                'category' => Env::string('TEST_CATEGORY', 'all'),
+                'kind' => 'reporting_failure',
+                'phase' => 'reporting',
+                'failure_domain' => 'reporting',
+                'cause_code' => 'suite_report_missing',
+                'artifact_path' => Paths::relativeToRepo($reportRoot),
+            ]
+        );
+
+        $report = [
+            'suite_id' => $suiteId,
+            'language' => '',
+            'scope' => Env::string('TEST_SCOPE', 'all'),
+            'category' => Env::string('TEST_CATEGORY', 'all'),
+            'tests_total' => 0,
+            'pass' => 0,
+            'fail' => 1,
+            'skip' => 0,
+            'timeout' => 0,
+            'tests' => [],
+            'failed_tests' => [],
+            'slow_tests' => [],
+            'perf_violations' => [],
+            'exit_code' => $exitCode,
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'finished_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'duration_ms' => $durationMs,
+            'list_only' => false,
+            'require_tests' => false,
+            'jobs' => 1,
+            'module_summary' => [],
+            'report_root' => $reportRoot,
+            'report_scope_rel' => Paths::relativeToRepo($reportRoot),
+            'selected_common_dir' => '',
+            'selected_module_scope' => '',
+            'selected_test_count' => 0,
+            'selected_test_files' => [],
+            'suite_status' => 'failed',
+            'no_tests_reason' => null,
+            'run_id' => $runId,
+            'meta_run_id' => $runId,
+            'run_kind' => 'suite',
+            'summary' => [
+                'total' => 0,
+                'passed' => 0,
+                'failed' => 1,
+                'skipped' => 0,
+                'duration_ms' => $durationMs,
+                'suite_status' => 'failed',
+            ],
+            'failures' => [$failure],
+            'failure_contract' => [
+                'canonical' => 'failures',
+                'legacy_fallback' => 'failed_tests',
+            ],
+            'first_failure' => ReportSummary::summarizeFailure($failure),
+            'evidence_valid' => false,
+            'evidence_invalid_reason' => 'suite_report_missing',
+            'filters' => [
+                'suite' => $suiteId,
+                'scope' => Env::string('TEST_SCOPE', 'all'),
+                'category' => Env::string('TEST_CATEGORY', 'all'),
+                'match' => Env::string('TEST_MATCH', ''),
+            ],
+            'selection_manifest' => [
+                'selected_test_count' => 0,
+                'selected_test_files' => [],
+                'selected_module_scope' => '',
+                'selected_common_dir' => '',
+                'match' => Env::string('TEST_MATCH', ''),
+                'source' => 'meta_missing_suite_report',
+            ],
+        ];
+
+        return ReportSummary::enrichReport($report);
     }
 }

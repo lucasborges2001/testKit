@@ -195,11 +195,6 @@ final class OutcomeDiagnostics
             return 'contention';
         }
 
-        $testsTotal = self::testsTotal($report);
-        if ($testsTotal === 0) {
-            return 'no_tests';
-        }
-
         if ($statusCounts['timeout'] > 0) {
             return 'timeout';
         }
@@ -216,6 +211,11 @@ final class OutcomeDiagnostics
 
         if ($statusCounts['fail'] > 0) {
             return 'failed';
+        }
+
+        $testsTotal = self::testsTotal($report);
+        if ($testsTotal === 0) {
+            return 'no_tests';
         }
 
         if ($statusCounts['skip'] > 0 && $statusCounts['pass'] === 0) {
