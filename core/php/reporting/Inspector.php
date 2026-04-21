@@ -131,6 +131,7 @@ final class Inspector
                 static fn(array $report): array => self::suiteSummary($report),
                 $suiteReports
             )),
+            'warnings' => self::collectWarnings($meta, $suiteReports),
             'first_failure' => self::deriveFirstFailure($meta, $suiteReports),
             'agent_run_artifact' => self::loadAgentRunArtifact($context['report_root']),
             'artifacts' => [
@@ -167,6 +168,7 @@ final class Inspector
                 static fn(array $report): array => self::suiteSummary($report),
                 $suiteReports
             )),
+            'warnings' => self::collectWarnings($meta, $suiteReports),
             'first_failure' => self::deriveFirstFailure($meta, $suiteReports),
             'agent_run_artifact' => self::loadAgentRunArtifact($context['report_root']),
         ];
@@ -192,6 +194,7 @@ final class Inspector
             'report_root' => $context['report_root'],
             'report_scope_rel' => $context['report_scope_rel'],
             'evidence_valid' => self::deriveEvidenceValidity($meta, $suiteReports),
+            'warnings' => self::collectWarnings($meta, $suiteReports),
             'first_failure' => $firstFailure,
             'has_failure' => is_array($firstFailure),
         ];
@@ -242,6 +245,7 @@ final class Inspector
             'report_root' => $context['report_root'],
             'report_scope_rel' => $context['report_scope_rel'],
             'meta_summary' => self::metaSummary($meta, $suiteReports),
+            'warnings' => self::collectWarnings($meta, $suiteReports),
             'baseline_manifests' => $manifests,
             'migration_contract' => $migrationContractPayload,
         ];
@@ -263,6 +267,7 @@ final class Inspector
                 'suite_id' => (string)($report['suite_id'] ?? ''),
                 'parallel_policy' => is_array($report['parallel_policy'] ?? null) ? $report['parallel_policy'] : null,
                 'concurrency_admission' => is_array($report['concurrency_admission'] ?? null) ? $report['concurrency_admission'] : null,
+                'warnings' => StructuredWarnings::canonicalize($report['warnings'] ?? ($report['parallel_policy']['warnings'] ?? [])),
                 'evidence_valid' => self::reportEvidenceValid($report),
             ];
         }
@@ -275,6 +280,7 @@ final class Inspector
             'report_root' => $context['report_root'],
             'report_scope_rel' => $context['report_scope_rel'],
             'evidence_valid' => self::deriveEvidenceValidity($meta, $suiteReports),
+            'warnings' => self::collectWarnings($meta, $suiteReports),
             'active_locks' => self::loadActiveLocks(),
             'suite_policies' => $suitePolicies,
         ];
@@ -366,6 +372,7 @@ final class Inspector
             case 'latest':
             case 'run':
                 self::printMetaSummaryText((array)($payload['meta_summary'] ?? []));
+                self::printWarningsText($payload['warnings'] ?? null);
                 self::printSuiteReportsText((array)($payload['suite_reports'] ?? []));
                 self::printFirstFailureText($payload['first_failure'] ?? null);
                 self::printAgentRunArtifactText($payload['agent_run_artifact'] ?? null);
@@ -373,15 +380,18 @@ final class Inspector
 
             case 'failure':
                 echo 'evidence_valid: ' . ((bool)($payload['evidence_valid'] ?? true) ? 'true' : 'false') . PHP_EOL;
+                self::printWarningsText($payload['warnings'] ?? null);
                 self::printFirstFailureText($payload['first_failure'] ?? null);
                 break;
 
             case 'seed-state':
+                self::printWarningsText($payload['warnings'] ?? null);
                 self::printSeedStateText($payload);
                 break;
 
             case 'concurrency':
                 echo 'evidence_valid: ' . ((bool)($payload['evidence_valid'] ?? true) ? 'true' : 'false') . PHP_EOL;
+                self::printWarningsText($payload['warnings'] ?? null);
                 self::printConcurrencyText($payload);
                 break;
         }
@@ -424,8 +434,28 @@ final class Inspector
                 . ' outcome=' . (string)($report['outcome_status'] ?? '')
                 . ' tests=' . (int)($report['selected_test_count'] ?? 0)
                 . ' fail=' . (int)($report['fail'] ?? 0)
+                . ' warnings=' . count((array)($report['warnings'] ?? []))
                 . ' scope=' . (string)($report['selected_module_scope'] ?? 'global')
                 . PHP_EOL;
+        }
+    }
+
+    /**
+     * @param mixed $warningsValue
+     */
+    private static function printWarningsText(mixed $warningsValue): void
+    {
+        $warnings = StructuredWarnings::canonicalize($warningsValue);
+        if ($warnings === []) {
+            echo 'warnings: none' . PHP_EOL;
+            return;
+        }
+
+        echo 'warnings:' . PHP_EOL;
+        foreach ($warnings as $warning) {
+            $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+            $summary = (string)($warning['summary'] ?? 'warning');
+            echo '  - [' . $code . '] ' . $summary . PHP_EOL;
         }
     }
 
@@ -537,6 +567,7 @@ final class Inspector
                 . ' evidence_valid=' . ((bool)($policy['evidence_valid'] ?? true) ? 'true' : 'false')
                 . ' db_strategy=' . (string)($parallel['db_strategy'] ?? '')
                 . ' jobs=' . (int)($parallel['jobs'] ?? 0)
+                . ' warnings=' . count((array)($policy['warnings'] ?? []))
                 . ' suite_lock_key=' . (string)($parallel['suite_lock_key'] ?? '')
                 . ' admission_lock_scope=' . (string)(is_array($policy['concurrency_admission'] ?? null) ? (($policy['concurrency_admission']['lock_scope'] ?? '')) : '')
                 . PHP_EOL;
@@ -782,6 +813,7 @@ final class Inspector
             'fail' => (int)($summary['failed'] ?? 0),
             'skip' => (int)($summary['skipped'] ?? 0),
             'duration_ms' => (int)($summary['duration_ms'] ?? 0),
+            'warnings' => StructuredWarnings::canonicalize($report['warnings'] ?? ($report['parallel_policy']['warnings'] ?? [])),
             'report_scope_rel' => (string)($artifacts['report_scope_rel'] ?? ''),
             'run_id' => (string)($report['run_id'] ?? ''),
             'first_failure' => self::normalizeFirstFailure($report),
@@ -917,28 +949,7 @@ final class Inspector
 
     /**
      * @param array<string,mixed> $report
-     * @return array<string,mixed>
      */
-    private static function assertCanonicalEnvelope(array $report, string $path): array
-    {
-        $canonical = $report['canonical_report'] ?? null;
-        if (!is_array($canonical)) {
-            throw new \RuntimeException(
-                'inspect encontró un reporte sin canonical_report en ' . Paths::relativeToRepo($path) .
-                '. Mezclar runs nuevos con JSON legacy deja de estar soportado en este slice.'
-            );
-        }
-
-        if (!array_key_exists('report_version', $canonical)) {
-            throw new \RuntimeException(
-                'inspect encontró canonical_report incompleto en ' . Paths::relativeToRepo($path) .
-                ' (falta report_version).'
-            );
-        }
-
-        return $report;
-    }
-
     private static function reportArtifactPath(array $report): string
     {
         $source = trim((string)($report['_source_file'] ?? ''));
@@ -977,6 +988,61 @@ final class Inspector
     {
         $suiteId = strtolower(trim($suiteId));
         return str_replace('-', '_', $suiteId);
+    }
+
+    /**
+     * @param array<string,mixed>|null $meta
+     * @param array<int,array<string,mixed>> $suiteReports
+     * @return array<int,array<string,mixed>>
+     */
+    private static function collectWarnings(?array $meta, array $suiteReports): array
+    {
+        $warnings = [];
+
+        if (is_array($meta)) {
+            $warnings = self::mergeWarnings(
+                $warnings,
+                StructuredWarnings::canonicalize($meta['warnings'] ?? [])
+            );
+        }
+
+        foreach ($suiteReports as $report) {
+            $warnings = self::mergeWarnings(
+                $warnings,
+                StructuredWarnings::canonicalize($report['warnings'] ?? ($report['parallel_policy']['warnings'] ?? []))
+            );
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $left
+     * @param array<int,array<string,mixed>> $right
+     * @return array<int,array<string,mixed>>
+     */
+    private static function mergeWarnings(array $left, array $right): array
+    {
+        $merged = [];
+        $seen = [];
+
+        foreach (array_merge($left, $right) as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
+
+            $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+            $summary = (string)($warning['summary'] ?? 'warning');
+            $key = $code . '|' . $summary;
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $warning;
+        }
+
+        return array_values($merged);
     }
 
     /**

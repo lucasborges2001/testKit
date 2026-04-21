@@ -13,6 +13,7 @@ use Testkit\Core\Reporting\CommandSuggestion;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\ResultWriter;
+use Testkit\Core\Reporting\StructuredWarnings;
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Config\RunnerConfig;
 
@@ -55,6 +56,7 @@ final class MetaRunner
         $resourcePolicy = ParallelGuard::evaluateRunResource($selected, Paths::repoRoot());
         $admission = ParallelGuard::runResourceAdmissionState($resourcePolicy);
         $resourceLease = null;
+        $metaWarnings = StructuredWarnings::canonicalize($config['env_warnings'] ?? []);
 
         try {
             try {
@@ -101,6 +103,7 @@ final class MetaRunner
                 $suiteRow['runner_capabilities'] = is_array($suiteReport['runner_capabilities'] ?? null) ? $suiteReport['runner_capabilities'] : [];
                 $suiteRow['summary'] = is_array($suiteReport['summary'] ?? null) ? $suiteReport['summary'] : [];
                 $suiteRow['has_failures'] = !empty(ReportSummary::canonicalFailures($suiteReport));
+                $suiteRow['warnings'] = StructuredWarnings::canonicalize($suiteReport['warnings'] ?? ($suiteReport['parallel_policy']['warnings'] ?? []));
                 $suiteRow['run_id'] = (string)($suiteReport['run_id'] ?? '');
                 $suiteRow['previous_run_id'] = $suiteReport['previous_run_id'] ?? null;
                 $suiteRow['new_failures_count'] = (int)($suiteReport['new_failures_count'] ?? 0);
@@ -135,6 +138,10 @@ final class MetaRunner
             );
 
             $meta['suites'] = $suiteRows;
+            $meta['warnings'] = self::mergeWarnings(
+                StructuredWarnings::canonicalize($meta['warnings'] ?? []),
+                $metaWarnings
+            );
             $meta['run_id'] = $runId;
             $meta['meta_run_id'] = $runId;
             $meta['run_kind'] = 'meta';
@@ -175,6 +182,7 @@ final class MetaRunner
                 phase: $currentPhase,
                 error: $e
             );
+            $meta['warnings'] = $metaWarnings;
             $meta['agent_mode'] = is_array($config['agent_mode'] ?? null)
                 ? $config['agent_mode']
                 : AgentMode::reportPayload();
@@ -396,6 +404,7 @@ final class MetaRunner
                 'duration_ms' => $durationMs,
                 'suite_status' => 'failed',
             ],
+            'warnings' => [],
             'failures' => [$failure],
             'failure_contract' => [
                 'canonical' => 'failures',
@@ -421,5 +430,34 @@ final class MetaRunner
         ];
 
         return ReportSummary::enrichReport($report);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $left
+     * @param array<int,array<string,mixed>> $right
+     * @return array<int,array<string,mixed>>
+     */
+    private static function mergeWarnings(array $left, array $right): array
+    {
+        $merged = [];
+        $seen = [];
+
+        foreach (array_merge($left, $right) as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
+
+            $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+            $summary = (string)($warning['summary'] ?? 'warning');
+            $key = $code . '|' . $summary;
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $warning;
+        }
+
+        return array_values($merged);
     }
 }

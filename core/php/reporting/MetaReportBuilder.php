@@ -40,6 +40,7 @@ final class MetaReportBuilder
         $suiteStatusCounts = [];
         $evidenceValid = true;
         $evidenceInvalidReason = null;
+        $warnings = [];
 
         foreach ($suiteReports as $report) {
             $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
@@ -78,6 +79,11 @@ final class MetaReportBuilder
                 }
             }
 
+            $warnings = self::mergeWarnings(
+                $warnings,
+                StructuredWarnings::canonicalize($report['warnings'] ?? ($report['parallel_policy']['warnings'] ?? []))
+            );
+
             foreach (FailureNormalizer::canonicalFailures($report) as $failure) {
                 $failure['suite_id'] = (string)($report['suite_id'] ?? $failure['suite_id'] ?? '');
                 $canonicalFailures[] = $failure;
@@ -109,6 +115,7 @@ final class MetaReportBuilder
             'suite_status_counts' => $suiteStatusCounts,
             'outcome_status_counts' => self::aggregateOutcomeStatusCounts($suiteReports),
             'summary' => $summary,
+            'warnings' => $warnings,
             'failures' => $canonicalFailures,
             'failure_contract' => [
                 'canonical' => 'failures',
@@ -157,5 +164,34 @@ final class MetaReportBuilder
         }
 
         return 0;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $left
+     * @param array<int,array<string,mixed>> $right
+     * @return array<int,array<string,mixed>>
+     */
+    private static function mergeWarnings(array $left, array $right): array
+    {
+        $merged = [];
+        $seen = [];
+
+        foreach (array_merge($left, $right) as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
+
+            $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+            $summary = (string)($warning['summary'] ?? 'warning');
+            $key = $code . '|' . $summary;
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $warning;
+        }
+
+        return array_values($merged);
     }
 }

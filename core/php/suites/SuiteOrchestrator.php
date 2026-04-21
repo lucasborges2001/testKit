@@ -43,7 +43,7 @@ final class SuiteOrchestrator
         $metaRunId = self::envString('TEST_META_RUN_ID', $runId);
 
         $policy = [];
-        $warnings = [];
+        $warnings = StructuredWarnings::canonicalize($config['env_warnings'] ?? []);
         $admission = [
             'store_mode' => 'shared',
             'concurrency_policy' => 'not_applicable',
@@ -68,7 +68,10 @@ final class SuiteOrchestrator
             self::transitionPhase($currentPhase, 'admission', $phaseStartedMs, $phaseTimings);
 
             $policy = ParallelGuard::evaluate($tests, $config, Paths::repoRoot());
-            $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
+            $warnings = self::mergeWarnings(
+                $warnings,
+                StructuredWarnings::canonicalize($policy['warnings'] ?? [])
+            );
             $admission = ParallelGuard::admissionState($policy);
 
             $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
@@ -144,6 +147,7 @@ final class SuiteOrchestrator
                 'duration_ms' => (int)$result['duration_ms'],
                 'suite_status' => (string)$result['suite_status'],
             ];
+            $result['warnings'] = $warnings;
             $result['parallel_policy'] = [
                 'jobs' => (int)($policy['jobs'] ?? 1),
                 'db_strategy' => (string)($policy['db_strategy'] ?? 'shared'),
@@ -244,6 +248,7 @@ final class SuiteOrchestrator
             $result['agent_mode'] = is_array($config['agent_mode'] ?? null)
                 ? $config['agent_mode']
                 : AgentMode::reportPayload();
+            $result['warnings'] = $warnings;
 
             self::attachObservabilityDefaults($result, count($tests));
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
@@ -354,6 +359,35 @@ final class SuiteOrchestrator
             $result['tests_total'] = (int)($result['tests_total'] ?? $selectedTestCount);
             $result['execution_metrics'] = SuiteExecutor::executionMetricsSnapshot($result);
         }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $left
+     * @param array<int,array<string,mixed>> $right
+     * @return array<int,array<string,mixed>>
+     */
+    private static function mergeWarnings(array $left, array $right): array
+    {
+        $merged = [];
+        $seen = [];
+
+        foreach (array_merge($left, $right) as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
+
+            $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
+            $summary = (string)($warning['summary'] ?? 'warning');
+            $key = $code . '|' . $summary;
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = $warning;
+        }
+
+        return array_values($merged);
     }
 
     private static function nowMs(): int
