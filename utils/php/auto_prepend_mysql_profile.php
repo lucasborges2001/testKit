@@ -40,3 +40,47 @@ if (!function_exists('tk_mysql_profile_record')) {
         \Testkit\Core\DbProfiling\QueryProfileCollector::record($sql, $durationMs, $source, $caller);
     }
 }
+
+if (!function_exists('tk_mysql_profile_mysqli_remember')) {
+    /**
+     * Associate a mysqli_stmt-like object with the SQL used to prepare it.
+     * This is intentionally object-based and untyped so the helper remains loadable
+     * in environments where the mysqli extension is absent.
+     */
+    function tk_mysql_profile_mysqli_remember(object $statement, string $sql): void
+    {
+        if (!\Testkit\Core\DbProfiling\QueryProfileCollector::isEnabled()) {
+            return;
+        }
+        $GLOBALS['__tk_mysql_profile_mysqli_sql'][spl_object_id($statement)] = $sql;
+    }
+}
+
+if (!function_exists('tk_mysql_profile_mysqli_forget')) {
+    function tk_mysql_profile_mysqli_forget(object $statement): void
+    {
+        unset($GLOBALS['__tk_mysql_profile_mysqli_sql'][spl_object_id($statement)]);
+    }
+}
+
+if (!function_exists('tk_mysql_profile_mysqli_record_execute')) {
+    /**
+     * Record a mysqli prepared-statement execution using the SQL remembered at prepare() time.
+     */
+    function tk_mysql_profile_mysqli_record_execute(object $statement, float $durationMs, string $fallbackSql = ''): void
+    {
+        if (!\Testkit\Core\DbProfiling\QueryProfileCollector::isEnabled()) {
+            return;
+        }
+        $sql = (string)($GLOBALS['__tk_mysql_profile_mysqli_sql'][spl_object_id($statement)] ?? $fallbackSql);
+        if ($sql === '') {
+            return;
+        }
+        \Testkit\Core\DbProfiling\QueryProfileCollector::record(
+            $sql,
+            $durationMs,
+            \Testkit\Core\DbProfiling\QueryProfileCollector::inferSource(),
+            \Testkit\Core\DbProfiling\QueryProfileCollector::inferCaller()
+        );
+    }
+}

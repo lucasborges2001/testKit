@@ -23,6 +23,7 @@ require_once __DIR__ . '/coverage/CoverageMerger.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
 require_once __DIR__ . '/store/bootstrap.php';
+require_once __DIR__ . '/dbprofiling/bootstrap.php';
 require_once __DIR__ . '/seeding/BaselineManifest.php';
 require_once __DIR__ . '/seeding/BaselineManifestWriter.php';
 require_once __DIR__ . '/seeding/BaselineModeResolver.php';

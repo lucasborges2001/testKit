@@ -9,6 +9,8 @@ use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\RunnerConfig;
+use Testkit\Core\DbProfiling\MysqlProfileConfig;
+use Testkit\Core\DbProfiling\MysqlProfileReporter;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Discovery\TestSeedMetadata;
 use Testkit\Core\Execution\SuiteExecutor;
@@ -38,6 +40,13 @@ final class BackPhpSuite
 
         $runId = self::ensureRunId('TEST_RUN_ID');
         $metaRunId = self::ensureRunId('TEST_META_RUN_ID', $runId);
+        $mysqlProfileEnabled = MysqlProfileConfig::isEnabled();
+        if ($mysqlProfileEnabled) {
+            putenv('TESTKIT_DB_PROFILE_RUN_ID=' . $runId);
+            $_ENV['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
+            $_SERVER['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
+            MysqlProfileReporter::prepareRun($runId);
+        }
 
         $selectedTests = [];
         $reportRoot = Paths::resolveReportRoot($selectedTests);
@@ -83,7 +92,9 @@ final class BackPhpSuite
             );
         }
 
-        $prepend = $testkitRoot . '/utils/php/auto_prepend.php';
+        $prepend = $mysqlProfileEnabled
+            ? $testkitRoot . '/utils/php/auto_prepend_mysql_profile.php'
+            : $testkitRoot . '/utils/php/auto_prepend.php';
         $phpBinary = self::phpBinary();
 
         if ((bool)$config['coverage']) {
@@ -96,7 +107,7 @@ final class BackPhpSuite
         return SuiteOrchestrator::run(
             $config,
             ['.test.php'],
-            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved): array {
+            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved, $mysqlProfileEnabled, $runId): array {
                 $cmd = [$phpBinary];
                 $env = [
                     'TEST_SUITE' => 'back',
@@ -106,6 +117,11 @@ final class BackPhpSuite
                     'TK_REPO_ROOT' => $repoRoot,
                     'TEST_WORKER_ID' => (string)$workerId,
                 ];
+
+                if ($mysqlProfileEnabled) {
+                    $env['TESTKIT_DB_PROFILE'] = '1';
+                    $env['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
+                }
 
                 if (($resolved['db_env_path'] ?? '') !== '') {
                     $env['DB_ENV_PATH'] = $resolved['db_env_path'];
@@ -129,6 +145,20 @@ final class BackPhpSuite
                 $cmd[] = (string)$test['file'];
 
                 return ['cmd' => $cmd, 'env' => $env];
+            },
+            static function (array &$result, array $config) use ($mysqlProfileEnabled, $runId): void {
+                if (!$mysqlProfileEnabled) {
+                    $result['mysql_profile'] = [
+                        'profile_enabled' => false,
+                        'engine' => 'mysql',
+                    ];
+                    return;
+                }
+
+                $profile = MysqlProfileReporter::writeLatestFromShards($runId, [
+                    'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
+                ]);
+                $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
             }
         );
     }
