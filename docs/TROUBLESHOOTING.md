@@ -47,7 +47,41 @@ Qué hacer:
 
 - simplificar a `shared` si no necesitás workers múltiples
 
-### 5) Necesito ver el esquema soportado real
+### 5) `doctor` marca `POSTGRES_PARTIAL_SUPPORT`
+
+Lectura correcta:
+
+- PostgreSQL no está fallando por existir
+- pero no tiene contrato cerrado equivalente a MySQL para snapshot/clone/per_worker clone
+
+Qué hacer:
+
+- si necesitás `migration-contract`, usá MySQL
+- si necesitás cerrar PostgreSQL, registralo como feature futura y no lo trates como PASS contractual
+
+### 6) `doctor` marca `REDIS_NOT_STRUCTURAL_STORE` o `INFLUX_NOT_STRUCTURAL_STORE`
+
+Lectura correcta:
+
+- configuraste Redis o Influx como store driver principal
+- eso contradice el contrato actual
+
+Qué hacer:
+
+- dejalos en `TESTKIT_STACK` como servicios auxiliares si los necesitás
+- mantené `TEST_STORE_DRIVER` / `DB_DRIVER` en un motor estructural soportado
+
+### 7) `doctor` marca `CLEAN_STRATEGY_UNSUPPORTED`
+
+Lectura correcta:
+
+- `TEST_DB_STRATEGY=clean` está reconocido, pero no implementado como modo operativo de suite
+
+Qué hacer:
+
+- usar `shared` o `per_worker`
+
+### 8) Necesito ver el esquema soportado real
 
 Usá:
 

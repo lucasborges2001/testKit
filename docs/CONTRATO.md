@@ -9,6 +9,7 @@ Usarlo para responder estas preguntas:
 - qué necesita un proyecto para adoptar `testkit`
 - qué controla `testkit`
 - qué sigue siendo responsabilidad del proyecto
+- qué motores y servicios están realmente soportados
 - qué casos no están soportados o no están garantizados
 
 No usarlo para:
@@ -24,6 +25,7 @@ Para eso, leer:
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
 - [`ARQUITECTURA.md`](ARQUITECTURA.md)
 - [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md)
+- [`../SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md)
 
 ## 2) Adopción mínima
 
@@ -71,6 +73,7 @@ Para baseline `layered`:
 
 Para baseline `snapshot`:
 
+- en esta fase la ruta cerrada es MySQL
 - el proyecto debe declarar un dump lógico resoluble
 - la fuente admitida es:
   - `TEST_BASELINE_SNAPSHOT_FILE`
@@ -115,29 +118,48 @@ El proyecto integrador sigue siendo dueño de:
 
 Regla práctica: lo configurable puede cambiar la forma de resolver o ejecutar; no cambia quién es dueño de cada responsabilidad.
 
-## 6) Límites vigentes
+## 6) Matriz de soporte por motor/servicio
+
+Esta tabla es el contrato vigente. No debe leerse como roadmap.
+
+| Componente | Estado | Contrato actual | Límites |
+|---|---|---|---|
+| MySQL | cerrado / principal | provision, reset, baseline layered, snapshot restore, clone para `per_worker`, `migration-contract` | requiere env DB válido; `per_worker` no habilita múltiples runners top-level |
+| PostgreSQL | parcial / experimental | adapter runtime con provision/reset básico cuando el env está completo | sin snapshot restore cerrado; sin clone cerrado; no es ruta cerrada de `migration-contract` |
+| Redis | auxiliar | servicio disponible si el stack lo levanta | sin lifecycle estructural en core PHP; no participa en baseline/snapshot/clone |
+| Influx | auxiliar / perfilado | profiling/reporting si está habilitado | no es store driver principal; no participa en seed/bootstrap estructural |
+
+Semántica operativa:
+
+- MySQL es la única ruta principal cerrada en esta fase.
+- PostgreSQL puede existir como infraestructura parcial, pero no debe venderse como equivalente a MySQL.
+- Redis no tiene lifecycle estructural equivalente dentro del core PHP.
+- Influx funciona como servicio auxiliar/perfilado, no como store driver principal.
+
+## 7) Límites vigentes
 
 Estos límites forman parte del contrato actual y no deben maquillarse como soporte general.
 
-### 6.1) Paralelismo
+### 7.1) Paralelismo
 
 - `per_worker` aísla workers dentro de una misma suite.
 - No vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto/store.
 - Si una suite usa DB real con `TEST_JOBS > 1`, la ruta cerrada es `TEST_DB_STRATEGY=per_worker`.
 
-### 6.2) Estrategias de store
+### 7.2) Estrategias de store
 
 - `shared` está soportado.
 - `per_worker` está soportado con naming derivado por worker.
 - `clean` no está implementado como modo operativo. Intentar usarlo debe fallar explícitamente.
 
-### 6.3) Motores
+### 7.3) Motores
 
 - MySQL es la ruta principal cerrada para bootstrap, snapshot restore y clone por worker.
 - PostgreSQL puede existir como infraestructura de test, pero snapshot/clone no forman parte del contrato cerrado de esta fase.
 - Redis no tiene lifecycle estructural equivalente dentro del core PHP.
+- Influx no es un store driver principal; su contrato se limita a servicio auxiliar/perfilado.
 
-### 6.4) migration-contract
+### 7.4) migration-contract
 
 `migration-contract` no es una suite funcional general. Su contrato es más chico:
 
@@ -149,7 +171,7 @@ Estos límites forman parte del contrato actual y no deben maquillarse como sopo
 
 No reemplaza tests funcionales del proyecto.
 
-### 6.5) Heurísticas
+### 7.5) Heurísticas
 
 No están garantizados como verdad semántica:
 
@@ -159,37 +181,39 @@ No están garantizados como verdad semántica:
 
 Sirven para priorizar análisis, no para cerrar diagnóstico.
 
-### 6.6) Capability doctor
+### 7.6) Capability doctor
 
 `doctor` puede emitir una sección de capability basada en la config visible del wrapper.
 
 Eso **no** cambia este contrato:
 
-- no convierte `UNKNOWN` en soporte faltante
+- no convierte `UNKNOWN` en `PASS`
 - no vuelve seguro un path runtime que no fue ejecutado
 - no reemplaza una corrida real
 - no autoriza varios runners top-level en paralelo
+- no convierte PostgreSQL, Redis o Influx en rutas estructurales cerradas
 
 Sirve para detectar contradicciones visibles y para no vender compatibilidad que el wrapper no puede demostrar todavía.
 
 Semántica de capability:
 
-- `PASS`: ruta visible cerrada
-- `WARN`: señal visible degradada o poco confiable
+- `PASS`: ruta visible cerrada o declaración auxiliar correctamente clasificada
+- `WARN`: señal visible degradada, parcial o poco confiable
 - `UNKNOWN`: no hay evidencia suficiente para afirmar compatibilidad
 - `FAIL`: contradicción visible con el contrato
 
 `UNKNOWN` no es `PASS` disfrazado y `WARN` no vuelve soportada una ruta no cerrada.
 
-## 7) Qué no soporta o no garantiza hoy
+## 8) Qué no soporta o no garantiza hoy
 
 - throughput normal basado en varios runners top-level concurrentes sobre la misma DB
 - soporte general de snapshot/clone para motores no MySQL
+- lifecycle estructural Redis o Influx dentro del core PHP
 - lifecycle de negocio dentro del seed de infraestructura
 - inferencia automática de reglas funcionales del proyecto
 - convertir tests no deterministas en tests seguros por configuración
 
-## 8) Criterio de lectura
+## 9) Criterio de lectura
 
 Si una necesidad del proyecto contradice este documento, no hay que reinterpretar el contrato.
 

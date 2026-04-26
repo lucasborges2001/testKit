@@ -103,7 +103,10 @@ final class BackPhpSuite
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, 'back_php');
 
-            TestSeedMetadata::applySeedEnv($selectedTests, (int)($config['metadata_lines'] ?? 60));
+            self::attachLegacySeedMetadataWarnings(
+                $config,
+                TestSeedMetadata::applySeedEnvIfLegacyEnabled($selectedTests, (int)($config['metadata_lines'] ?? 60))
+            );
 
             $setupPhase = 'bootstrap';
             $resolved = ProjectEnv::resolveDbEnv($repoRoot);
@@ -260,7 +263,7 @@ final class BackPhpSuite
             runId: $runId,
             metaRunId: $metaRunId,
             policy: [],
-            warnings: [],
+            warnings: is_array($config['env_warnings'] ?? null) ? $config['env_warnings'] : [],
             admission: [
                 'store_mode' => 'shared',
                 'concurrency_policy' => 'not_applicable',
@@ -319,5 +322,25 @@ final class BackPhpSuite
             'domain' => 'bootstrap',
             'cause_code' => 'bootstrap_failed',
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<int,array<string,mixed>> $warnings
+     */
+    private static function attachLegacySeedMetadataWarnings(array &$config, array $warnings): void
+    {
+        if ($warnings === []) {
+            return;
+        }
+
+        $existing = is_array($config['env_warnings'] ?? null) ? $config['env_warnings'] : [];
+        $config['env_warnings'] = array_values(array_merge($existing, $warnings));
+
+        foreach ($warnings as $warning) {
+            $code = (string)($warning['code'] ?? 'LEGACY_TEST_SEED_METADATA_USED');
+            $summary = (string)($warning['summary'] ?? 'legacy seed metadata used');
+            fwrite(STDERR, 'WARN[' . $code . ']: ' . $summary . PHP_EOL);
+        }
     }
 }

@@ -11,7 +11,8 @@ final class ConfigSchema
     public static function inspectPayload(): array
     {
         return [
-            'schema_version' => 2,
+            'schema_version' => 3,
+            'support_contract_version' => 1,
             'commands' => [
                 [
                     'command' => 'php runTest.php --help',
@@ -53,6 +54,38 @@ final class ConfigSchema
                 'migration-contract',
                 'migration',
                 'migrations',
+            ],
+            'support_matrix' => self::supportMatrix(),
+            'db_strategies' => [
+                'supported' => [
+                    'shared' => [
+                        'status' => 'supported',
+                        'scope' => 'suite',
+                        'notes' => [
+                            'Ruta simple/secuencial.',
+                            'Con tests DB-sensibles y TEST_JOBS>1 debe rechazarse o migrarse a per_worker.',
+                        ],
+                    ],
+                    'per_worker' => [
+                        'status' => 'supported_intra_suite',
+                        'scope' => 'suite_workers',
+                        'top_level_parallel_safe' => false,
+                        'notes' => [
+                            'Aísla workers dentro de una suite.',
+                            'No vuelve seguro lanzar múltiples runners top-level sobre el mismo store base.',
+                        ],
+                    ],
+                ],
+                'rejected' => [
+                    'clean' => [
+                        'status' => 'rejected_not_implemented',
+                        'blocking' => true,
+                        'notes' => [
+                            'Reconocido como valor no implementado.',
+                            'No debe aparecer como ruta operativa soportada.',
+                        ],
+                    ],
+                ],
             ],
             'environment' => [
                 self::env(
@@ -145,9 +178,11 @@ final class ConfigSchema
                     type: 'string',
                     default: 'shared',
                     validValues: ['shared', 'per_worker'],
+                    rejectedValues: ['clean'],
                     appliesTo: ['suite', 'meta'],
                     notes: [
-                        'clean no es un modo operativo soportado.',
+                        'clean no es un modo operativo soportado y debe rechazarse explícitamente.',
+                        'per_worker aísla workers dentro de una suite; no habilita múltiples runners top-level.',
                         'migration-contract exige shared.',
                     ]
                 ),
@@ -194,21 +229,48 @@ final class ConfigSchema
                 self::env(
                     key: 'TEST_BASELINE_MODE',
                     type: 'string',
-                    default: '',
-                    validValues: ['snapshot', 'fresh', 'reuse'],
+                    default: 'layered',
+                    validValues: ['layered', 'snapshot'],
                     appliesTo: ['suite', 'meta'],
                     notes: [
                         'migration-contract exige snapshot.',
+                        'snapshot cerrado actualmente solo en la ruta MySQL.',
                     ]
                 ),
                 self::env(
                     key: 'TEST_STORE_DRIVER',
                     type: 'string',
                     default: 'mysql',
-                    validValues: ['mysql'],
+                    validValues: ['mysql', 'pgsql'],
                     appliesTo: ['suite', 'meta'],
                     notes: [
-                        'La ruta contractual general sigue cerrada alrededor de MySQL.',
+                        'mysql es la ruta principal cerrada.',
+                        'pgsql es parcial: runtime/provision/reset básico; sin snapshot/clone cerrado.',
+                        'redis e influx no son store drivers principales.',
+                    ]
+                ),
+                self::env(
+                    key: 'DB_DRIVER',
+                    type: 'string',
+                    default: 'mysql',
+                    validValues: ['mysql', 'pgsql'],
+                    appliesTo: ['suite', 'meta'],
+                    notes: [
+                        'Alias runtime para resolver driver de store.',
+                        'No convierte pgsql en ruta cerrada de snapshot/clone.',
+                    ]
+                ),
+                self::env(
+                    key: 'TESTKIT_STACK',
+                    type: 'csv',
+                    default: 'mysql,redis',
+                    validValues: ['mysql', 'pg', 'redis', 'influx'],
+                    appliesTo: ['wrapper', 'doctor'],
+                    notes: [
+                        'mysql describe el servicio principal cerrado.',
+                        'pg describe infraestructura parcial.',
+                        'redis es auxiliar, no lifecycle estructural core.',
+                        'influx es auxiliar/perfilado, no store principal.',
                     ]
                 ),
                 self::env(
@@ -226,6 +288,7 @@ final class ConfigSchema
                 'Valores bool inválidos y enteros no parseables deben quedar visibles vía warnings y persistirse en reportes.',
                 'Targets agregados son válidos, pero no son la primera corrida diagnóstica más nítida.',
                 'migration-contract exige snapshot + shared + mysql + TEST_JOBS=1.',
+                'UNKNOWN en doctor/config no es PASS implícito.',
             ],
         ];
     }
@@ -237,6 +300,35 @@ final class ConfigSchema
         echo "config-schema\n";
         echo str_repeat('=', 72) . PHP_EOL;
         echo 'schema_version: ' . (string)($payload['schema_version'] ?? '1') . PHP_EOL;
+        echo 'support_contract_version: ' . (string)($payload['support_contract_version'] ?? '1') . PHP_EOL;
+
+        echo PHP_EOL . 'support_matrix:' . PHP_EOL;
+        foreach ((array)($payload['support_matrix']['engines'] ?? []) as $engine) {
+            if (!is_array($engine)) {
+                continue;
+            }
+            echo '  - ' . (string)($engine['name'] ?? '')
+                . ' status=' . (string)($engine['status'] ?? '')
+                . ' role=' . (string)($engine['role'] ?? '')
+                . PHP_EOL;
+        }
+        foreach ((array)($payload['support_matrix']['services'] ?? []) as $service) {
+            if (!is_array($service)) {
+                continue;
+            }
+            echo '  - ' . (string)($service['name'] ?? '')
+                . ' status=' . (string)($service['status'] ?? '')
+                . ' role=' . (string)($service['role'] ?? '')
+                . PHP_EOL;
+        }
+
+        echo PHP_EOL . 'db_strategies:' . PHP_EOL;
+        foreach ((array)($payload['db_strategies']['supported'] ?? []) as $name => $entry) {
+            echo '  - ' . (string)$name . ' status=' . (string)($entry['status'] ?? '') . PHP_EOL;
+        }
+        foreach ((array)($payload['db_strategies']['rejected'] ?? []) as $name => $entry) {
+            echo '  - ' . (string)$name . ' status=' . (string)($entry['status'] ?? '') . PHP_EOL;
+        }
 
         echo PHP_EOL . 'commands:' . PHP_EOL;
         foreach ((array)($payload['commands'] ?? []) as $command) {
@@ -263,6 +355,11 @@ final class ConfigSchema
             $validValues = array_values((array)($entry['valid_values'] ?? []));
             echo '    valid_values: ' . ($validValues === [] ? '(free-form)' : implode(', ', $validValues)) . PHP_EOL;
 
+            $rejectedValues = array_values((array)($entry['rejected_values'] ?? []));
+            if ($rejectedValues !== []) {
+                echo '    rejected_values: ' . implode(', ', $rejectedValues) . PHP_EOL;
+            }
+
             $appliesTo = array_values((array)($entry['applies_to'] ?? []));
             echo '    applies_to: ' . ($appliesTo === [] ? '(unspecified)' : implode(', ', $appliesTo)) . PHP_EOL;
 
@@ -282,9 +379,83 @@ final class ConfigSchema
     }
 
     /**
+     * @return array<string,mixed>
+     */
+    private static function supportMatrix(): array
+    {
+        return [
+            'engines' => [
+                [
+                    'name' => 'mysql',
+                    'status' => 'closed_primary',
+                    'role' => 'primary_structural_store',
+                    'contract' => [
+                        'provision' => true,
+                        'reset' => true,
+                        'layered_baseline' => true,
+                        'snapshot_restore' => true,
+                        'per_worker_clone' => true,
+                        'migration_contract' => true,
+                    ],
+                    'limits' => [
+                        'requires visible DB env.',
+                        'per_worker is intra-suite only.',
+                    ],
+                ],
+                [
+                    'name' => 'pgsql',
+                    'status' => 'partial_experimental',
+                    'role' => 'secondary_partial_store',
+                    'contract' => [
+                        'provision' => 'basic',
+                        'reset' => 'basic',
+                        'layered_baseline' => 'not_closed',
+                        'snapshot_restore' => false,
+                        'per_worker_clone' => false,
+                        'migration_contract' => false,
+                    ],
+                    'limits' => [
+                        'No closed snapshot restore contract.',
+                        'No closed clone/per_worker contract.',
+                        'Not equivalent to MySQL.',
+                    ],
+                ],
+            ],
+            'services' => [
+                [
+                    'name' => 'redis',
+                    'status' => 'auxiliary',
+                    'role' => 'optional_service',
+                    'contract' => [
+                        'structural_store_lifecycle' => false,
+                        'baseline_participant' => false,
+                    ],
+                    'limits' => [
+                        'No core PHP seed/bootstrap lifecycle.',
+                    ],
+                ],
+                [
+                    'name' => 'influx',
+                    'status' => 'auxiliary_profiling',
+                    'role' => 'profiling_service',
+                    'contract' => [
+                        'structural_store_lifecycle' => false,
+                        'baseline_participant' => false,
+                        'profiling' => true,
+                    ],
+                    'limits' => [
+                        'Not a primary store driver.',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
      * @param list<string> $validValues
      * @param list<string> $appliesTo
      * @param list<string> $notes
+     * @param list<string> $rejectedValues
      * @return array<string,mixed>
      */
     private static function env(
@@ -293,13 +464,15 @@ final class ConfigSchema
         mixed $default,
         array $validValues,
         array $appliesTo,
-        array $notes
+        array $notes,
+        array $rejectedValues = []
     ): array {
         return [
             'key' => $key,
             'type' => $type,
             'default' => $default,
             'valid_values' => array_values($validValues),
+            'rejected_values' => array_values($rejectedValues),
             'applies_to' => array_values($appliesTo),
             'notes' => array_values($notes),
         ];

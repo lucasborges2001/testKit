@@ -28,7 +28,10 @@ final class FrontPhpSuite
             'php'
         );
         $selectedTests = TestDiscovery::discover($testsDir, ['.test.php'], $config);
-        TestSeedMetadata::applySeedEnv($selectedTests, (int)($config['metadata_lines'] ?? 60));
+        self::attachLegacySeedMetadataWarnings(
+            $config,
+            TestSeedMetadata::applySeedEnvIfLegacyEnabled($selectedTests, (int)($config['metadata_lines'] ?? 60))
+        );
 
         $resolved = ProjectEnv::resolveDbEnv($repoRoot);
         foreach ($resolved['warnings'] as $warning) {
@@ -100,5 +103,25 @@ final class FrontPhpSuite
             return $explicit;
         }
         return PHP_BINARY;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<int,array<string,mixed>> $warnings
+     */
+    private static function attachLegacySeedMetadataWarnings(array &$config, array $warnings): void
+    {
+        if ($warnings === []) {
+            return;
+        }
+
+        $existing = is_array($config['env_warnings'] ?? null) ? $config['env_warnings'] : [];
+        $config['env_warnings'] = array_values(array_merge($existing, $warnings));
+
+        foreach ($warnings as $warning) {
+            $code = (string)($warning['code'] ?? 'LEGACY_TEST_SEED_METADATA_USED');
+            $summary = (string)($warning['summary'] ?? 'legacy seed metadata used');
+            fwrite(STDERR, 'WARN[' . $code . ']: ' . $summary . PHP_EOL);
+        }
     }
 }

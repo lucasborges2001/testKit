@@ -40,9 +40,7 @@ final class CanonicalReport
         return $report;
     }
 
-    /**
-     * @param array<string,mixed> $report
-     */
+    /** @param array<string,mixed> $report */
     private static function finalStatus(array $report): string
     {
         $status = strtolower(trim((string)($report['outcome_status'] ?? '')));
@@ -85,10 +83,7 @@ final class CanonicalReport
         ];
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function selectionManifest(array $report): array
     {
         return is_array($report['selection_manifest'] ?? null)
@@ -96,10 +91,7 @@ final class CanonicalReport
             : ReportSummary::selectionManifest($report);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<int,array<string,mixed>>
-     */
+    /** @param array<string,mixed> $report @return array<int,array<string,mixed>> */
     private static function phaseTimeline(array $report): array
     {
         return is_array($report['phase_timeline'] ?? null)
@@ -107,10 +99,7 @@ final class CanonicalReport
             : ReportSummary::phaseTimeline($report);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function evidence(array $report): array
     {
         $firstFailure = $report['first_failure'] ?? null;
@@ -125,10 +114,7 @@ final class CanonicalReport
         ];
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function artifacts(array $report): array
     {
         return [
@@ -141,10 +127,7 @@ final class CanonicalReport
         ];
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<int,array<string,mixed>>
-     */
+    /** @param array<string,mixed> $report @return array<int,array<string,mixed>> */
     private static function normalizedArtifacts(array $report): array
     {
         return is_array($report['normalized_artifacts'] ?? null)
@@ -166,14 +149,19 @@ final class CanonicalReport
             || array_key_exists('seed_state', $report);
 
         if (is_array($report['seed_state'] ?? null)) {
-            return $report['seed_state'];
+            return self::normalizeSeedState($report['seed_state']);
         }
 
         if (!$hasExplicitSeedState) {
             return null;
         }
 
-        return [
+        return self::normalizeSeedState([
+            'available' => true,
+            'contract_version' => 1,
+            'source' => 'report_top_level_legacy',
+            'driver' => (string)($report['seed_driver'] ?? $report['baseline'] ?? ''),
+            'db_name' => (string)($report['seed_db_name'] ?? ''),
             'baseline_mode' => (string)($report['baseline_mode'] ?? ''),
             'snapshot_file' => (string)($report['snapshot_file'] ?? ''),
             'manifest_path' => (string)($report['manifest_path'] ?? ''),
@@ -181,13 +169,51 @@ final class CanonicalReport
             'applied_migrations' => array_values((array)($report['applied_migrations'] ?? [])),
             'pending_migrations' => array_values((array)($report['pending_migrations'] ?? [])),
             'resolved_snapshot' => is_array($report['resolved_snapshot'] ?? null) ? $report['resolved_snapshot'] : null,
+            'warnings' => $report['seed_warnings'] ?? [],
+        ]);
+    }
+
+    /** @param array<string,mixed> $state @return array<string,mixed> */
+    private static function normalizeSeedState(array $state): array
+    {
+        $migrationState = is_array($state['migration_state'] ?? null) ? $state['migration_state'] : [];
+        $applied = self::arrayOfStrings($state['applied_migrations'] ?? ($migrationState['applied'] ?? []));
+        $pending = self::arrayOfStrings($state['pending_migrations'] ?? ($migrationState['pending'] ?? []));
+
+        return [
+            'available' => (bool)($state['available'] ?? true),
+            'contract_version' => max(1, (int)($state['contract_version'] ?? 1)),
+            'source' => (string)($state['source'] ?? $state['source_kind'] ?? ''),
+            'driver' => (string)($state['driver'] ?? $state['baseline'] ?? ''),
+            'db_name' => (string)($state['db_name'] ?? $state['database'] ?? ''),
+            'baseline' => (string)($state['baseline'] ?? $state['driver'] ?? ''),
+            'baseline_mode' => (string)($state['baseline_mode'] ?? ''),
+            'profile' => (string)($state['profile'] ?? ''),
+            'source_kind' => (string)($state['source_kind'] ?? $state['source'] ?? ''),
+            'reason' => (string)($state['reason'] ?? ''),
+            'reason_summary' => (string)($state['reason_summary'] ?? ''),
+            'store_strategy' => (string)($state['store_strategy'] ?? ''),
+            'manifest_path' => (string)($state['manifest_path'] ?? ''),
+            'snapshot_file' => (string)($state['snapshot_file'] ?? ''),
+            'requested_migrations' => self::arrayOfStrings($state['requested_migrations'] ?? []),
+            'applied_migrations' => $applied,
+            'pending_migrations' => $pending,
+            'historical_absorbed' => self::arrayOfStrings($state['historical_absorbed'] ?? ($migrationState['historical_absorbed'] ?? [])),
+            'migration_state' => [
+                'source' => (string)($migrationState['source'] ?? $state['source'] ?? ''),
+                'mode' => (string)($migrationState['mode'] ?? ''),
+                'available' => self::arrayOfStrings($migrationState['available'] ?? []),
+                'applied' => self::arrayOfStrings($migrationState['applied'] ?? $applied),
+                'pending' => self::arrayOfStrings($migrationState['pending'] ?? $pending),
+                'target' => self::arrayOfStrings($migrationState['target'] ?? []),
+                'historical_absorbed' => self::arrayOfStrings($migrationState['historical_absorbed'] ?? []),
+            ],
+            'resolved_snapshot' => is_array($state['resolved_snapshot'] ?? null) ? $state['resolved_snapshot'] : null,
+            'warnings' => StructuredWarnings::canonicalize($state['warnings'] ?? []),
         ];
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function regressionDelta(array $report): array
     {
         return is_array($report['regression_delta'] ?? null)
@@ -195,10 +221,7 @@ final class CanonicalReport
             : ReportSummary::regressionDelta($report);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<int,array<string,mixed>>
-     */
+    /** @param array<string,mixed> $report @return array<int,array<string,mixed>> */
     private static function recommendedActions(array $report): array
     {
         return is_array($report['recommended_actions'] ?? null)
@@ -206,10 +229,7 @@ final class CanonicalReport
             : ReportSummary::recommendedActions($report);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function agentSummary(array $report): array
     {
         return is_array($report['agent_summary'] ?? null)
@@ -217,10 +237,7 @@ final class CanonicalReport
             : ReportSummary::agentSummary($report);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function agentMode(array $report): array
     {
         return is_array($report['agent_mode'] ?? null)
@@ -232,24 +249,41 @@ final class CanonicalReport
             ];
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<int,array<string,mixed>>
-     */
+    /** @param array<string,mixed> $report @return array<int,array<string,mixed>> */
     private static function warnings(array $report): array
     {
-        $parallel = $report['parallel_policy'] ?? null;
-        if (is_array($parallel) && array_key_exists('warnings', $parallel)) {
-            return StructuredWarnings::canonicalize($parallel['warnings']);
+        $rows = [];
+
+        if (is_array($report['warnings'] ?? null)) {
+            $rows = array_merge($rows, $report['warnings']);
         }
 
-        return StructuredWarnings::canonicalize($report['warnings'] ?? []);
+        $parallel = $report['parallel_policy'] ?? null;
+        if (is_array($parallel) && array_key_exists('warnings', $parallel) && is_array($parallel['warnings'])) {
+            $rows = array_merge($rows, $parallel['warnings']);
+        }
+
+        $seed = self::seedState($report);
+        if (is_array($seed) && is_array($seed['warnings'] ?? null)) {
+            $rows = array_merge($rows, $seed['warnings']);
+        }
+
+        $canonical = StructuredWarnings::canonicalize($rows);
+        $seen = [];
+        $deduped = [];
+        foreach ($canonical as $warning) {
+            $key = (string)($warning['code'] ?? '') . '|' . (string)($warning['summary'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $deduped[] = $warning;
+        }
+
+        return $deduped;
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     private static function runner(array $report): array
     {
         $agentMode = self::agentMode($report);
@@ -260,5 +294,23 @@ final class CanonicalReport
             'hazards' => is_array($report['runner_hazards'] ?? null) ? $report['runner_hazards'] : [],
             'mode' => (string)($agentMode['mode'] ?? 'standard'),
         ];
+    }
+
+    /** @param mixed $value @return array<int,string> */
+    private static function arrayOfStrings(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+        $out = [];
+        foreach ($value as $item) {
+            $item = trim((string)$item);
+            if ($item !== '') {
+                $out[$item] = true;
+            }
+        }
+        $rows = array_keys($out);
+        natcasesort($rows);
+        return array_values($rows);
     }
 }

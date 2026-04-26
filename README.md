@@ -11,6 +11,7 @@ Read by question, not by file order:
 | Question | Document |
 |---|---|
 | What does a project need to adopt `testkit`? What does `testkit` own? What is out of scope? | [`docs/CONTRATO.md`](docs/CONTRATO.md) |
+| What engines/services are actually supported right now? | [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) |
 | How do I run it safely for the first time? Which commands are normal? | [`docs/USO.md`](docs/USO.md) |
 | Setup failed. Which command should I run next? | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | How is execution wired internally? How do bootstrap, baseline and locks fit together? | [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
@@ -19,10 +20,11 @@ Read by question, not by file order:
 Suggested reading order for a new adopter:
 
 1. `CONTRATO.md`
-2. `USO.md`
-3. `TROUBLESHOOTING.md`
-4. `ARQUITECTURA.md`
-5. `REPORTING_COVERAGE.md`
+2. `SUPPORT_MATRIX.md`
+3. `USO.md`
+4. `TROUBLESHOOTING.md`
+5. `ARQUITECTURA.md`
+6. `REPORTING_COVERAGE.md`
 
 ## Quick start
 
@@ -88,6 +90,21 @@ Reading guidance:
 - `Capability doctor: PASS` still does **not** prove runtime safety; it only reports visible config alignment
 - `Doctor: FAIL` still follows the base doctor status, not the capability advisory status
 
+## Support matrix summary
+
+Do not infer support from service names in compose or from partial adapters. The current closed path is deliberately narrow.
+
+| Component | Status | Public contract |
+|---|---|---|
+| MySQL | closed / primary | provision, reset, layered baseline, snapshot restore, per-worker clone |
+| PostgreSQL | partial | runtime/provision/reset only where explicitly implemented; no closed snapshot/clone contract |
+| Redis | auxiliary | service only; no structural store lifecycle in core PHP |
+| Influx | auxiliary / profiling | profiling/reporting service; not a primary store driver |
+| `TEST_DB_STRATEGY=clean` | rejected | recognized as not implemented; use `shared` or `per_worker` |
+| `TEST_DB_STRATEGY=per_worker` | intra-suite only | isolates workers inside one suite; does not make concurrent top-level runners safe |
+
+Full detail: [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) and [`docs/CONTRATO.md`](docs/CONTRATO.md).
+
 ## PowerShell note
 
 This doctor update does **not** change the runtime command contract outside doctor itself.
@@ -120,6 +137,8 @@ What does **not** exist here:
 - per-heartbeat persistence
 - proof that a runtime path is safe just because `doctor` emitted `PASS`
 - automatic diagnosis of business tests
+- closed PostgreSQL snapshot/clone parity with MySQL
+- Redis or Influx lifecycle as structural store drivers
 
 The detailed contract lives in:
 
@@ -131,6 +150,9 @@ The detailed contract lives in:
 This repository does not try to hide its current limits. The detailed contract lives in [`docs/CONTRATO.md`](docs/CONTRATO.md). In particular:
 
 - the main closed path is MySQL
+- PostgreSQL is partial and must not be described as MySQL-equivalent
+- Redis is auxiliary service infrastructure, not a core structured store lifecycle
+- Influx is auxiliary/profiling infrastructure, not a primary store driver
 - `TEST_DB_STRATEGY=clean` is rejected
 - `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
 - `migration-contract` is a narrow technical suite, not a general functional suite
