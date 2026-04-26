@@ -29,12 +29,15 @@ final class AgentRunArtifact
         $timestampedPath = $artifactRoot . '/agent_run_execute_' . $timestamp . '.json';
 
         $payload = [
-            'artifact_contract_version' => 1,
+            'artifact_contract_version' => 2,
             'artifact_kind' => 'agent_run_execute',
             'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
             'run_id' => $runId,
             'report_root' => $reportRoot,
             'report_scope_rel' => Paths::relativeToRepo($reportRoot),
+            'agent_decision' => $decision['agent_decision'] ?? null,
+            'next_action' => $decision['next_action'] ?? null,
+            'decision_basis' => $decision['decision_basis'] ?? null,
             'decision' => $decision,
             'execution' => $execution,
             'artifact_paths' => [
@@ -54,6 +57,7 @@ final class AgentRunArtifact
         return [
             'recorded' => true,
             'artifact_kind' => 'agent_run_execute',
+            'artifact_contract_version' => 2,
             'artifact_root' => Paths::relativeToRepo($artifactRoot),
             'latest_path' => Paths::relativeToRepo($latestPath),
             'timestamped_path' => Paths::relativeToRepo($timestampedPath),

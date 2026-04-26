@@ -74,6 +74,7 @@ require_once __DIR__ . '/reporting/ReportFileNamer.php';
 require_once __DIR__ . '/reporting/RunIndexWriter.php';
 require_once __DIR__ . '/reporting/FailureDelta.php';
 require_once __DIR__ . '/reporting/ResultWriter.php';
+require_once __DIR__ . '/reporting/AgentDecisionBuilder.php';
 require_once __DIR__ . '/reporting/AgentRunArtifact.php';
 require_once __DIR__ . '/reporting/Inspector.php';
 require_once __DIR__ . '/reporting/AgentRunExecute.php';

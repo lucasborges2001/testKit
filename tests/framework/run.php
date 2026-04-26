@@ -22,8 +22,8 @@ $tests = [
     'Store resource lock'                   => __DIR__ . '/test_store_resource_lock.php',
     'FrontJsSuite admission/lock order'     => __DIR__ . '/test_front_js_admission_lock_order.php',
     'Failure classification contracts'      => __DIR__ . '/test_failure_classification_contracts.php',
-    'Seed state canonical contract'        => __DIR__ . '/test_seed_state_contract.php',
-    'Engine support contract'             => __DIR__ . '/test_engine_support_contract.php',
+    'Seed state canonical contract'         => __DIR__ . '/test_seed_state_contract.php',
+    'Engine support contract'               => __DIR__ . '/test_engine_support_contract.php',
     'Manifest atomic write'                 => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'             => __DIR__ . '/test_reporting_contract.php',
     'ConsoleReporter compact pass'          => __DIR__ . '/test_console_reporter_compact_pass.php',
@@ -35,6 +35,7 @@ $tests = [
     'Meta rerun plan fallback'              => __DIR__ . '/test_meta_rerun_plan_fallback.php',
     'Agent mode runtime contract'           => __DIR__ . '/test_agent_mode_contract.php',
     'Agent run continuation contract'       => __DIR__ . '/test_agent_run_contract.php',
+    'Agent decision actionable contract'    => __DIR__ . '/test_agent_decision_contract.php',
 ];
 
 $pass   = 0;
