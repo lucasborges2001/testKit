@@ -8,4 +8,6 @@ require_once __DIR__ . '/SqlFingerprint.php';
 require_once __DIR__ . '/QueryProfileCollector.php';
 require_once __DIR__ . '/ProfiledPDOStatement.php';
 require_once __DIR__ . '/ProfiledPDO.php';
+require_once __DIR__ . '/MysqlExplainPlanParser.php';
+require_once __DIR__ . '/MysqlExplainAnalyzer.php';
 require_once __DIR__ . '/MysqlProfileReporter.php';

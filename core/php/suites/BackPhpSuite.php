@@ -41,10 +41,29 @@ final class BackPhpSuite
         $runId = self::ensureRunId('TEST_RUN_ID');
         $metaRunId = self::ensureRunId('TEST_META_RUN_ID', $runId);
         $mysqlProfileEnabled = MysqlProfileConfig::isEnabled();
+        $mysqlProfileEnv = [];
         if ($mysqlProfileEnabled) {
             putenv('TESTKIT_DB_PROFILE_RUN_ID=' . $runId);
             $_ENV['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
             $_SERVER['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
+
+            $mysqlProfileConfig = MysqlProfileConfig::fromEnv();
+            $mysqlProfileEnv = [
+                'TESTKIT_DB_PROFILE' => '1',
+                'TESTKIT_DB_PROFILE_RUN_ID' => $runId,
+                'TESTKIT_DB_PROFILE_REPORT_PATH' => (string)($mysqlProfileConfig['output']['report_path'] ?? ''),
+                'TESTKIT_DB_PROFILE_HISTORY_PATH' => (string)($mysqlProfileConfig['output']['history_path'] ?? ''),
+                'TESTKIT_DB_PROFILE_SHARD_DIR' => (string)($mysqlProfileConfig['output']['shard_dir'] ?? ''),
+            ];
+            if ((bool)($mysqlProfileConfig['explain']['enabled'] ?? false)) {
+                $mysqlProfileEnv['TESTKIT_DB_PROFILE_EXPLAIN'] = '1';
+                $mysqlProfileEnv['TESTKIT_DB_PROFILE_EXPLAIN_MAX_QUERIES'] = (string)($mysqlProfileConfig['explain']['max_queries'] ?? 20);
+                $mysqlProfileEnv['TESTKIT_DB_PROFILE_EXPLAIN_TIMEOUT_MS'] = (string)($mysqlProfileConfig['explain']['timeout_ms'] ?? 2000);
+                $queriesFile = (string)($mysqlProfileConfig['explain']['queries_file'] ?? '');
+                if ($queriesFile !== '') {
+                    $mysqlProfileEnv['TESTKIT_DB_PROFILE_EXPLAIN_QUERIES_FILE'] = $queriesFile;
+                }
+            }
             MysqlProfileReporter::prepareRun($runId);
         }
 
@@ -107,21 +126,16 @@ final class BackPhpSuite
         return SuiteOrchestrator::run(
             $config,
             ['.test.php'],
-            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved, $mysqlProfileEnabled, $runId): array {
+            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved, $mysqlProfileEnv): array {
                 $cmd = [$phpBinary];
-                $env = [
+                $env = array_merge([
                     'TEST_SUITE' => 'back',
                     'APP_ENV' => 'test',
                     'APP_DEBUG' => '1',
                     'TESTKIT_ROOT' => $testkitRoot,
                     'TK_REPO_ROOT' => $repoRoot,
                     'TEST_WORKER_ID' => (string)$workerId,
-                ];
-
-                if ($mysqlProfileEnabled) {
-                    $env['TESTKIT_DB_PROFILE'] = '1';
-                    $env['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
-                }
+                ], $mysqlProfileEnv);
 
                 if (($resolved['db_env_path'] ?? '') !== '') {
                     $env['DB_ENV_PATH'] = $resolved['db_env_path'];
@@ -148,14 +162,10 @@ final class BackPhpSuite
             },
             static function (array &$result, array $config) use ($mysqlProfileEnabled, $runId): void {
                 if (!$mysqlProfileEnabled) {
-                    $result['mysql_profile'] = [
-                        'profile_enabled' => false,
-                        'engine' => 'mysql',
-                    ];
                     return;
                 }
 
-                $profile = MysqlProfileReporter::writeLatestFromShards($runId, [
+                $profile = MysqlProfileReporter::safeWriteLatestFromShards($runId, [
                     'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
                 ]);
                 $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
@@ -258,9 +268,7 @@ final class BackPhpSuite
         return SuiteExecutor::EXIT_ERROR;
     }
 
-    /**
-     * @return array{kind:string,phase:string,domain:string,cause_code:string}
-     */
+    /** @return array{kind:string,phase:string,domain:string,cause_code:string} */
     private static function failureDefaultsForPhase(string $phase): array
     {
         if ($phase === 'discovery') {

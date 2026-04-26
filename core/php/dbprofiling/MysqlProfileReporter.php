@@ -23,9 +23,7 @@ final class MysqlProfileReporter
         }
     }
 
-    /**
-     * @param array<string,mixed> $snapshot
-     */
+    /** @param array<string,mixed> $snapshot */
     public static function writeProcessShard(array $snapshot): void
     {
         if (!MysqlProfileConfig::isEnabled() && empty($snapshot['profile_enabled'])) {
@@ -42,10 +40,7 @@ final class MysqlProfileReporter
         self::writeJsonAtomic($dir . '/' . $name, $snapshot);
     }
 
-    /**
-     * @param array<string,mixed> $context
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $context @return array<string,mixed> */
     public static function writeLatestFromShards(string $runId, array $context = []): array
     {
         $config = MysqlProfileConfig::fromEnv();
@@ -65,10 +60,21 @@ final class MysqlProfileReporter
         return $report;
     }
 
-    /**
-     * @param array<string,mixed> $snapshot
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $context @return array<string,mixed> */
+    public static function safeWriteLatestFromShards(string $runId, array $context = []): array
+    {
+        try {
+            return self::writeLatestFromShards($runId, $context);
+        } catch (\Throwable $e) {
+            fwrite(STDERR, 'WARN[MYSQL_PROFILE_REPORT_FAILED]: ' . $e->getMessage() . PHP_EOL);
+            $config = MysqlProfileConfig::fromEnv();
+            return self::emptyReport($runId, $config, [
+                'report_error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** @param array<string,mixed> $snapshot @return array<string,mixed> */
     public static function buildReportFromSnapshot(array $snapshot): array
     {
         $config = MysqlProfileConfig::fromEnv();
@@ -83,10 +89,7 @@ final class MysqlProfileReporter
         );
     }
 
-    /**
-     * @param array<string,mixed> $profile
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $profile @return array<string,mixed> */
     public static function suiteAttachment(array $profile): array
     {
         return [
@@ -94,6 +97,13 @@ final class MysqlProfileReporter
             'engine' => 'mysql',
             'report_path' => (string)(MysqlProfileConfig::fromEnv()['output']['report_path'] ?? ''),
             'summary' => is_array($profile['summary'] ?? null) ? $profile['summary'] : [],
+            'explain' => [
+                'enabled' => (bool)($profile['explain']['enabled'] ?? false),
+                'attempted' => (int)($profile['explain']['attempted'] ?? 0),
+                'analyzed' => (int)($profile['explain']['analyzed'] ?? 0),
+                'skipped' => (int)($profile['explain']['skipped'] ?? 0),
+                'failed' => (int)($profile['explain']['failed'] ?? 0),
+            ],
             'top_findings' => [
                 'by_max_ms' => array_slice(is_array($profile['rankings']['by_max_ms'] ?? null) ? $profile['rankings']['by_max_ms'] : [], 0, 5),
                 'by_total_ms' => array_slice(is_array($profile['rankings']['by_total_ms'] ?? null) ? $profile['rankings']['by_total_ms'] : [], 0, 5),
@@ -102,11 +112,7 @@ final class MysqlProfileReporter
         ];
     }
 
-    /**
-     * @param array<string,mixed> $config
-     * @param array<string,mixed> $context
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $config @param array<string,mixed> $context @return array<string,mixed> */
     private static function buildReportFromShards(string $runId, array $config, array $context): array
     {
         $dir = (string)($config['output']['shard_dir'] ?? '');
@@ -143,12 +149,7 @@ final class MysqlProfileReporter
         ]));
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $rows
-     * @param array<string,mixed> $config
-     * @param array<string,mixed> $context
-     * @return array<string,mixed>
-     */
+    /** @param array<int,array<string,mixed>> $rows @param array<string,mixed> $config @param array<string,mixed> $context @return array<string,mixed> */
     private static function buildReportFromRows(array $rows, array $config, array $context): array
     {
         $startedAt = (string)($context['started_at'] ?? gmdate('Y-m-d\TH:i:s\Z'));
@@ -165,7 +166,7 @@ final class MysqlProfileReporter
             if (!isset($merged[$fingerprint])) {
                 $merged[$fingerprint] = [
                     'fingerprint' => $fingerprint,
-                    'sample_sql' => (string)($row['sample_sql'] ?? $fingerprint),
+                    'sample_sql' => SqlFingerprint::sampleSql((string)($row['sample_sql'] ?? $fingerprint)),
                     'calls' => 0,
                     'min_ms' => null,
                     'max_ms' => 0.0,
@@ -215,6 +216,7 @@ final class MysqlProfileReporter
 
         $summary = self::summary($queries);
         $recommendations = self::recommendations($queries);
+        $explain = MysqlExplainAnalyzer::fromConfig($config)->analyze($queries);
 
         return [
             'report_version' => 1,
@@ -228,15 +230,46 @@ final class MysqlProfileReporter
                 'top_n' => $topN,
                 'thresholds' => $config['thresholds'] ?? [],
                 'capture' => $config['capture'] ?? [],
+                'explain' => $config['explain'] ?? [],
             ],
             'summary' => $summary,
             'rankings' => $rankings,
             'queries' => $queries,
             'recommendations' => $recommendations,
+            'explain' => $explain,
             'limitations' => [
                 'PHP userland cannot transparently intercept every existing new PDO(...) call. Use ProfiledPDO, tk_profiled_pdo(), tk_mysql_profile_enable_pdo(), or explicit tk_mysql_profile_record() hooks.',
-                'No EXPLAIN is executed in this phase and no automatic index changes are suggested.',
+                'EXPLAIN is optional. Queries with placeholders or unsafe/multiple statements are skipped unless declared as executable examples.',
+                'No schema changes, CREATE INDEX suggestions, InfluxDB export, or performance gates are implemented in this phase.',
             ],
+        ];
+    }
+
+    /** @param array<string,mixed> $config @param array<string,mixed> $context @return array<string,mixed> */
+    private static function emptyReport(string $runId, array $config, array $context = []): array
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        return [
+            'report_version' => 1,
+            'engine' => 'mysql',
+            'profile_enabled' => (bool)($config['enabled'] ?? false),
+            'run_id' => $runId,
+            'started_at' => $now,
+            'finished_at' => $now,
+            'duration_ms' => 0,
+            'config' => [
+                'top_n' => (int)($config['top_n'] ?? 20),
+                'thresholds' => $config['thresholds'] ?? [],
+                'capture' => $config['capture'] ?? [],
+                'explain' => $config['explain'] ?? [],
+            ],
+            'summary' => self::summary([]),
+            'rankings' => ['by_max_ms' => [], 'by_total_ms' => [], 'by_calls' => [], 'by_avg_ms' => []],
+            'queries' => [],
+            'recommendations' => [],
+            'explain' => MysqlExplainAnalyzer::emptyResult((bool)($config['explain']['enabled'] ?? false)),
+            'limitations' => [],
+            'report_error' => (string)($context['report_error'] ?? ''),
         ];
     }
 
@@ -254,11 +287,11 @@ final class MysqlProfileReporter
         $calls = (int)($row['calls'] ?? 0);
         $avgMs = (float)($row['avg_ms'] ?? 0.0);
 
-        if ($calls >= $highCalls && $avgMs < max($slowMaxMs, 1.0)) {
-            return 'n_plus_one_candidate';
-        }
         if ($totalMs >= $hotspotTotalMs) {
             return 'hotspot';
+        }
+        if ($calls >= $highCalls && $avgMs < max($slowMaxMs, 1.0)) {
+            return 'n_plus_one_candidate';
         }
         if ($maxMs >= $slowMaxMs) {
             return 'slow';
@@ -275,7 +308,7 @@ final class MysqlProfileReporter
         return match ((string)($row['classification'] ?? 'ok')) {
             'n_plus_one_candidate' => 'Revisar patrón N+1: muchas llamadas del mismo fingerprint con latencia individual baja/media. Buscar loop PHP que ejecute esta query repetidamente.',
             'hotspot' => 'Priorizar optimización por costo acumulado: revisar filtros, joins, índices existentes y frecuencia de llamada.',
-            'slow' => 'Revisar latencia individual: correr EXPLAIN manualmente, validar índices y cardinalidad de filtros.',
+            'slow' => 'Revisar latencia individual: correr EXPLAIN manualmente si TESTKIT_DB_PROFILE_EXPLAIN no pudo analizarla automáticamente.',
             'watch' => 'Monitorear: cerca de umbrales iniciales, buen candidato a guard permanente si se vuelve regresivo.',
             default => 'Sin acción inmediata. Mantener como señal de baseline.',
         };
@@ -380,7 +413,12 @@ final class MysqlProfileReporter
         }
         Paths::ensureDir(dirname($path));
         $tmp = $path . '.tmp.' . getmypid() . '.' . substr(sha1(uniqid('', true)), 0, 8);
-        file_put_contents($tmp, $json . PHP_EOL);
-        @rename($tmp, $path);
+        if (file_put_contents($tmp, $json . PHP_EOL) === false) {
+            throw new \RuntimeException('No se pudo escribir archivo temporal de mysql profiling: ' . $tmp);
+        }
+        if (!@rename($tmp, $path)) {
+            @unlink($tmp);
+            throw new \RuntimeException('No se pudo publicar reporte mysql profiling: ' . $path);
+        }
     }
 }

@@ -9,6 +9,7 @@ final class QueryProfileCollector
     private static array $queries = [];
     private static bool $shutdownRegistered = false;
     private static bool $forceEnabled = false;
+    private static bool $warningEmitted = false;
     private static string $startedAt = '';
 
     public static function enableForTests(): void
@@ -22,6 +23,7 @@ final class QueryProfileCollector
         self::$queries = [];
         self::$shutdownRegistered = false;
         self::$forceEnabled = false;
+        self::$warningEmitted = false;
         self::$startedAt = '';
     }
 
@@ -53,6 +55,19 @@ final class QueryProfileCollector
         if (!self::isEnabled()) {
             return;
         }
+
+        try {
+            self::recordUnsafe($sql, $durationMs, $source, $caller);
+        } catch (\Throwable $e) {
+            if (!self::$warningEmitted) {
+                self::$warningEmitted = true;
+                fwrite(STDERR, 'WARN[MYSQL_PROFILE_RECORD_FAILED]: ' . $e->getMessage() . PHP_EOL);
+            }
+        }
+    }
+
+    private static function recordUnsafe(string $sql, float $durationMs, string $source = '', string $caller = ''): void
+    {
         if (self::$startedAt === '') {
             self::$startedAt = gmdate('Y-m-d\TH:i:s\Z');
         }
@@ -97,17 +112,14 @@ final class QueryProfileCollector
         unset($row);
     }
 
-    /**
-     * @return array<string,mixed>
-     */
+    /** @return array<string,mixed> */
     public static function snapshot(): array
     {
         $queries = [];
         foreach (self::$queries as $row) {
             $calls = max(1, (int)$row['calls']);
-            $row['avg_ms'] = ((float)$row['total_ms']) / $calls;
+            $row['avg_ms'] = self::roundMs(((float)$row['total_ms']) / $calls);
             $row['min_ms'] = self::roundMs((float)$row['min_ms']);
-            $row['avg_ms'] = self::roundMs((float)$row['avg_ms']);
             $row['max_ms'] = self::roundMs((float)$row['max_ms']);
             $row['total_ms'] = self::roundMs((float)$row['total_ms']);
             $queries[] = $row;

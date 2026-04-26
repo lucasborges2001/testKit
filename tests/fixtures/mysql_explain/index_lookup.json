@@ -1,0 +1,16 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {"query_cost": "3.20"},
+    "table": {
+      "table_name": "users",
+      "access_type": "ref",
+      "possible_keys": ["idx_users_email"],
+      "key": "idx_users_email",
+      "rows_examined_per_scan": 1,
+      "rows_produced_per_join": 1,
+      "filtered": "100.00",
+      "attached_condition": "(`users`.`email` = 'x@test.local')"
+    }
+  }
+}

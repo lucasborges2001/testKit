@@ -1,0 +1,19 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {"query_cost": "1234.50"},
+    "table": {
+      "table_name": "users",
+      "access_type": "ALL",
+      "possible_keys": null,
+      "key": null,
+      "rows_examined_per_scan": 25000,
+      "rows_produced_per_join": 1000,
+      "filtered": "10.00",
+      "attached_condition": "(`users`.`status` = 'ACTIVE')"
+    },
+    "ordering_operation": {
+      "using_filesort": true
+    }
+  }
+}

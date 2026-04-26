@@ -3,17 +3,21 @@ declare(strict_types=1);
 
 namespace Testkit\Core\DbProfiling;
 
-use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 
 final class MysqlProfileConfig
 {
     public const ENABLED_ENV = 'TESTKIT_DB_PROFILE';
+    public const EXPLAIN_ENABLED_ENV = 'TESTKIT_DB_PROFILE_EXPLAIN';
 
     public static function isEnabled(): bool
     {
-        $value = strtolower(trim((string)(getenv(self::ENABLED_ENV) ?: '')));
-        return in_array($value, ['1', 'true', 'yes', 'on'], true);
+        return self::envBool(self::ENABLED_ENV, false);
+    }
+
+    public static function isExplainEnabled(): bool
+    {
+        return self::envBool(self::EXPLAIN_ENABLED_ENV, false);
     }
 
     /**
@@ -48,6 +52,28 @@ final class MysqlProfileConfig
                 'history_path' => Paths::normalize($historyPath),
                 'shard_dir' => Paths::normalize($shardDir),
             ],
+            'connection' => [
+                'dsn' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_DSN', self::envString('TEST_DB_DSN', '')),
+                'user' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_USER', self::envString('TEST_DB_USER', '')),
+                'pass' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_PASS', self::envString('TEST_DB_PASS', '')),
+            ],
+            'explain' => [
+                'enabled_env' => self::EXPLAIN_ENABLED_ENV,
+                'enabled' => self::isExplainEnabled(),
+                'max_queries' => self::envInt('TESTKIT_DB_PROFILE_EXPLAIN_MAX_QUERIES', 20, 1, 500),
+                'min_total_ms' => self::envFloat('TESTKIT_DB_PROFILE_EXPLAIN_MIN_TOTAL_MS', 0.0, 0.0),
+                'min_max_ms' => self::envFloat('TESTKIT_DB_PROFILE_EXPLAIN_MIN_MAX_MS', 0.0, 0.0),
+                'include_classes' => self::envCsv('TESTKIT_DB_PROFILE_EXPLAIN_INCLUDE_CLASSES', [
+                    'slow',
+                    'hotspot',
+                    'watch',
+                    'n_plus_one_candidate',
+                ]),
+                'format' => strtolower(self::envString('TESTKIT_DB_PROFILE_EXPLAIN_FORMAT', 'json')) === 'table' ? 'table' : 'json',
+                'timeout_ms' => self::envInt('TESTKIT_DB_PROFILE_EXPLAIN_TIMEOUT_MS', 2000, 100, 60000),
+                'queries_file' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_QUERIES_FILE', ''),
+                'high_rows_examined' => self::envInt('TESTKIT_DB_PROFILE_EXPLAIN_HIGH_ROWS', 10000, 1, PHP_INT_MAX),
+            ],
         ];
     }
 
@@ -73,6 +99,18 @@ final class MysqlProfileConfig
             return $default;
         }
         return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /** @param array<int,string> $default */
+    private static function envCsv(string $key, array $default): array
+    {
+        $value = self::envString($key, '');
+        if ($value === '') {
+            return array_values($default);
+        }
+        $items = array_map(static fn(string $item): string => trim($item), explode(',', $value));
+        $items = array_values(array_filter($items, static fn(string $item): bool => $item !== ''));
+        return $items === [] ? array_values($default) : $items;
     }
 
     private static function envInt(string $key, int $default, int $min, int $max): int

@@ -1,0 +1,12 @@
+{
+  "mysql_profile_explain": {
+    "queries": [
+      {
+        "id": "users.lookup_by_id",
+        "sql": "SELECT * FROM users WHERE id = 1",
+        "max_rows_examined": 100,
+        "forbid": ["full_table_scan", "filesort", "temporary_table"]
+      }
+    ]
+  }
+}

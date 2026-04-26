@@ -1,0 +1,21 @@
+{
+  "query_block": {
+    "grouping_operation": {
+      "using_temporary_table": true,
+      "using_filesort": true,
+      "nested_loop": [
+        {
+          "table": {
+            "table_name": "orders",
+            "access_type": "range",
+            "possible_keys": ["idx_orders_created_at"],
+            "key": "idx_orders_created_at",
+            "rows_examined_per_scan": 500,
+            "rows_produced_per_join": 500,
+            "filtered": "100.00"
+          }
+        }
+      ]
+    }
+  }
+}

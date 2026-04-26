@@ -1,8 +1,13 @@
 # MySQL Query Profiling
 
-Primera versión de observabilidad para queries MySQL durante tests PHP.
+TestKit expone observabilidad para queries MySQL durante tests PHP. La fase actual tiene dos capas:
 
-## Activación
+1. **Query Discovery**: captura, agrupa, rankea y clasifica queries ejecutadas durante tests.
+2. **EXPLAIN Analysis**: analiza opcionalmente planes de ejecución de queries seguras o declaradas.
+
+El objetivo sigue siendo diagnóstico. No hay gates, no se bloquea el pipeline y no se aplican cambios de schema.
+
+## Activación básica
 
 El profiling está apagado por defecto.
 
@@ -20,7 +25,7 @@ php scripts/query_report.php
 
 ## Salidas
 
-TestKit actual escribe artefactos bajo `.testkit/` por convención del repo:
+Por convención, TestKit escribe bajo `.testkit/`:
 
 ```text
 .testkit/reports/mysql_profile_latest.json
@@ -36,11 +41,11 @@ TESTKIT_DB_PROFILE_HISTORY_PATH=/tmp/mysql_profile_history
 TESTKIT_DB_PROFILE_SHARD_DIR=/tmp/mysql_profile_shards
 ```
 
-## Captura PDO
+## API pública para proyectos consumidores
 
-PHP userland no puede interceptar de forma transparente todos los `new PDO(...)` existentes. Por eso esta versión expone integración opt-in.
+Los proyectos consumidores no deberían depender de clases internas. Usar estos helpers.
 
-### Opción recomendada: constructor perfilado
+### PDO recomendado
 
 ```php
 $pdo = tk_profiled_pdo($dsn, $user, $pass, [
@@ -48,13 +53,13 @@ $pdo = tk_profiled_pdo($dsn, $user, $pass, [
 ]);
 ```
 
-Captura:
+Captura cuando `TESTKIT_DB_PROFILE=1`:
 
 - `PDO::query()`
 - `PDO::exec()`
 - `PDOStatement::execute()` de statements preparados
 
-### Opción para PDO existente
+### PDO existente
 
 ```php
 $pdo = tk_mysql_profile_enable_pdo($pdo);
@@ -62,27 +67,39 @@ $stmt = $pdo->prepare('select * from users where id = ?');
 $stmt->execute([$id]);
 ```
 
-Esta opción captura `execute()` de statements preparados creados después de habilitar el atributo. No captura `query()` ni `exec()` directos de ese PDO existente.
+Esto solo puede capturar `execute()` de statements preparados **creados después** de llamar al helper. No intercepta `query()` ni `exec()` directos de un PDO existente.
 
-### Hook manual para mysqli u otros adapters
+### mysqli o wrappers propios
 
 ```php
 $start = microtime(true);
 $result = mysqli_query($conn, $sql);
-tk_mysql_profile_record($sql, (microtime(true) - $start) * 1000);
+tk_mysql_profile_record($sql, (microtime(true) - $start) * 1000, 'source opcional', 'caller opcional');
 ```
 
-## Fingerprint
+Para `mysqli_stmt` se puede asociar el SQL en prepare y registrar en execute:
 
-El fingerprint normaliza queries para agrupar equivalentes:
+```php
+$stmt = $db->prepare($sql);
+tk_mysql_profile_mysqli_remember($stmt, $sql);
+$start = microtime(true);
+$stmt->execute();
+tk_mysql_profile_mysqli_record_execute($stmt, (microtime(true) - $start) * 1000);
+tk_mysql_profile_mysqli_forget($stmt);
+```
+
+## Fingerprint y sanitización
+
+El fingerprint agrupa queries equivalentes:
 
 - strings -> `?`
 - números -> `?`
 - fechas/timestamps -> `?`
 - UUIDs -> `?`
+- booleanos/null -> `?`
 - `IN (?, ?, ?)` -> `IN (?)`
 - espacios normalizados
-- SQL en minúsculas consistente
+- SQL en minúsculas
 
 Ejemplo:
 
@@ -96,7 +113,9 @@ se agrupa como:
 select * from transactions where user_id = ? and status = ?
 ```
 
-## Ranking
+`sample_sql` también se sanitiza y trunca. No debe contener valores sensibles reales.
+
+## Rankings
 
 El reporte JSON incluye:
 
@@ -107,7 +126,7 @@ El reporte JSON incluye:
 
 ## Clasificación
 
-Criterios por defecto:
+Defaults:
 
 ```yaml
 slow_max_ms: 500
@@ -135,35 +154,169 @@ TESTKIT_DB_PROFILE_WATCH_RATIO=0.75
 TESTKIT_DB_PROFILE_MAX_SQL_LENGTH=2000
 ```
 
-## Limitaciones de esta fase
+## EXPLAIN Analysis
 
-- Solo MySQL.
-- No InfluxDB todavía.
-- No ejecuta `EXPLAIN`.
-- No sugiere índices automáticamente.
-- No bloquea pipeline por queries lentas.
-- No captura mágicamente todo `new PDO(...)`; requiere helper/wrapper/factory o hook manual.
-- Observabilidad y diagnóstico, no enforcement.
-
-## Lectura rápida
+EXPLAIN está apagado por defecto y requiere discovery activo:
 
 ```bash
+TESTKIT_DB_PROFILE=1 TESTKIT_DB_PROFILE_EXPLAIN=1 php runTest.php back-php
 php scripts/query_report.php
 ```
 
-Salida esperada:
+Configurable por env:
 
-```text
-MySQL Query Profile
-
-Summary
-- Total queries: 1840
-- Unique fingerprints: 37
-- Total DB time: 8420 ms
-- Slow queries: 3
-- Hotspots: 4
-- N+1 candidates: 2
-
-Top by max latency
-1. 842 ms total | 842 ms max | 70.1 ms avg | 12 calls | slow | select ...
+```bash
+TESTKIT_DB_PROFILE_EXPLAIN=1
+TESTKIT_DB_PROFILE_EXPLAIN_MAX_QUERIES=20
+TESTKIT_DB_PROFILE_EXPLAIN_MIN_TOTAL_MS=0
+TESTKIT_DB_PROFILE_EXPLAIN_MIN_MAX_MS=0
+TESTKIT_DB_PROFILE_EXPLAIN_TIMEOUT_MS=2000
+TESTKIT_DB_PROFILE_EXPLAIN_INCLUDE_CLASSES=slow,hotspot,watch,n_plus_one_candidate
 ```
+
+Conexión para EXPLAIN:
+
+- por defecto usa `TEST_DB_DSN`, `TEST_DB_USER`, `TEST_DB_PASS` si el DSN es `mysql:`;
+- se puede overridear con `TESTKIT_DB_PROFILE_EXPLAIN_DSN`, `TESTKIT_DB_PROFILE_EXPLAIN_USER`, `TESTKIT_DB_PROFILE_EXPLAIN_PASS`;
+- si no hay conexión, EXPLAIN se omite con `skip_reason=mysql_connection_unavailable`.
+
+### Qué queries puede analizar automáticamente
+
+Solo se consideran queries explainables:
+
+- `SELECT`
+- `WITH`
+- un solo statement
+- sin placeholders `?` ni `:name`
+
+No se ejecuta EXPLAIN sobre:
+
+- `INSERT`
+- `UPDATE`
+- `DELETE`
+- `DROP`
+- `ALTER`
+- `CREATE`
+- `TRUNCATE`
+- múltiples statements
+
+Las queries descubiertas suelen estar sanitizadas, por lo que pueden contener `?`. En ese caso se omiten con:
+
+```json
+"explain_status": "skipped",
+"skip_reason": "sample_sql_not_executable"
+```
+
+TestKit no inventa valores para placeholders.
+
+### Queries declaradas
+
+Para analizar queries ejecutables, declarar ejemplos explícitos en JSON o YAML simple y apuntar el archivo:
+
+```bash
+TESTKIT_DB_PROFILE_EXPLAIN_QUERIES_FILE=./test/mysql-profile-explain.json
+```
+
+Ejemplo JSON:
+
+```json
+{
+  "mysql_profile_explain": {
+    "queries": [
+      {
+        "id": "user.lookup",
+        "sql": "SELECT * FROM users WHERE id = 1",
+        "max_rows_examined": 100,
+        "forbid": ["full_table_scan", "filesort", "temporary_table"]
+      }
+    ]
+  }
+}
+```
+
+Ejemplo YAML simple:
+
+```yaml
+mysql_profile_explain:
+  queries:
+    - id: user.lookup
+      sql: |
+        SELECT * FROM users WHERE id = 1
+      max_rows_examined: 100
+      forbid:
+        - full_table_scan
+        - filesort
+        - temporary_table
+```
+
+## Flags de EXPLAIN
+
+El parser detecta, cuando el plan lo expone:
+
+- `full_table_scan`
+- `no_possible_keys`
+- `no_key_used`
+- `filesort`
+- `temporary_table`
+- `high_rows_examined`
+- `dependent_subquery`
+- `range_or_index_merge` como información, no warning automático
+
+Cada finding incluye:
+
+```json
+{
+  "query_id": "optional",
+  "fingerprint": "...",
+  "sample_sql": "...",
+  "explain_status": "analyzed|skipped|failed",
+  "skip_reason": "",
+  "error": "",
+  "plan_summary": {
+    "tables": [],
+    "access_types": [],
+    "keys_used": [],
+    "possible_keys": [],
+    "estimated_rows": 0
+  },
+  "flags": ["full_table_scan"],
+  "severity": "info|watch|warn",
+  "recommendation": "..."
+}
+```
+
+## Reporte humano
+
+```bash
+php scripts/query_report.php
+php scripts/query_report.php --path /tmp/mysql_profile_latest.json
+```
+
+Muestra:
+
+- resumen general;
+- top por latencia/costo/calls;
+- candidatos N+1;
+- sección `Explain analysis`;
+- findings por severidad;
+- recomendaciones.
+
+## Smoke simulado sin MySQL
+
+El ejemplo no requiere servidor MySQL. Valida reporter/ranking y demuestra que EXPLAIN se omite claramente si no hay conexión:
+
+```bash
+php examples/mysql-query-profiling/simulated_profile.php
+php scripts/query_report.php --path /tmp/<ruta-impresa>/reports/mysql_profile_latest.json
+```
+
+## Limitaciones actuales
+
+- Solo MySQL.
+- No InfluxDB.
+- No performance gates.
+- No `CREATE INDEX` automático ni cambios de schema.
+- No se reemplazan valores de placeholders para EXPLAIN.
+- EXPLAIN requiere una conexión MySQL disponible o queries declaradas ejecutables más credenciales.
+- `EXPLAIN FORMAT=JSON` usa fallback a `EXPLAIN` tabular si JSON falla.
+- La próxima fase razonable es análisis más profundo de plan/costos y baseline de planes; todavía no está implementada.
