@@ -14,6 +14,8 @@ use Testkit\Core\DbProfiling\MysqlProfileReporter;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Discovery\TestSeedMetadata;
 use Testkit\Core\Execution\SuiteExecutor;
+use Testkit\Core\InfluxProfiling\InfluxProfileConfig;
+use Testkit\Core\InfluxProfiling\InfluxProfileReporter;
 use Testkit\Core\Reporting\ConsoleReporter;
 use Testkit\Core\Reporting\HistoryRepository;
 use Testkit\Core\Reporting\ReportSummary;
@@ -67,6 +69,26 @@ final class BackPhpSuite
             MysqlProfileReporter::prepareRun($runId);
         }
 
+        $influxProfileEnabled = InfluxProfileConfig::isEnabled();
+        $influxProfileEnv = [];
+        if ($influxProfileEnabled) {
+            putenv('TESTKIT_INFLUX_PROFILE_RUN_ID=' . $runId);
+            $_ENV['TESTKIT_INFLUX_PROFILE_RUN_ID'] = $runId;
+            $_SERVER['TESTKIT_INFLUX_PROFILE_RUN_ID'] = $runId;
+
+            $influxProfileConfig = InfluxProfileConfig::fromEnv();
+            $influxProfileEnv = [
+                'TESTKIT_INFLUX_PROFILE' => '1',
+                'TESTKIT_INFLUX_PROFILE_RUN_ID' => $runId,
+                'TESTKIT_INFLUX_PROFILE_REPORT_PATH' => (string)($influxProfileConfig['output']['report_path'] ?? ''),
+                'TESTKIT_INFLUX_PROFILE_HISTORY_PATH' => (string)($influxProfileConfig['output']['history_path'] ?? ''),
+                'TESTKIT_INFLUX_PROFILE_SHARD_DIR' => (string)($influxProfileConfig['output']['shard_dir'] ?? ''),
+            ];
+            InfluxProfileReporter::prepareRun($runId);
+        }
+
+        $profileEnv = array_merge($mysqlProfileEnv, $influxProfileEnv);
+
         $selectedTests = [];
         $reportRoot = Paths::resolveReportRoot($selectedTests);
         Paths::ensureDir($reportRoot);
@@ -111,9 +133,15 @@ final class BackPhpSuite
             );
         }
 
-        $prepend = $mysqlProfileEnabled
-            ? $testkitRoot . '/utils/php/auto_prepend_mysql_profile.php'
-            : $testkitRoot . '/utils/php/auto_prepend.php';
+        if ($mysqlProfileEnabled && $influxProfileEnabled) {
+            $prepend = $testkitRoot . '/utils/php/auto_prepend_query_profiles.php';
+        } elseif ($mysqlProfileEnabled) {
+            $prepend = $testkitRoot . '/utils/php/auto_prepend_mysql_profile.php';
+        } elseif ($influxProfileEnabled) {
+            $prepend = $testkitRoot . '/utils/php/auto_prepend_influx_profile.php';
+        } else {
+            $prepend = $testkitRoot . '/utils/php/auto_prepend.php';
+        }
         $phpBinary = self::phpBinary();
 
         if ((bool)$config['coverage']) {
@@ -126,7 +154,7 @@ final class BackPhpSuite
         return SuiteOrchestrator::run(
             $config,
             ['.test.php'],
-            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved, $mysqlProfileEnv): array {
+            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved, $profileEnv): array {
                 $cmd = [$phpBinary];
                 $env = array_merge([
                     'TEST_SUITE' => 'back',
@@ -135,7 +163,7 @@ final class BackPhpSuite
                     'TESTKIT_ROOT' => $testkitRoot,
                     'TK_REPO_ROOT' => $repoRoot,
                     'TEST_WORKER_ID' => (string)$workerId,
-                ], $mysqlProfileEnv);
+                ], $profileEnv);
 
                 if (($resolved['db_env_path'] ?? '') !== '') {
                     $env['DB_ENV_PATH'] = $resolved['db_env_path'];
@@ -160,15 +188,20 @@ final class BackPhpSuite
 
                 return ['cmd' => $cmd, 'env' => $env];
             },
-            static function (array &$result, array $config) use ($mysqlProfileEnabled, $runId): void {
-                if (!$mysqlProfileEnabled) {
-                    return;
+            static function (array &$result, array $config) use ($mysqlProfileEnabled, $influxProfileEnabled, $runId): void {
+                if ($mysqlProfileEnabled) {
+                    $profile = MysqlProfileReporter::safeWriteLatestFromShards($runId, [
+                        'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
+                    ]);
+                    $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
                 }
 
-                $profile = MysqlProfileReporter::safeWriteLatestFromShards($runId, [
-                    'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
-                ]);
-                $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
+                if ($influxProfileEnabled) {
+                    $profile = InfluxProfileReporter::safeWriteLatestFromShards($runId, [
+                        'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
+                    ]);
+                    $result['influx_profile'] = InfluxProfileReporter::suiteAttachment($profile);
+                }
             }
         );
     }
