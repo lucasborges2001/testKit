@@ -47,7 +47,7 @@ final class FrontJsSuite
         $metaRunId = self::envString('TEST_META_RUN_ID', $runId);
 
         $policy = [];
-        $warnings = [];
+        $warnings = StructuredWarnings::canonicalize($config['env_warnings'] ?? []);
         $admission = [
             'store_mode' => 'shared',
             'concurrency_policy' => 'not_applicable',
@@ -69,12 +69,12 @@ final class FrontJsSuite
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, 'front_js');
 
-            $currentPhase = 'bootstrap';
-            ContractWorldBootstrap::prepare('front_js', $repoRoot);
-
             $currentPhase = 'admission';
-            $policy = ParallelGuard::evaluate($discovered, $config, Paths::repoRoot());
-            $warnings = StructuredWarnings::canonicalize($policy['warnings'] ?? []);
+            $policy = ParallelGuard::evaluate($discovered, $config, $repoRoot);
+            $warnings = StructuredWarnings::canonicalize(array_merge(
+                $warnings,
+                StructuredWarnings::canonicalize($policy['warnings'] ?? [])
+            ));
             $admission = ParallelGuard::admissionState($policy);
 
             $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
@@ -94,6 +94,7 @@ final class FrontJsSuite
                 ConsoleReporter::printList($discovered);
             }
 
+            $currentPhase = 'execution';
             $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
             if (!is_file($runner)) {
                 throw new \RuntimeException('Falta runner JS: ' . $runner);
@@ -108,11 +109,18 @@ final class FrontJsSuite
             $selectedFile = self::writeSelectedTestsFile($discovered);
             $resultFile = self::createTempJsonFile('tk_front_js_result_');
             try {
-                try {
-                    $lockLease = ParallelGuard::acquireSuiteStoreLock($policy);
-                } catch (Throwable $e) {
-                    $admission = ParallelGuard::rejectedByLockState($policy);
-                    throw $e;
+                $requiresStoreBootstrap = !(bool)($config['list_only'] ?? false) && $discovered !== [];
+                if ($requiresStoreBootstrap) {
+                    $currentPhase = 'store_setup';
+                    try {
+                        $lockLease = ParallelGuard::acquireSuiteStoreLock($policy);
+                    } catch (Throwable $e) {
+                        $admission = ParallelGuard::rejectedByLockState($policy);
+                        throw $e;
+                    }
+
+                    $currentPhase = 'bootstrap';
+                    ContractWorldBootstrap::prepare('front_js', $repoRoot);
                 }
 
                 $env = self::baseEnv();
@@ -175,14 +183,7 @@ final class FrontJsSuite
                 admission: $admission,
                 phase: $currentPhase,
                 error: $e,
-                options: [
-                    'include_selection_manifest' => false,
-                    'no_tests_discovery_failure' => false,
-                    'default_failure_kind' => 'bootstrap_failure',
-                    'default_failure_phase' => 'execution',
-                    'default_failure_domain' => 'runner',
-                    'default_cause_code' => 'runner_exception',
-                ]
+                options: self::operationalFailureOptions($currentPhase, $admission)
             );
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
             $result = ReportSummary::enrichReport($result);
@@ -192,6 +193,40 @@ final class FrontJsSuite
         } finally {
             $lockLease?->release();
         }
+    }
+
+    /**
+     * @param array<string,mixed> $admission
+     * @return array<string,mixed>
+     */
+    private static function operationalFailureOptions(string $phase, array $admission): array
+    {
+        $reason = trim((string)($admission['reason'] ?? ''));
+        $options = [
+            'include_selection_manifest' => false,
+            'no_tests_discovery_failure' => false,
+            'default_failure_kind' => 'bootstrap_failure',
+            'default_failure_phase' => 'execution',
+            'default_failure_domain' => 'runner',
+            'default_cause_code' => 'runner_exception',
+        ];
+
+        if ($phase === 'admission' || $reason === 'unsafe_parallel_db_configuration') {
+            $options['default_failure_kind'] = 'configuration_failure';
+            $options['default_failure_phase'] = 'admission';
+            $options['default_failure_domain'] = 'configuration';
+            $options['default_cause_code'] = $reason !== '' ? $reason : 'admission_rejected';
+            return $options;
+        }
+
+        if ($phase === 'bootstrap' || $phase === 'store_setup') {
+            $options['default_failure_kind'] = 'bootstrap_failure';
+            $options['default_failure_phase'] = 'bootstrap';
+            $options['default_failure_domain'] = 'bootstrap';
+            $options['default_cause_code'] = 'bootstrap_failed';
+        }
+
+        return $options;
     }
 
     /**
