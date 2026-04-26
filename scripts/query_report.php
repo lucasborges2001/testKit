@@ -1,152 +1,107 @@
 <?php
 declare(strict_types=1);
 
-/**
- * /testkit/scripts/query_report.php
- *
- * Lee test/querylog.jsonl (generado por db_profiler.php) y produce un reporte:
- * - top tablas / columnas
- * - candidatos de índices (heurístico)
- * - slow queries + sugerencia EXPLAIN
- *
- * Env:
- * - TEST_DB_PROFILE_LOG  (default: test/querylog.jsonl)
- * - TEST_DB_PROFILE_TOP  (default: 20)
- * - TEST_DB_PROFILE_SLOW (default: 15)
- */
+require_once __DIR__ . '/../core/php/bootstrap.php';
 
-$root = dirname(__DIR__);
-$repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname($root)), '/\\');
-$log = getenv('TEST_DB_PROFILE_LOG') ?: ($repoRoot . '/test/querylog.jsonl');
+use Testkit\Core\Common\Paths;
+use Testkit\Core\DbProfiling\MysqlProfileConfig;
 
-if (!is_file($log)) {
-  fwrite(STDERR, "No existe log: {$log}\n\n");
-  fwrite(STDERR, "Tip: activá profiling con TEST_DB_PROFILE=1 y corré tests que pegan a DB.\n");
-  exit(2);
+$config = MysqlProfileConfig::fromEnv();
+$path = (string)($config['output']['report_path'] ?? (Paths::reportsRoot() . '/mysql_profile_latest.json'));
+
+if (!is_file($path)) {
+    echo "MySQL Query Profile\n\n";
+    echo "No profile report found.\n";
+    echo "Run:\n";
+    echo "  TESTKIT_DB_PROFILE=1 php runTest.php back-php\n";
+    echo "  php scripts/query_report.php\n";
+    exit(0);
 }
 
-$tables = $cols = $whereCols = $joinCols = $orderCols = $combo = [];
-$slow = [];
-$slowByTable = [];
-$n = 0;
+$report = json_decode((string)file_get_contents($path), true);
+if (!is_array($report)) {
+    fwrite(STDERR, "Invalid MySQL profile report: {$path}\n");
+    exit(1);
+}
 
-$fh = fopen($log, 'rb');
-if (!$fh) { fwrite(STDERR, "No se pudo abrir {$log}\n"); exit(2); }
+$summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+$rankings = is_array($report['rankings'] ?? null) ? $report['rankings'] : [];
+$recommendations = is_array($report['recommendations'] ?? null) ? $report['recommendations'] : [];
 
-while (($line = fgets($fh)) !== false) {
-  $line = trim($line);
-  if ($line === '') continue;
+echo "MySQL Query Profile\n";
+echo str_repeat('=', 72) . "\n\n";
+echo 'Report: ' . Paths::relativeToRepo($path) . "\n";
+echo 'Run: ' . (string)($report['run_id'] ?? '') . "\n";
+echo 'Window: ' . (string)($report['started_at'] ?? '') . ' -> ' . (string)($report['finished_at'] ?? '') . "\n\n";
 
-  $row = json_decode($line, true);
-  if (!is_array($row)) continue;
+echo "Summary\n";
+echo '- Total queries: ' . (int)($summary['total_queries'] ?? 0) . "\n";
+echo '- Unique fingerprints: ' . (int)($summary['unique_fingerprints'] ?? 0) . "\n";
+echo '- Total DB time: ' . fmt_ms((float)($summary['total_db_time_ms'] ?? 0.0)) . "\n";
+echo '- Slow queries: ' . (int)($summary['slow_count'] ?? 0) . "\n";
+echo '- Hotspots: ' . (int)($summary['hotspot_count'] ?? 0) . "\n";
+echo '- N+1 candidates: ' . (int)($summary['n_plus_one_candidates'] ?? 0) . "\n\n";
 
-  $n++;
+render_ranking('Top by max latency', is_array($rankings['by_max_ms'] ?? null) ? $rankings['by_max_ms'] : []);
+render_ranking('Top by total time', is_array($rankings['by_total_ms'] ?? null) ? $rankings['by_total_ms'] : []);
+render_ranking('Top by calls', is_array($rankings['by_calls'] ?? null) ? $rankings['by_calls'] : []);
 
-  foreach (($row['tables'] ?? []) as $t) $tables[$t] = ($tables[$t] ?? 0) + 1;
-  foreach (($row['cols'] ?? []) as $c) $cols[$c] = ($cols[$c] ?? 0) + 1;
-  foreach (($row['whereCols'] ?? []) as $c) $whereCols[$c] = ($whereCols[$c] ?? 0) + 1;
-  foreach (($row['joinCols'] ?? []) as $c)  $joinCols[$c]  = ($joinCols[$c] ?? 0) + 1;
-  foreach (($row['orderCols'] ?? []) as $c) $orderCols[$c] = ($orderCols[$c] ?? 0) + 1;
+$nPlusOne = array_values(array_filter(
+    is_array($report['queries'] ?? null) ? $report['queries'] : [],
+    static fn(array $row): bool => ($row['classification'] ?? '') === 'n_plus_one_candidate'
+));
+render_ranking('N+1 candidates', $nPlusOne);
 
-  $byTable = [];
-  foreach (($row['whereCols'] ?? []) as $tc) {
-    $parts = explode('.', $tc, 2);
-    if (count($parts) === 2) $byTable[$parts[0]][] = $parts[1];
-  }
-  foreach ($byTable as $t => $cc) {
-    $cc = array_values(array_unique($cc));
-    sort($cc);
-    if (count($cc) >= 2) {
-      $cc = array_slice($cc, 0, 3);
-      $k = $t . ':(' . implode(',', $cc) . ')';
-      $combo[$k] = ($combo[$k] ?? 0) + 1;
+echo "Recommendations\n";
+if ($recommendations === []) {
+    echo "- No immediate recommendations. Use this run as baseline.\n";
+} else {
+    $i = 1;
+    foreach (array_slice($recommendations, 0, 20) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        echo $i . '. [' . (string)($item['classification'] ?? 'watch') . '] ' . (string)($item['recommendation'] ?? '') . "\n";
+        echo '   ' . shorten((string)($item['fingerprint'] ?? ''), 140) . "\n";
+        $i++;
     }
-  }
-
-  $ms = (int)($row['ms'] ?? 0);
-  $sql = (string)($row['sql'] ?? '');
-  $driver = (string)($row['driver'] ?? 'unknown');
-  $tlist = (array)($row['tables'] ?? []);
-
-  $slow[] = [$ms, $sql, $driver, $tlist];
-
-  foreach ($tlist as $t) {
-    if (!isset($slowByTable[$t])) $slowByTable[$t] = ['count'=>0,'ms_sum'=>0,'ms_max'=>0,'samples'=>[]];
-    $slowByTable[$t]['count']++;
-    $slowByTable[$t]['ms_sum'] += $ms;
-    if ($ms > $slowByTable[$t]['ms_max']) $slowByTable[$t]['ms_max'] = $ms;
-    if (count($slowByTable[$t]['samples']) < 3) $slowByTable[$t]['samples'][] = preg_replace('/\s+/', ' ', trim($sql));
-  }
-}
-fclose($fh);
-
-arsort($tables);
-arsort($cols);
-arsort($whereCols);
-arsort($joinCols);
-arsort($orderCols);
-arsort($combo);
-usort($slow, fn($a,$b) => $b[0] <=> $a[0]);
-
-function norm_sql(string $sql): string {
-  $s = trim($sql);
-  $s = preg_replace('/--.*$/m', '', $s);
-  $s = preg_replace('/\/\*.*?\*\//s', '', $s);
-  $s = preg_replace('/\s+/', ' ', trim($s));
-  $s = rtrim($s, ';');
-  $s = preg_replace("/'([^'\\\\]|\\\\.)*'/", "'?'", $s);
-  $s = preg_replace('/"([^"\\\\]|\\\\.)*"/', '"?"', $s);
-  $s = preg_replace('/\b\d+(\.\d+)?\b/', '?', $s);
-  $s = preg_replace('/\bIN\s*\(\s*\?(\s*,\s*\?)+\s*\)/i', 'IN (?)', $s);
-  return $s;
 }
 
-function explain_suggest(string $driver, string $sql): string {
-  $s = norm_sql($sql);
-  $d = strtolower($driver);
-  if ($d === 'pgsql' || $d === 'postgres' || $d === 'postgresql') {
-    return "EXPLAIN (ANALYZE, BUFFERS) " . $s . ";";
-  }
-  return "EXPLAIN " . $s . ";";
+echo "\n";
+
+/** @param array<int,array<string,mixed>> $rows */
+function render_ranking(string $title, array $rows): void
+{
+    echo $title . "\n";
+    if ($rows === []) {
+        echo "- none\n\n";
+        return;
+    }
+
+    $i = 1;
+    foreach (array_slice($rows, 0, 20) as $row) {
+        echo sprintf(
+            "%d. %s total | %s max | %s avg | %d calls | %s | %s\n",
+            $i,
+            fmt_ms((float)($row['total_ms'] ?? 0.0)),
+            fmt_ms((float)($row['max_ms'] ?? 0.0)),
+            fmt_ms((float)($row['avg_ms'] ?? 0.0)),
+            (int)($row['calls'] ?? 0),
+            (string)($row['classification'] ?? 'ok'),
+            shorten((string)($row['sample_sql'] ?? $row['fingerprint'] ?? ''), 140)
+        );
+        $i++;
+    }
+    echo "\n";
 }
 
-function top(array $arr, int $n): array {
-  $out = [];
-  $i = 0;
-  foreach ($arr as $k => $v) { $out[$k] = $v; if (++$i >= $n) break; }
-  return $out;
+function fmt_ms(float $value): string
+{
+    return rtrim(rtrim(number_format($value, 3, '.', ''), '0'), '.') . ' ms';
 }
 
-$topN  = (int)(getenv('TEST_DB_PROFILE_TOP') ?: 20);
-$slowN = (int)(getenv('TEST_DB_PROFILE_SLOW') ?: 15);
-
-echo "== DB Query Profile Report ==\n";
-echo "log: {$log}\n";
-echo "queries: {$n}\n\n";
-
-echo "Top tablas (hits)\n";
-foreach (top($tables, $topN) as $t => $c) echo str_pad((string)$c, 6, ' ', STR_PAD_LEFT) . "  {$t}\n";
-
-echo "\nTop columnas (table.col)\n";
-foreach (top($cols, $topN) as $cname => $c) echo str_pad((string)$c, 6, ' ', STR_PAD_LEFT) . "  {$cname}\n";
-
-echo "\nTop columnas en WHERE (hits)\n";
-foreach (top($whereCols, $topN) as $cname => $c) echo str_pad((string)$c, 6, ' ', STR_PAD_LEFT) . "  {$cname}\n";
-
-echo "\nTop columnas en JOIN/ON (hits)\n";
-foreach (top($joinCols, $topN) as $cname => $c) echo str_pad((string)$c, 6, ' ', STR_PAD_LEFT) . "  {$cname}\n";
-
-echo "\nTop combos WHERE por tabla (candidatos índice compuesto)\n";
-foreach (top($combo, $topN) as $k => $c) echo str_pad((string)$c, 6, ' ', STR_PAD_LEFT) . "  {$k}\n";
-
-echo "\nSlow queries (top {$slowN})\n";
-$i = 0;
-foreach ($slow as [$ms, $sql, $driver, $tlist]) {
-  echo str_pad((string)$ms, 6, ' ', STR_PAD_LEFT) . " ms  " . preg_replace('/\s+/', ' ', trim($sql)) . "\n";
-  echo "          " . explain_suggest($driver, $sql) . "\n";
-  if (++$i >= $slowN) break;
+function shorten(string $value, int $max): string
+{
+    $value = preg_replace('/\s+/', ' ', trim($value)) ?? trim($value);
+    return strlen($value) > $max ? substr($value, 0, $max - 3) . '...' : $value;
 }
-
-echo "\nNotas\n";
-echo "- Heurístico (regex): sirve para detectar patrones, no como verdad absoluta.\n";
-echo "- Para decidir índices: cruzá WHERE/JOIN + combos + slow + EXPLAIN.\n";

@@ -1,0 +1,91 @@
+diff --git a/core/php/bootstrap.php b/core/php/bootstrap.php
+--- a/core/php/bootstrap.php
++++ b/core/php/bootstrap.php
+@@ -25,6 +25,7 @@ require_once __DIR__ . '/coverage/CoverageMerger.php';
+ require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
+ 
+ require_once __DIR__ . '/store/bootstrap.php';
++require_once __DIR__ . '/dbprofiling/bootstrap.php';
+ require_once __DIR__ . '/seeding/BaselineManifest.php';
+ require_once __DIR__ . '/seeding/BaselineManifestWriter.php';
+ require_once __DIR__ . '/seeding/BaselineModeResolver.php';
+diff --git a/core/php/suites/BackPhpSuite.php b/core/php/suites/BackPhpSuite.php
+--- a/core/php/suites/BackPhpSuite.php
++++ b/core/php/suites/BackPhpSuite.php
+@@ -15,6 +15,8 @@ use Testkit\Core\Reporting\ReportSummary;
+ use Testkit\Core\Reporting\ResultWriter;
+ use Testkit\Core\Seeding\SuiteSeedState;
++use Testkit\Core\DbProfiling\MysqlProfileConfig;
++use Testkit\Core\DbProfiling\MysqlProfileReporter;
+ 
+ final class BackPhpSuite
+ {
+@@ -75,7 +77,14 @@ final class BackPhpSuite
+         }
+ 
+         $prepend = $testkitRoot . '/utils/php/auto_prepend.php';
++        $profilePrepend = $testkitRoot . '/utils/php/auto_prepend_mysql_profile.php';
+         $phpBinary = self::phpBinary();
++        $mysqlProfileEnabled = MysqlProfileConfig::isEnabled();
++        $mysqlProfileConfig = $mysqlProfileEnabled ? MysqlProfileConfig::fromEnv() : [];
++        if ($mysqlProfileEnabled) {
++            putenv('TESTKIT_DB_PROFILE_RUN_ID=' . $runId);
++            MysqlProfileReporter::prepareRun($runId);
++        }
+ 
+         if ((bool)$config['coverage']) {
+             @mkdir((string)$config['coverage_dir'], 0777, true);
+@@ -89,7 +98,7 @@ final class BackPhpSuite
+         return SuiteOrchestrator::run(
+             $config,
+             ['.test.php'],
+-            static function (array $test, int $workerId) use ($phpBinary, $prepend, $config, $repoRoot, $testkitRoot, $resolved): array {
++            static function (array $test, int $workerId) use ($phpBinary, $prepend, $profilePrepend, $mysqlProfileEnabled, $mysqlProfileConfig, $runId, $config, $repoRoot, $testkitRoot, $resolved): array {
+                 $cmd = [$phpBinary];
+                 $env = [
+                     'TEST_SUITE' => 'back',
+@@ -101,6 +110,18 @@ final class BackPhpSuite
+                     'TEST_WORKER_ID' => (string)$workerId,
+                 ];
+ 
++                if ($mysqlProfileEnabled) {
++                    $env['TESTKIT_DB_PROFILE'] = '1';
++                    $env['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
++                    $env['TESTKIT_DB_PROFILE_REPORT_PATH'] = (string)($mysqlProfileConfig['output']['report_path'] ?? '');
++                    $env['TESTKIT_DB_PROFILE_HISTORY_PATH'] = (string)($mysqlProfileConfig['output']['history_path'] ?? '');
++                    $env['TESTKIT_DB_PROFILE_SHARD_DIR'] = (string)($mysqlProfileConfig['output']['shard_dir'] ?? '');
++                    $env['TESTKIT_DB_PROFILE_TOP_N'] = (string)($mysqlProfileConfig['top_n'] ?? 20);
++                    $env['TESTKIT_DB_PROFILE_SLOW_MAX_MS'] = (string)($mysqlProfileConfig['thresholds']['slow_max_ms'] ?? 500);
++                    $env['TESTKIT_DB_PROFILE_HOTSPOT_TOTAL_MS'] = (string)($mysqlProfileConfig['thresholds']['hotspot_total_ms'] ?? 3000);
++                    $env['TESTKIT_DB_PROFILE_HIGH_CALLS'] = (string)($mysqlProfileConfig['thresholds']['high_calls'] ?? 100);
++                }
++
+                 if (($resolved['db_env_path'] ?? '') !== '') {
+                     $env['DB_ENV_PATH'] = $resolved['db_env_path'];
+                 }
+@@ -123,12 +144,24 @@ final class BackPhpSuite
+                     $env['TEST_COVERAGE_DIR'] = (string)$config['coverage_dir'];
+                 }
+ 
++                $activePrepend = $mysqlProfileEnabled ? $profilePrepend : $prepend;
+                 $cmd[] = '-d';
+-                $cmd[] = 'auto_prepend_file=' . $prepend;
++                $cmd[] = 'auto_prepend_file=' . $activePrepend;
+                 $cmd[] = (string)$test['file'];
+ 
+                 return ['cmd' => $cmd, 'env' => $env];
+-            }
++            },
++            static function (array &$result, array $config) use ($runId, $mysqlProfileEnabled): void {
++                if (!$mysqlProfileEnabled) {
++                    return;
++                }
++                $profile = MysqlProfileReporter::writeLatestFromShards($runId, [
++                    'suite_id' => 'back_php',
++                    'run_id' => $runId,
++                ]);
++                $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
++            }
+         );
+     }
+ 
