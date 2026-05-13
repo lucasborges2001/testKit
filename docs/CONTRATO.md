@@ -269,3 +269,34 @@ Hay dos opciones válidas:
 
 - adaptar el proyecto al contrato actual
 - registrar la diferencia como deuda o feature futura, sin venderla como soportada hoy
+
+## 10) `reference-contract`
+
+`reference-contract` es una suite técnica de análisis estático para includes PHP. Su alcance actual es cerrado y no debe reinterpretarse como analizador general de assets.
+
+Incluye únicamente:
+
+- `require`
+- `require_once`
+- `include`
+- `include_once`
+
+Queda fuera de contrato en esta fase:
+
+- JS imports
+- CSS `url()`
+- HTML `href/src`
+- Markdown links
+- rutas HTTP
+- autofix de includes
+- integración con Composer autoload más allá de no romperlo
+
+Reglas de root:
+
+1. `TESTKIT_REFERENCE_ROOT` si está definido.
+2. `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
+3. `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si no existe, usa `TK_PUBLIC_DIR`.
+4. Default de scope: `back`.
+5. `TESTKIT_REFERENCE_ROOT=.` es la única forma explícita de pedir escaneo del repo completo.
+
+La suite no toca DB/store y no participa en bootstrap estructural.

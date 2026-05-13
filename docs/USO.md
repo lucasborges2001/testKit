@@ -91,3 +91,49 @@ El reporte JSON se escribe bajo:
 ```text
 .testkit/reports/reference_contract/
 ```
+
+### Segunda pasada de endurecimiento
+
+La suite queda acotada deliberadamente a includes PHP estáticos:
+
+- soportado: `require`, `require_once`, `include`, `include_once`
+- no soportado en esta suite: JS imports, CSS, HTML assets, Markdown links, rutas HTTP
+- no escanea todo el repo salvo pedido explícito con `TESTKIT_REFERENCE_ROOT=.`
+
+El reporte estable se publica bajo:
+
+```text
+.testkit/reports/reference_contract/reference_contract_latest.json
+```
+
+Además del latest canónico, el writer global puede generar archivos timestamped y entradas en `runs_index.json` siguiendo el patrón normal de `testKit`.
+
+Dinámicos:
+
+```bash
+TESTKIT_REFERENCE_DYNAMIC_SEVERITY=warn   # default: warning, no falla si no hay rotos
+TESTKIT_REFERENCE_DYNAMIC_SEVERITY=ignore # no emite warning/failure
+TESTKIT_REFERENCE_DYNAMIC_SEVERITY=error  # falla la suite
+```
+
+Límites operativos:
+
+```bash
+TESTKIT_REFERENCE_TIMEOUT_SEC=20
+TESTKIT_REFERENCE_MAX_FILES=3000
+TESTKIT_REFERENCE_MAX_BYTES_PER_FILE=1048576
+TESTKIT_REFERENCE_MAX_VIOLATIONS=200
+TESTKIT_REFERENCE_IGNORE_DIRS=vendor,node_modules,.git,.testkit,testkit/_out,_out
+```
+
+Fallos operativos principales:
+
+| cause_code | Cuándo aparece |
+|---|---|
+| `reference_root_missing` | root no definido, inexistente o archivo en vez de directorio |
+| `reference_root_invalid` | root relativo intenta escapar del repo |
+| `reference_scan_timeout` | timeout global alcanzado |
+| `reference_max_files_exceeded` | límite de archivos PHP escaneables alcanzado |
+| `reference_max_violations_exceeded` | límite de violaciones alcanzado; `truncated=true` |
+| `missing_php_include` | include literal apunta a archivo inexistente |
+| `dynamic_php_include` | include dinámico con severity `error` |

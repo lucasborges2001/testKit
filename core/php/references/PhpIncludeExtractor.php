@@ -25,26 +25,30 @@ final class PhpIncludeExtractor
                 continue;
             }
 
-            $statement = strtolower($token[1]);
+            $statement = strtolower(trim($token[1]));
             $line = (int)$token[2];
             $exprTokens = [];
             $depth = 0;
 
             for ($j = $i + 1; $j < $count; $j++) {
                 $part = $tokens[$j];
+
                 if ($part === '(') {
                     $depth++;
                     $exprTokens[] = $part;
                     continue;
                 }
+
                 if ($part === ')') {
                     $depth = max(0, $depth - 1);
                     $exprTokens[] = $part;
                     continue;
                 }
+
                 if ($part === ';' && $depth === 0) {
                     break;
                 }
+
                 $exprTokens[] = $part;
             }
 

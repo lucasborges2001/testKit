@@ -9,7 +9,7 @@ final class PhpIncludeResolver
 {
     /**
      * @param array<string,mixed> $directive
-     * @return array{resolved:bool,dynamic:bool,reference:string,resolved_path:string,resolved_as:string,expression:string}
+     * @return array{resolved:bool,dynamic:bool,reference:string,literal_reference:string,resolved_path:string,resolved_as:string,expression:string}
      */
     public function resolve(array $directive, string $includingFile, string $repoRoot): array
     {
@@ -18,25 +18,28 @@ final class PhpIncludeResolver
         $expression = trim((string)($directive['expression'] ?? ''));
 
         $parts = [];
-        $sawDir = false;
         $stringParts = [];
+        $hasPathAnchor = false;
 
         foreach ($tokens as $token) {
             if (is_array($token)) {
                 $id = $token[0];
                 $text = (string)$token[1];
+
                 if (in_array($id, [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
+
                 if ($id === T_CONSTANT_ENCAPSED_STRING) {
                     $value = self::decodeQuotedString($text);
                     $parts[] = $value;
                     $stringParts[] = $value;
                     continue;
                 }
+
                 if ($id === T_DIR) {
                     $parts[] = $includingDir;
-                    $sawDir = true;
+                    $hasPathAnchor = true;
                     continue;
                 }
 
@@ -64,14 +67,15 @@ final class PhpIncludeResolver
             ? self::normalizeLexical($path)
             : self::normalizeLexical($includingDir . '/' . $path);
 
-        $reference = (!$sawDir && count($stringParts) === 1)
+        $literalReference = count($stringParts) === 1
             ? $stringParts[0]
-            : ($expression !== '' ? $expression : $path);
+            : implode('', $stringParts);
 
         return [
             'resolved' => true,
             'dynamic' => false,
-            'reference' => $reference,
+            'reference' => $literalReference !== '' ? $literalReference : ($expression !== '' ? $expression : $path),
+            'literal_reference' => $literalReference,
             'resolved_path' => $absolutePath,
             'resolved_as' => Paths::relativeToRepo($absolutePath),
             'expression' => $expression,
@@ -79,7 +83,7 @@ final class PhpIncludeResolver
     }
 
     /**
-     * @return array{resolved:bool,dynamic:bool,reference:string,resolved_path:string,resolved_as:string,expression:string}
+     * @return array{resolved:bool,dynamic:bool,reference:string,literal_reference:string,resolved_path:string,resolved_as:string,expression:string}
      */
     private static function dynamic(string $expression): array
     {
@@ -87,6 +91,7 @@ final class PhpIncludeResolver
             'resolved' => false,
             'dynamic' => true,
             'reference' => $expression,
+            'literal_reference' => '',
             'resolved_path' => '',
             'resolved_as' => '',
             'expression' => $expression,

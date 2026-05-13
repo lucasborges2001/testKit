@@ -29,7 +29,10 @@ final class PhpIncludeScanner
             startedMs: ReferenceContractResult::nowMs()
         );
 
+        $executionStart = ReferenceContractResult::nowMs();
         $this->scanDir($this->rootAbs, $result);
+        $result->phaseTimingsMs['execution'] = max(0, ReferenceContractResult::nowMs() - $executionStart);
+
         return $result;
     }
 
@@ -42,7 +45,7 @@ final class PhpIncludeScanner
         $entries = @scandir($dir);
         if (!is_array($entries)) {
             $result->addWarning(ReferenceContractResult::warning(
-                'reference_dir_unreadable',
+                'REFERENCE_DIR_UNREADABLE',
                 'No se pudo leer directorio de referencias',
                 Paths::relativeToRepo($dir),
                 0,
@@ -87,8 +90,9 @@ final class PhpIncludeScanner
             return;
         }
 
+        $result->filesConsidered++;
         if ($result->filesScanned >= $this->config->maxFiles) {
-            $this->truncate($result, 'reference_max_files_exceeded', 'Se alcanzó TESTKIT_REFERENCE_MAX_FILES.');
+            $this->stopWithFailure($result, 'reference_max_files_exceeded', 'Se alcanzó TESTKIT_REFERENCE_MAX_FILES.', 'discovery');
             return;
         }
 
@@ -97,7 +101,7 @@ final class PhpIncludeScanner
         if (is_int($size) && $size > $this->config->maxBytesPerFile) {
             $result->skippedFiles++;
             $result->addWarning(ReferenceContractResult::warning(
-                'reference_file_too_large',
+                'REFERENCE_FILE_TOO_LARGE',
                 'Archivo PHP omitido por superar TESTKIT_REFERENCE_MAX_BYTES_PER_FILE.',
                 $rel,
                 0,
@@ -110,7 +114,7 @@ final class PhpIncludeScanner
         if (!is_string($source)) {
             $result->skippedFiles++;
             $result->addWarning(ReferenceContractResult::warning(
-                'reference_file_unreadable',
+                'REFERENCE_FILE_UNREADABLE',
                 'Archivo PHP omitido porque no se pudo leer.',
                 $rel
             ));
@@ -131,24 +135,41 @@ final class PhpIncludeScanner
             }
 
             if (!is_file((string)$resolved['resolved_path'])) {
-                $result->brokenReferences++;
-                $result->addFailure(ReferenceContractResult::failure(
-                    'missing_php_include',
-                    (string)$directive['statement'] . ' apunta a archivo inexistente',
-                    $rel,
-                    (int)$directive['line'],
-                    [
-                        'reference' => (string)$resolved['reference'],
-                        'resolved_as' => (string)$resolved['resolved_as'],
-                        'statement' => (string)$directive['statement'],
-                        'expression' => (string)$resolved['expression'],
-                        'phase' => 'execution',
-                        'failure_domain' => 'references',
-                        'cause_code' => 'missing_php_include',
-                    ]
-                ));
+                $this->recordMissing($result, $rel, $directive, $resolved);
+                continue;
             }
+
+            $result->addReference($this->referencePayload('ok', $rel, $directive, $resolved));
         }
+    }
+
+    /**
+     * @param array<string,mixed> $directive
+     * @param array<string,mixed> $resolved
+     */
+    private function recordMissing(ReferenceContractResult $result, string $fileRel, array $directive, array $resolved): void
+    {
+        $result->brokenReferences++;
+        $result->addReference($this->referencePayload('missing', $fileRel, $directive, $resolved));
+        $statement = (string)$directive['statement'];
+
+        $result->addFailure(ReferenceContractResult::failure(
+            'missing_php_include',
+            $statement . ' apunta a archivo inexistente',
+            $fileRel,
+            (int)$directive['line'],
+            [
+                'reference_type' => $statement,
+                'reference' => (string)$resolved['reference'],
+                'literal_reference' => (string)$resolved['literal_reference'],
+                'resolved_as' => (string)$resolved['resolved_as'],
+                'resolved_path' => (string)$resolved['resolved_path'],
+                'expression' => (string)$resolved['expression'],
+                'phase' => 'execution',
+                'failure_domain' => 'references',
+                'cause_code' => 'missing_php_include',
+            ]
+        ));
     }
 
     /**
@@ -162,9 +183,14 @@ final class PhpIncludeScanner
             return;
         }
 
+        $result->addReference($this->referencePayload('dynamic', $fileRel, $directive, $resolved));
+        $statement = (string)$directive['statement'];
         $payload = [
+            'reference_type' => $statement,
             'reference' => (string)$resolved['reference'],
-            'statement' => (string)$directive['statement'],
+            'literal_reference' => '',
+            'resolved_as' => '',
+            'resolved_path' => '',
             'expression' => (string)$resolved['expression'],
             'phase' => 'execution',
             'failure_domain' => 'references',
@@ -174,7 +200,7 @@ final class PhpIncludeScanner
         if ($this->config->dynamicSeverity === 'error') {
             $result->addFailure(ReferenceContractResult::failure(
                 'dynamic_php_include',
-                (string)$directive['statement'] . ' usa una expresión dinámica no resoluble estáticamente',
+                'Include PHP dinámico no verificable estáticamente',
                 $fileRel,
                 (int)$directive['line'],
                 $payload
@@ -183,12 +209,33 @@ final class PhpIncludeScanner
         }
 
         $result->addWarning(ReferenceContractResult::warning(
-            'dynamic_php_include',
-            (string)$directive['statement'] . ' usa una expresión dinámica no resoluble estáticamente',
+            'DYNAMIC_PHP_INCLUDE',
+            'Include PHP dinámico no verificable estáticamente',
             $fileRel,
             (int)$directive['line'],
             $payload
         ));
+    }
+
+    /**
+     * @param array<string,mixed> $directive
+     * @param array<string,mixed> $resolved
+     * @return array<string,mixed>
+     */
+    private function referencePayload(string $status, string $fileRel, array $directive, array $resolved): array
+    {
+        return [
+            'type' => (string)$directive['statement'],
+            'reference_type' => (string)$directive['statement'],
+            'file' => $fileRel,
+            'line' => (int)$directive['line'],
+            'expression' => (string)($resolved['expression'] ?? $directive['expression'] ?? ''),
+            'reference' => (string)($resolved['reference'] ?? ''),
+            'literal_reference' => (string)($resolved['literal_reference'] ?? ''),
+            'resolved_path' => (string)($resolved['resolved_path'] ?? ''),
+            'resolved_as' => (string)($resolved['resolved_as'] ?? ''),
+            'status' => $status,
+        ];
     }
 
     private function shouldStop(ReferenceContractResult $result): bool
@@ -197,32 +244,36 @@ final class PhpIncludeScanner
             return true;
         }
 
-        if ($result->durationMs() > ($this->config->timeoutSec * 1000)) {
-            $this->truncate($result, 'reference_timeout_exceeded', 'Se alcanzó TESTKIT_REFERENCE_TIMEOUT_SEC.');
+        if ($this->config->timeoutSec <= 0 || $result->durationMs() > ($this->config->timeoutSec * 1000)) {
+            $this->stopWithFailure($result, 'reference_scan_timeout', 'Se alcanzó TESTKIT_REFERENCE_TIMEOUT_SEC.', 'execution');
             return true;
         }
 
         if ((count($result->failures) + count($result->warnings)) >= $this->config->maxViolations) {
-            $this->truncate($result, 'reference_max_violations_exceeded', 'Se alcanzó TESTKIT_REFERENCE_MAX_VIOLATIONS.');
+            $this->stopWithFailure($result, 'reference_max_violations_exceeded', 'Se alcanzó TESTKIT_REFERENCE_MAX_VIOLATIONS.', 'execution');
             return true;
         }
 
         return false;
     }
 
-    private function truncate(ReferenceContractResult $result, string $kind, string $message): void
+    private function stopWithFailure(ReferenceContractResult $result, string $kind, string $message, string $phase): void
     {
         if ($result->truncated) {
             return;
         }
 
         $result->truncated = true;
-        $result->addWarning(ReferenceContractResult::warning(
+        $result->addFailure(ReferenceContractResult::failure(
             $kind,
             $message,
             $this->rootRel,
             0,
-            ['phase' => 'discovery']
+            [
+                'phase' => $phase,
+                'failure_domain' => 'references',
+                'cause_code' => $kind,
+            ]
         ));
     }
 

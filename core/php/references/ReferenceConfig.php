@@ -41,8 +41,8 @@ final class ReferenceConfig
         return new self(
             scope: $scope,
             explicitRoot: Env::string('TESTKIT_REFERENCE_ROOT', ''),
-            timeoutSec: max(1, Env::int('TESTKIT_REFERENCE_TIMEOUT_SEC', 20)),
-            maxFiles: max(1, Env::int('TESTKIT_REFERENCE_MAX_FILES', 3000)),
+            timeoutSec: max(0, Env::int('TESTKIT_REFERENCE_TIMEOUT_SEC', 20)),
+            maxFiles: max(0, Env::int('TESTKIT_REFERENCE_MAX_FILES', 3000)),
             maxBytesPerFile: max(1, Env::int('TESTKIT_REFERENCE_MAX_BYTES_PER_FILE', 1048576)),
             maxViolations: max(1, Env::int('TESTKIT_REFERENCE_MAX_VIOLATIONS', 200)),
             dynamicSeverity: $dynamicSeverity,

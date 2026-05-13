@@ -28,15 +28,18 @@ final class ReferenceContractSuite
         $reportRoot = Paths::reportsRoot() . '/reference_contract';
         Paths::ensureDir($reportRoot);
         Paths::recordSuiteReportRoot($reportRoot, 'reference_contract');
+        $discoveryStart = ReferenceContractResult::nowMs();
 
         try {
             $resolvedRoot = ReferenceRootResolver::resolve($repoRoot, $config);
+            $discoveryMs = max(0, ReferenceContractResult::nowMs() - $discoveryStart);
             $result = new ReferenceContractResult(
                 scope: $config->scope,
                 referenceRoot: (string)$resolvedRoot['relative_root'],
                 absoluteRoot: (string)$resolvedRoot['absolute_root'],
                 startedMs: $startedMs
             );
+            $result->phaseTimingsMs['discovery'] = $discoveryMs;
 
             if (!Env::bool('TEST_LIST', false)) {
                 $scanner = new PhpIncludeScanner(
@@ -46,8 +49,10 @@ final class ReferenceContractSuite
                     rootRel: (string)$resolvedRoot['relative_root']
                 );
                 $result = $scanner->scan();
+                $result->phaseTimingsMs['discovery'] = $discoveryMs;
             }
 
+            $reportingStart = ReferenceContractResult::nowMs();
             $report = self::buildReport(
                 result: $result,
                 config: $config,
@@ -56,6 +61,7 @@ final class ReferenceContractSuite
                 rootMetadata: $resolvedRoot,
                 listOnly: Env::bool('TEST_LIST', false)
             );
+            $report['phase_timings_ms']['reporting'] = max(0, ReferenceContractResult::nowMs() - $reportingStart);
             self::writeReport($report);
             self::printConsole($report, $config);
 
@@ -81,6 +87,7 @@ final class ReferenceContractSuite
                 absoluteRoot: '',
                 startedMs: $startedMs
             );
+            $result->phaseTimingsMs['discovery'] = max(0, ReferenceContractResult::nowMs() - $discoveryStart);
             $result->addFailure($failure);
 
             $report = self::buildReport(
@@ -138,7 +145,7 @@ final class ReferenceContractSuite
             'duration_ms' => $result->durationMs(),
             'report_root' => $reportRoot,
             'report_scope_rel' => Paths::relativeToRepo($reportRoot),
-            'selected_module_scope' => 'reference_contract/' . $config->scope,
+            'selected_module_scope' => '',
             'selected_test_count' => $result->referencesFound,
             'selected_test_files' => $result->referenceRoot !== '' ? [$result->referenceRoot] : [],
             'list_only' => $listOnly,
@@ -179,13 +186,17 @@ final class ReferenceContractSuite
     {
         $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
         $warnings = is_array($report['warnings'] ?? null) ? count($report['warnings']) : 0;
+        $firstFailure = is_array($report['first_failure'] ?? null) ? $report['first_failure'] : null;
+        $phase = is_array($firstFailure) ? (string)($firstFailure['phase'] ?? 'none') : 'none';
+        $domain = is_array($firstFailure) ? (string)($firstFailure['failure_domain'] ?? 'none') : 'none';
+        $cause = is_array($firstFailure) ? (string)($firstFailure['cause_code'] ?? 'none') : 'none';
 
         echo PHP_EOL;
         echo 'REFERENCE CONTRACT' . PHP_EOL . PHP_EOL;
         echo 'Selection' . PHP_EOL;
         echo '  scope: ' . (string)($report['scope'] ?? $config->scope) . PHP_EOL;
         echo '  root: ' . (string)($report['reference_root'] ?? '') . PHP_EOL;
-        echo '  files: ' . (string)($report['files_scanned'] ?? 0) . PHP_EOL;
+        echo '  files_scanned: ' . (string)($report['files_scanned'] ?? 0) . PHP_EOL;
         echo '  timeout_sec: ' . $config->timeoutSec . PHP_EOL;
         echo '  max_files: ' . $config->maxFiles . PHP_EOL . PHP_EOL;
         echo 'Result' . PHP_EOL;
@@ -195,5 +206,26 @@ final class ReferenceContractSuite
             . ' SKIP=' . (string)($summary['skipped'] ?? 0)
             . ' time_ms=' . (string)($summary['duration_ms'] ?? 0)
             . PHP_EOL;
+        echo '  outcome: ' . strtoupper((string)($report['suite_status'] ?? 'unknown'))
+            . ' phase=' . $phase
+            . ' domain=' . $domain
+            . ' cause=' . $cause
+            . PHP_EOL . PHP_EOL;
+        echo 'Reference Summary' . PHP_EOL;
+        echo '  scanned_files: ' . (string)($report['files_scanned'] ?? 0) . PHP_EOL;
+        echo '  php_references: ' . (string)($report['references_found'] ?? 0) . PHP_EOL;
+        echo '  broken_references: ' . (string)($report['broken_references'] ?? 0) . PHP_EOL;
+        echo '  dynamic_references: ' . (string)($report['dynamic_references'] ?? 0) . PHP_EOL;
+        echo '  skipped_files: ' . (string)($report['skipped_files'] ?? 0) . PHP_EOL;
+
+        if (is_array($firstFailure)) {
+            echo PHP_EOL;
+            echo 'First Failure' . PHP_EOL;
+            echo '  target: ' . (string)($firstFailure['kind'] ?? 'failure')
+                . ' ' . (string)($firstFailure['file'] ?? '')
+                . ':' . (string)($firstFailure['line'] ?? 0)
+                . PHP_EOL;
+            echo '  message: ' . (string)($firstFailure['message'] ?? '') . PHP_EOL;
+        }
     }
 }
