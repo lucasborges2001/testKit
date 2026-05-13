@@ -68,7 +68,8 @@ function testkit_print_run_help(): void
     echo "  php runTest.php --help\n\n";
     echo "Targets comunes:\n";
     echo "  all | back | front | back-php | back-py | front-php | front-js | php | js\n";
-    echo "  smoke | perf | stress | contract | critical | slow | migration-contract\n\n";
+    echo "  smoke | perf | stress | contract | critical | slow | migration-contract\n";
+    echo "  reference-contract | references | php-references\n\n";
     echo "Opciones soportadas:\n";
     echo "  --list     lista la selección efectiva y fuerza TEST_LIST=1 para esta corrida\n";
     echo "  --help     muestra esta ayuda\n\n";
@@ -76,7 +77,8 @@ function testkit_print_run_help(): void
     echo "  TEST_SCOPE, TEST_CATEGORY, TEST_MATCH, TEST_REQUIRE_TESTS, TEST_JOBS,\n";
     echo "  TEST_FAIL_FAST, TEST_META_FAIL_FAST, TEST_CHILD_FAIL_FAST,\n";
     echo "  TEST_COVERAGE, TEST_COVERAGE_FORMAT, TEST_DB_STRATEGY,\n";
-    echo "  TEST_BASELINE_MODE, TEST_STORE_DRIVER, TESTKIT_SKIP_STORE_BOOTSTRAP\n";
+    echo "  TEST_BASELINE_MODE, TEST_STORE_DRIVER, TESTKIT_SKIP_STORE_BOOTSTRAP,\n";
+    echo "  TESTKIT_REFERENCE_SCOPE, TESTKIT_REFERENCE_ROOT, TESTKIT_REFERENCE_TIMEOUT_SEC\n";
     echo "  Para esquema detallado: php scripts/inspect.php config-schema [--json]\n";
 }
 

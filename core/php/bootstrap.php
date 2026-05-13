@@ -80,6 +80,13 @@ require_once __DIR__ . '/reporting/Inspector.php';
 require_once __DIR__ . '/reporting/AgentRunExecute.php';
 require_once __DIR__ . '/reporting/AgentRun.php';
 
+require_once __DIR__ . '/references/ReferenceConfig.php';
+require_once __DIR__ . '/references/ReferenceRootResolver.php';
+require_once __DIR__ . '/references/PhpIncludeExtractor.php';
+require_once __DIR__ . '/references/PhpIncludeResolver.php';
+require_once __DIR__ . '/references/ReferenceContractResult.php';
+require_once __DIR__ . '/references/PhpIncludeScanner.php';
+
 require_once __DIR__ . '/suites/SuiteSelection.php';
 require_once __DIR__ . '/suites/SuiteOperationalFailure.php';
 require_once __DIR__ . '/suites/SuiteOrchestrator.php';
@@ -92,6 +99,7 @@ require_once __DIR__ . '/suites/FrontPhpSuite.php';
 require_once __DIR__ . '/suites/FrontJsSuite.php';
 require_once __DIR__ . '/suites/BackPythonSuite.php';
 require_once __DIR__ . '/suites/MigrationContractSuite.php';
+require_once __DIR__ . '/suites/ReferenceContractSuite.php';
 require_once __DIR__ . '/suites/MetaRunner.php';
 
 \Testkit\Core\Common\Bootstrap::init();

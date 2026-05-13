@@ -80,6 +80,35 @@ Para baseline `snapshot`:
   - o metadata/report JSON compatible usado para resolver ese artefacto
 - `snapshot` no reemplaza el catálogo estructural del proyecto; solo cambia el punto de partida del bootstrap
 
+### 2.4) Contrato de referencias PHP
+
+`reference-contract` es una suite técnica estática. No ejecuta tests de dominio y no toca DB/store.
+
+Contrato vigente:
+
+- target principal: `php runTest.php reference-contract`
+- aliases: `references`, `php-references`
+- suite interna: `reference_contract`
+- alcance actual: solo includes PHP (`require`, `require_once`, `include`, `include_once`)
+- resolución estática: literales simples y concatenaciones simples con `__DIR__`
+- dinámicos: warning por defecto, ignorables o convertibles en error por env
+- salida: `.testkit/reports/reference_contract/`
+
+El root no es todo el repo por default. Se resuelve así:
+
+1. `TESTKIT_REFERENCE_ROOT`, si existe.
+2. `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
+3. `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si falta, usa `TK_PUBLIC_DIR`.
+4. Sin scope explícito, default `back`.
+
+No forman parte de este corte:
+
+- imports JS
+- assets HTML/CSS
+- Markdown
+- rutas HTTP
+- inferencia semántica de factories, autoloaders o constantes de negocio
+
 ## 3) Qué controla testkit
 
 `testkit` es dueño de la plataforma de ejecución. Controla:
@@ -91,6 +120,7 @@ Para baseline `snapshot`:
 - restricciones operativas de estrategia (`shared`, `per_worker`, `clean`)
 - formato y ubicación de artefactos operativos del framework
 - reportes técnicos y diagnósticos del framework
+- scanner técnico de referencias estáticas cuando se usa `reference-contract`
 
 En otras palabras: `testkit` decide cómo se corre la plataforma.
 
@@ -105,6 +135,7 @@ El proyecto integrador sigue siendo dueño de:
 - la semántica funcional que los tests deben validar
 - la elección y mantenimiento de servicios externos que el proyecto necesite
 - la calidad y determinismo de sus propios tests
+- corregir referencias PHP rotas detectadas por `reference-contract`
 
 `testkit` no inventa fixtures de negocio ni corrige automáticamente tests frágiles.
 
@@ -113,7 +144,7 @@ El proyecto integrador sigue siendo dueño de:
 | Tipo | Qué entra |
 |---|---|
 | Estricto | root `test/`, env dentro del repo, semántica de `TEST_DB_STRATEGY`, restricciones de `migration-contract`, ownership del lifecycle de bootstrap |
-| Configurable | rutas base del proyecto, tagging por path/metadata, cantidad de workers, provisionado `managed|external`, sufijo de workers, root de artefactos |
+| Configurable | rutas base del proyecto, tagging por path/metadata, cantidad de workers, provisionado `managed|external`, sufijo de workers, root de artefactos, root/scope del scanner de referencias |
 | Fuera de contrato | reglas de negocio, builders del proyecto, fixtures funcionales, políticas de datos del dominio |
 
 Regla práctica: lo configurable puede cambiar la forma de resolver o ejecutar; no cambia quién es dueño de cada responsabilidad.
@@ -128,6 +159,7 @@ Esta tabla es el contrato vigente. No debe leerse como roadmap.
 | PostgreSQL | parcial / experimental | adapter runtime con provision/reset básico cuando el env está completo | sin snapshot restore cerrado; sin clone cerrado; no es ruta cerrada de `migration-contract` |
 | Redis | auxiliar | servicio disponible si el stack lo levanta | sin lifecycle estructural en core PHP; no participa en baseline/snapshot/clone |
 | Influx | auxiliar / perfilado | profiling/reporting si está habilitado | no es store driver principal; no participa en seed/bootstrap estructural |
+| `reference-contract` | técnico / estático | scanner PHP de includes resolubles | no analiza JS/CSS/HTML/HTTP ni expresiones dinámicas de negocio |
 
 Semántica operativa:
 
@@ -135,6 +167,7 @@ Semántica operativa:
 - PostgreSQL puede existir como infraestructura parcial, pero no debe venderse como equivalente a MySQL.
 - Redis no tiene lifecycle estructural equivalente dentro del core PHP.
 - Influx funciona como servicio auxiliar/perfilado, no como store driver principal.
+- `reference-contract` es independiente del store.
 
 ## 7) Límites vigentes
 
@@ -145,6 +178,7 @@ Estos límites forman parte del contrato actual y no deben maquillarse como sopo
 - `per_worker` aísla workers dentro de una misma suite.
 - No vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto/store.
 - Si una suite usa DB real con `TEST_JOBS > 1`, la ruta cerrada es `TEST_DB_STRATEGY=per_worker`.
+- `reference-contract` no toca store y declara top-level parallel safe.
 
 ### 7.2) Estrategias de store
 
@@ -171,17 +205,30 @@ Estos límites forman parte del contrato actual y no deben maquillarse como sopo
 
 No reemplaza tests funcionales del proyecto.
 
-### 7.5) Heurísticas
+### 7.5) reference-contract
+
+`reference-contract` no es un linter completo ni un autoloader analyzer.
+
+En este corte:
+
+- no escanea todo el repo por default
+- solo procesa archivos `.php`
+- solo falla rutas literales/resolubles que apuntan a archivos inexistentes
+- registra dinámicos según `TESTKIT_REFERENCE_DYNAMIC_SEVERITY`
+- corta por timeout, cantidad máxima de archivos, tamaño por archivo y cantidad máxima de violaciones
+
+### 7.6) Heurísticas
 
 No están garantizados como verdad semántica:
 
 - fragility hints
 - agrupación de familias de fallo
 - señales de triage derivadas de historial
+- clasificación de un include dinámico como seguro o inseguro
 
 Sirven para priorizar análisis, no para cerrar diagnóstico.
 
-### 7.6) Capability doctor
+### 7.7) Capability doctor
 
 `doctor` puede emitir una sección de capability basada en la config visible del wrapper.
 
@@ -212,6 +259,7 @@ Semántica de capability:
 - lifecycle de negocio dentro del seed de infraestructura
 - inferencia automática de reglas funcionales del proyecto
 - convertir tests no deterministas en tests seguros por configuración
+- contrato general de assets/imports fuera de includes PHP
 
 ## 9) Criterio de lectura
 

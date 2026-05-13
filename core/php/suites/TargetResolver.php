@@ -35,6 +35,9 @@ final class TargetResolver
             'migration-contract' => ['migration_contract'],
             'migration' => ['migration_contract'],
             'migrations' => ['migration_contract'],
+            'reference-contract' => ['reference_contract'],
+            'references' => ['reference_contract'],
+            'php-references' => ['reference_contract'],
         ];
 
         $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
@@ -43,7 +46,7 @@ final class TargetResolver
         if ($envVal !== '') {
             $parts = array_filter(array_map('trim', explode(',', $envVal)));
             $suites = [];
-            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'migration_contract'];
+            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'migration_contract', 'reference_contract'];
 
             foreach ($parts as $suite) {
                 if (!in_array($suite, $validSuites, true)) {

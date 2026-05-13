@@ -34,7 +34,7 @@ final class MetaRunner
 
         $selected = TargetResolver::resolve($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract\n");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract\n");
             return 3;
         }
 
@@ -245,6 +245,7 @@ final class MetaRunner
             'front_php' => FrontPhpSuite::run(),
             'front_js' => FrontJsSuite::run(),
             'migration_contract' => MigrationContractSuite::run(),
+            'reference_contract' => ReferenceContractSuite::run(),
             default => 3,
         };
     }

@@ -63,6 +63,20 @@ final class SuiteContractRegistry
             return $base;
         }
 
+        if ($suiteId === 'reference_contract') {
+            $base['bootstrap_only'] = false;
+            $base['executes_domain_tests'] = false;
+            $base['static_reference_scan'] = true;
+            $base['php_include_resolution'] = true;
+            $base['supports_snapshot_baseline'] = false;
+            $base['supports_layered_baseline'] = false;
+            $base['native_coverage_artifacts'] = false;
+            $base['structured_coverage_diagnostics'] = false;
+            $base['coverage_formats'] = [];
+            $base['parallel_guard'] = true;
+            return $base;
+        }
+
         $base['bootstrap_only'] = false;
         $base['executes_domain_tests'] = true;
         $base['supports_snapshot_baseline'] = true;
@@ -101,6 +115,20 @@ final class SuiteContractRegistry
                 'top_level_parallel_safe' => false,
                 'requires_snapshot_baseline' => true,
                 'bootstrap_only' => true,
+            ];
+        }
+
+        if ($suiteId === 'reference_contract') {
+            return [
+                'store_bootstrap' => 'none',
+                'db_sensitivity' => 'never',
+                'top_level_parallel_policy' => 'allowed',
+                'intra_suite_parallel_policy' => 'allowed',
+                'seed_state_contract' => 'not_applicable',
+                'bootstrap_mutates_store' => false,
+                'supports_per_worker_parallel' => false,
+                'top_level_parallel_safe' => true,
+                'static_scan_only' => true,
             ];
         }
 
