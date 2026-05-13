@@ -91,15 +91,34 @@ final class PhpIncludeScanner
         }
 
         $result->filesConsidered++;
+        $rel = Paths::relativeToRepo($file);
+
+        $fileIgnoreReason = $this->fileIgnoreReason($file);
+        if ($fileIgnoreReason !== null) {
+            $result->skippedFiles++;
+            $result->addSkippedFile([
+                'file' => $rel,
+                'status' => 'skipped',
+                'reason' => $fileIgnoreReason,
+            ]);
+            return;
+        }
+
         if ($result->filesScanned >= $this->config->maxFiles) {
             $this->stopWithFailure($result, 'reference_max_files_exceeded', 'Se alcanzó TESTKIT_REFERENCE_MAX_FILES.', 'discovery');
             return;
         }
 
         $size = @filesize($file);
-        $rel = Paths::relativeToRepo($file);
         if (is_int($size) && $size > $this->config->maxBytesPerFile) {
             $result->skippedFiles++;
+            $result->addSkippedFile([
+                'file' => $rel,
+                'status' => 'skipped',
+                'reason' => 'max_bytes',
+                'size_bytes' => $size,
+                'max_bytes' => $this->config->maxBytesPerFile,
+            ]);
             $result->addWarning(ReferenceContractResult::warning(
                 'REFERENCE_FILE_TOO_LARGE',
                 'Archivo PHP omitido por superar TESTKIT_REFERENCE_MAX_BYTES_PER_FILE.',
@@ -113,6 +132,11 @@ final class PhpIncludeScanner
         $source = @file_get_contents($file);
         if (!is_string($source)) {
             $result->skippedFiles++;
+            $result->addSkippedFile([
+                'file' => $rel,
+                'status' => 'skipped',
+                'reason' => 'unreadable',
+            ]);
             $result->addWarning(ReferenceContractResult::warning(
                 'REFERENCE_FILE_UNREADABLE',
                 'Archivo PHP omitido porque no se pudo leer.',
@@ -129,6 +153,12 @@ final class PhpIncludeScanner
 
             $result->referencesFound++;
             $resolved = $this->resolver->resolve($directive, $file, $this->repoRoot);
+            $ignoreReason = $this->referenceIgnoreReason($file, $directive, $resolved);
+            if ($ignoreReason !== null) {
+                $this->recordIgnored($result, $rel, $directive, $resolved, $ignoreReason);
+                continue;
+            }
+
             if ((bool)$resolved['dynamic']) {
                 $this->recordDynamic($result, $rel, $directive, $resolved);
                 continue;
@@ -139,6 +169,7 @@ final class PhpIncludeScanner
                 continue;
             }
 
+            $result->okReferences++;
             $result->addReference($this->referencePayload('ok', $rel, $directive, $resolved));
         }
     }
@@ -179,11 +210,11 @@ final class PhpIncludeScanner
     private function recordDynamic(ReferenceContractResult $result, string $fileRel, array $directive, array $resolved): void
     {
         $result->dynamicReferences++;
+        $result->addReference($this->referencePayload('dynamic', $fileRel, $directive, $resolved));
         if ($this->config->dynamicSeverity === 'ignore') {
             return;
         }
 
-        $result->addReference($this->referencePayload('dynamic', $fileRel, $directive, $resolved));
         $statement = (string)$directive['statement'];
         $payload = [
             'reference_type' => $statement,
@@ -220,6 +251,18 @@ final class PhpIncludeScanner
     /**
      * @param array<string,mixed> $directive
      * @param array<string,mixed> $resolved
+     */
+    private function recordIgnored(ReferenceContractResult $result, string $fileRel, array $directive, array $resolved, string $reason): void
+    {
+        $result->ignoredReferences++;
+        $payload = $this->referencePayload('ignored', $fileRel, $directive, $resolved);
+        $payload['ignore_reason'] = $reason;
+        $result->addReference($payload);
+    }
+
+    /**
+     * @param array<string,mixed> $directive
+     * @param array<string,mixed> $resolved
      * @return array<string,mixed>
      */
     private function referencePayload(string $status, string $fileRel, array $directive, array $resolved): array
@@ -244,7 +287,7 @@ final class PhpIncludeScanner
             return true;
         }
 
-        if ($this->config->timeoutSec <= 0 || $result->durationMs() > ($this->config->timeoutSec * 1000)) {
+        if ($result->durationMs() > ($this->config->timeoutSec * 1000)) {
             $this->stopWithFailure($result, 'reference_scan_timeout', 'Se alcanzó TESTKIT_REFERENCE_TIMEOUT_SEC.', 'execution');
             return true;
         }
@@ -297,5 +340,62 @@ final class PhpIncludeScanner
         }
 
         return false;
+    }
+
+    private function fileIgnoreReason(string $file): ?string
+    {
+        $relToRepo = trim(Paths::relativeToRepo($file), '/');
+        $relToRoot = trim(substr(Paths::normalize($file), strlen(rtrim($this->rootAbs, '/'))), '/');
+
+        foreach ($this->config->ignoreFiles as $ignore) {
+            $ignore = trim(str_replace('\\', '/', $ignore), '/');
+            if ($ignore === '') {
+                continue;
+            }
+            if ($relToRepo === $ignore || $relToRoot === $ignore) {
+                return 'TESTKIT_REFERENCE_IGNORE_FILES';
+            }
+        }
+
+        foreach ($this->config->ignoreFileRegexes as $regex) {
+            if (preg_match($regex, $relToRepo) === 1 || preg_match($regex, $relToRoot) === 1) {
+                return 'TESTKIT_REFERENCE_IGNORE_FILE_REGEX';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string,mixed> $directive
+     * @param array<string,mixed> $resolved
+     */
+    private function referenceIgnoreReason(string $file, array $directive, array $resolved): ?string
+    {
+        $literal = trim((string)($resolved['literal_reference'] ?? ''));
+        $reference = trim((string)($resolved['reference'] ?? ''));
+        $expression = trim((string)($resolved['expression'] ?? $directive['expression'] ?? ''));
+
+        foreach ($this->config->ignoreRefs as $ignore) {
+            $ignore = trim(str_replace('\\', '/', $ignore));
+            if ($ignore === '') {
+                continue;
+            }
+            if ($literal === $ignore || $reference === $ignore) {
+                return 'TESTKIT_REFERENCE_IGNORE_REFS';
+            }
+        }
+
+        foreach ($this->config->ignoreRefRegexes as $regex) {
+            if (
+                preg_match($regex, $literal) === 1
+                || preg_match($regex, $reference) === 1
+                || preg_match($regex, $expression) === 1
+            ) {
+                return 'TESTKIT_REFERENCE_IGNORE_REF_REGEX';
+            }
+        }
+
+        return null;
     }
 }

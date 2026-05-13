@@ -10,6 +10,8 @@ use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\SuiteContractRegistry;
 use Testkit\Core\References\PhpIncludeScanner;
 use Testkit\Core\References\ReferenceConfig;
+use Testkit\Core\References\ReferenceConfigException;
+use Testkit\Core\References\ReferenceConsoleRenderer;
 use Testkit\Core\References\ReferenceContractResult;
 use Testkit\Core\References\ReferenceRootResolver;
 use Testkit\Core\Reporting\ReportSummary;
@@ -22,7 +24,7 @@ final class ReferenceContractSuite
         $repoRoot = Paths::repoRoot();
         ProjectEnv::hydrateCurrentProcess($repoRoot, false);
 
-        $config = ReferenceConfig::fromEnv();
+        $config = self::fallbackConfig();
         $startedAt = gmdate('Y-m-d\TH:i:s\Z');
         $startedMs = ReferenceContractResult::nowMs();
         $reportRoot = Paths::reportsRoot() . '/reference_contract';
@@ -31,6 +33,7 @@ final class ReferenceContractSuite
         $discoveryStart = ReferenceContractResult::nowMs();
 
         try {
+            $config = ReferenceConfig::fromEnv();
             $resolvedRoot = ReferenceRootResolver::resolve($repoRoot, $config);
             $discoveryMs = max(0, ReferenceContractResult::nowMs() - $discoveryStart);
             $result = new ReferenceContractResult(
@@ -69,7 +72,7 @@ final class ReferenceContractSuite
         } catch (Throwable $e) {
             $causeCode = ReferenceRootResolver::causeCodeFor($e);
             $failure = ReferenceContractResult::failure(
-                $causeCode,
+                'reference_config_error',
                 $e->getMessage(),
                 '',
                 0,
@@ -110,6 +113,20 @@ final class ReferenceContractSuite
             fwrite(STDERR, '[reference_contract] ' . $e->getMessage() . PHP_EOL);
             return 1;
         }
+    }
+
+    private static function fallbackConfig(): ReferenceConfig
+    {
+        return new ReferenceConfig(
+            scope: 'back',
+            explicitRoot: '',
+            timeoutSec: 20,
+            maxFiles: 3000,
+            maxBytesPerFile: 1048576,
+            maxViolations: 200,
+            dynamicSeverity: 'warn',
+            ignoreDirs: ['vendor', 'node_modules', '.git', '.testkit', 'testkit/_out', '_out']
+        );
     }
 
     /**
@@ -184,48 +201,6 @@ final class ReferenceContractSuite
      */
     private static function printConsole(array $report, ReferenceConfig $config): void
     {
-        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
-        $warnings = is_array($report['warnings'] ?? null) ? count($report['warnings']) : 0;
-        $firstFailure = is_array($report['first_failure'] ?? null) ? $report['first_failure'] : null;
-        $phase = is_array($firstFailure) ? (string)($firstFailure['phase'] ?? 'none') : 'none';
-        $domain = is_array($firstFailure) ? (string)($firstFailure['failure_domain'] ?? 'none') : 'none';
-        $cause = is_array($firstFailure) ? (string)($firstFailure['cause_code'] ?? 'none') : 'none';
-
-        echo PHP_EOL;
-        echo 'REFERENCE CONTRACT' . PHP_EOL . PHP_EOL;
-        echo 'Selection' . PHP_EOL;
-        echo '  scope: ' . (string)($report['scope'] ?? $config->scope) . PHP_EOL;
-        echo '  root: ' . (string)($report['reference_root'] ?? '') . PHP_EOL;
-        echo '  files_scanned: ' . (string)($report['files_scanned'] ?? 0) . PHP_EOL;
-        echo '  timeout_sec: ' . $config->timeoutSec . PHP_EOL;
-        echo '  max_files: ' . $config->maxFiles . PHP_EOL . PHP_EOL;
-        echo 'Result' . PHP_EOL;
-        echo '  summary: PASS=' . (string)($summary['passed'] ?? 0)
-            . ' FAIL=' . (string)($summary['failed'] ?? 0)
-            . ' WARN=' . $warnings
-            . ' SKIP=' . (string)($summary['skipped'] ?? 0)
-            . ' time_ms=' . (string)($summary['duration_ms'] ?? 0)
-            . PHP_EOL;
-        echo '  outcome: ' . strtoupper((string)($report['suite_status'] ?? 'unknown'))
-            . ' phase=' . $phase
-            . ' domain=' . $domain
-            . ' cause=' . $cause
-            . PHP_EOL . PHP_EOL;
-        echo 'Reference Summary' . PHP_EOL;
-        echo '  scanned_files: ' . (string)($report['files_scanned'] ?? 0) . PHP_EOL;
-        echo '  php_references: ' . (string)($report['references_found'] ?? 0) . PHP_EOL;
-        echo '  broken_references: ' . (string)($report['broken_references'] ?? 0) . PHP_EOL;
-        echo '  dynamic_references: ' . (string)($report['dynamic_references'] ?? 0) . PHP_EOL;
-        echo '  skipped_files: ' . (string)($report['skipped_files'] ?? 0) . PHP_EOL;
-
-        if (is_array($firstFailure)) {
-            echo PHP_EOL;
-            echo 'First Failure' . PHP_EOL;
-            echo '  target: ' . (string)($firstFailure['kind'] ?? 'failure')
-                . ' ' . (string)($firstFailure['file'] ?? '')
-                . ':' . (string)($firstFailure['line'] ?? 0)
-                . PHP_EOL;
-            echo '  message: ' . (string)($firstFailure['message'] ?? '') . PHP_EOL;
-        }
+        echo ReferenceConsoleRenderer::render($report, $config, 8);
     }
 }

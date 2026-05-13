@@ -80,11 +80,13 @@ require_once __DIR__ . '/reporting/Inspector.php';
 require_once __DIR__ . '/reporting/AgentRunExecute.php';
 require_once __DIR__ . '/reporting/AgentRun.php';
 
+require_once __DIR__ . '/references/ReferenceConfigException.php';
 require_once __DIR__ . '/references/ReferenceConfig.php';
 require_once __DIR__ . '/references/ReferenceRootResolver.php';
 require_once __DIR__ . '/references/PhpIncludeExtractor.php';
 require_once __DIR__ . '/references/PhpIncludeResolver.php';
 require_once __DIR__ . '/references/ReferenceContractResult.php';
+require_once __DIR__ . '/references/ReferenceConsoleRenderer.php';
 require_once __DIR__ . '/references/PhpIncludeScanner.php';
 
 require_once __DIR__ . '/suites/SuiteSelection.php';

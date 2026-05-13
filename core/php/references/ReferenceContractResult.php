@@ -8,13 +8,18 @@ final class ReferenceContractResult
     public int $filesConsidered = 0;
     public int $filesScanned = 0;
     public int $referencesFound = 0;
+    public int $okReferences = 0;
     public int $brokenReferences = 0;
     public int $dynamicReferences = 0;
+    public int $ignoredReferences = 0;
     public int $skippedFiles = 0;
     public bool $truncated = false;
 
     /** @var array<int,array<string,mixed>> */
     public array $references = [];
+
+    /** @var array<int,array<string,mixed>> */
+    public array $skippedFileDetails = [];
 
     /** @var array<int,array<string,mixed>> */
     public array $warnings = [];
@@ -41,6 +46,12 @@ final class ReferenceContractResult
     public function addReference(array $reference): void
     {
         $this->references[] = $reference;
+    }
+
+    /** @param array<string,mixed> $file */
+    public function addSkippedFile(array $file): void
+    {
+        $this->skippedFileDetails[] = $file;
     }
 
     /** @param array<string,mixed> $warning */
@@ -75,7 +86,7 @@ final class ReferenceContractResult
         $failed = count($this->failures);
         $warn = count($this->warnings);
         $total = max($this->referencesFound + $this->skippedFiles, $failed + $this->skippedFiles);
-        $passed = max(0, $this->referencesFound - $this->brokenReferences - self::dynamicFailureCount($this->failures));
+        $passed = $this->okReferences + $this->ignoredReferences;
 
         return array_merge([
             'suite_id' => 'reference_contract',
@@ -86,11 +97,14 @@ final class ReferenceContractResult
             'files_considered' => $this->filesConsidered,
             'files_scanned' => $this->filesScanned,
             'references_found' => $this->referencesFound,
+            'ok_references' => $this->okReferences,
             'broken_references' => $this->brokenReferences,
             'dynamic_references' => $this->dynamicReferences,
+            'ignored_references' => $this->ignoredReferences,
             'skipped_files' => $this->skippedFiles,
             'truncated' => $this->truncated,
             'references' => $this->references,
+            'skipped_file_details' => $this->skippedFileDetails,
             'warnings' => $this->warnings,
             'failures' => $this->failures,
             'failed_tests' => $this->failures,
@@ -108,6 +122,12 @@ final class ReferenceContractResult
                 'warnings' => $warn,
                 'duration_ms' => $this->durationMs(),
                 'suite_status' => $status,
+                'ok_references' => $this->okReferences,
+                'broken_references' => $this->brokenReferences,
+                'dynamic_references' => $this->dynamicReferences,
+                'ignored_references' => $this->ignoredReferences,
+                'skipped_files' => $this->skippedFiles,
+                'truncated' => $this->truncated,
             ],
             'phase_timings_ms' => $this->phaseTimingsMs,
             'first_failure' => $this->failures !== [] ? $this->failures[0] : null,
@@ -115,21 +135,6 @@ final class ReferenceContractResult
             'evidence_valid' => $status === 'passed',
             'evidence_invalid_reason' => $status === 'passed' ? null : 'reference_contract_failed',
         ], $extra);
-    }
-
-    /**
-     * @param array<int,array<string,mixed>> $failures
-     */
-    private static function dynamicFailureCount(array $failures): int
-    {
-        $count = 0;
-        foreach ($failures as $failure) {
-            if ((string)($failure['cause_code'] ?? '') === 'dynamic_php_include') {
-                $count++;
-            }
-        }
-
-        return $count;
     }
 
     /**
@@ -168,6 +173,8 @@ final class ReferenceContractResult
         int $line = 0,
         array $extra = []
     ): array {
+        $causeCode = (string)($extra['cause_code'] ?? $kind);
+
         return array_merge([
             'kind' => $kind,
             'test_id' => 'reference_contract.' . ($file !== '' ? str_replace('/', '.', $file) . ':' . $line : $kind),
@@ -180,7 +187,7 @@ final class ReferenceContractResult
             'message' => $message,
             'phase' => 'execution',
             'failure_domain' => 'references',
-            'cause_code' => $kind,
+            'cause_code' => $causeCode,
         ], $extra);
     }
 

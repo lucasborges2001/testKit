@@ -137,3 +137,48 @@ Fallos operativos principales:
 | `reference_max_violations_exceeded` | límite de violaciones alcanzado; `truncated=true` |
 | `missing_php_include` | include literal apunta a archivo inexistente |
 | `dynamic_php_include` | include dinámico con severity `error` |
+
+## `reference-contract` para includes PHP
+
+`reference-contract` es una suite técnica de lectura estática. No ejecuta código de aplicación ni bootstrap de DB. En esta fase solo analiza includes PHP:
+
+- `require`
+- `require_once`
+- `include`
+- `include_once`
+
+Comandos base:
+
+```bash
+TESTKIT_REFERENCE_SCOPE=back php runTest.php reference-contract
+TESTKIT_REFERENCE_SCOPE=front php runTest.php reference-contract
+TESTKIT_REFERENCE_ROOT=web_cargadores/PHP php runTest.php reference-contract
+TESTKIT_REFERENCE_ROOT=web_cargadores/public php runTest.php reference-contract
+```
+
+Resolución de roots:
+
+- `TESTKIT_REFERENCE_ROOT` tiene prioridad y debe apuntar a un directorio dentro del repo.
+- `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
+- `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si no existe, usa `TK_PUBLIC_DIR`.
+
+Ignores auditables:
+
+```bash
+TESTKIT_REFERENCE_IGNORE_REFS=vendor/autoload.php
+TESTKIT_REFERENCE_IGNORE_REF_REGEX='~/legacy/.*\.php$~'
+TESTKIT_REFERENCE_IGNORE_FILES=web_cargadores/PHP/tmp/local.php
+TESTKIT_REFERENCE_IGNORE_FILE_REGEX='~/(legacy|tmp)/~'
+```
+
+Los ignores no desaparecen silenciosamente:
+
+- referencias ignoradas suman `ignored_references`
+- archivos ignorados suman `skipped_files`
+- errores de configuración, root faltante, root fuera del repo y timeouts no se ocultan con ignores
+
+El JSON latest de esta suite queda en:
+
+```text
+.testkit/reports/reference_contract/reference_contract_latest.json
+```

@@ -300,3 +300,26 @@ Reglas de root:
 5. `TESTKIT_REFERENCE_ROOT=.` es la única forma explícita de pedir escaneo del repo completo.
 
 La suite no toca DB/store y no participa en bootstrap estructural.
+
+## Anexo: `reference-contract`
+
+`reference-contract` es una suite técnica de consistencia referencial. Su contrato actual está deliberadamente cerrado a includes PHP estáticos.
+
+Alcance soportado:
+
+- `require`
+- `require_once`
+- `include`
+- `include_once`
+- expresiones resolubles con strings literales y `__DIR__`
+
+Fuera de contrato en esta fase:
+
+- imports JS
+- assets CSS/HTML
+- links Markdown
+- rutas HTTP
+- autoload avanzado de Composer
+- autofix
+
+Esta suite no debe tomar lock de store ni disparar bootstrap estructural: no muta DB, no ejecuta tests de dominio y no reemplaza coverage ni smoke tests funcionales.

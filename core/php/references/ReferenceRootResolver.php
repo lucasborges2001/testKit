@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Testkit\Core\References;
 
-use RuntimeException;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 
@@ -31,7 +30,10 @@ final class ReferenceRootResolver
         }
 
         if ($rootInput === '') {
-            throw self::missingRoot($config->scope, $source, 'No se pudo resolver reference root: ' . $source . ' no está definido.');
+            throw self::error(
+                'reference_root_missing',
+                'No se pudo resolver reference root: ' . $source . ' no está definido. scope=' . $config->scope . ' source=' . $source
+            );
         }
 
         $explicitAbsolute = self::isAbsolute($rootInput);
@@ -39,21 +41,33 @@ final class ReferenceRootResolver
             ? Paths::normalize($rootInput)
             : self::normalizeLexical($repoRoot . '/' . ltrim(str_replace('\\', '/', $rootInput), '/'));
 
-        if (!$explicitAbsolute && !self::isInside($candidate, $repoRoot)) {
-            throw self::invalidRoot('reference root relativo queda fuera del repo: ' . $rootInput);
+        if (!self::isInside($candidate, $repoRoot)) {
+            throw self::error(
+                'reference_root_outside_repo',
+                'Reference root queda fuera del repo: ' . $rootInput
+            );
         }
 
         if (is_file($candidate)) {
-            throw self::missingRoot($config->scope, $source, 'Reference root apunta a archivo, no a directorio: ' . $rootInput);
+            throw self::error(
+                'reference_root_not_directory',
+                'Reference root apunta a archivo, no a directorio: ' . $rootInput
+            );
         }
 
         if (!is_dir($candidate)) {
-            throw self::missingRoot($config->scope, $source, 'Reference root no existe o no es directorio: ' . $rootInput);
+            throw self::error(
+                'reference_root_missing',
+                'Reference root no existe: ' . $rootInput
+            );
         }
 
         $absolute = self::canonicalExistingDir($candidate);
-        if (!$explicitAbsolute && !self::isInside($absolute, $repoRoot)) {
-            throw self::invalidRoot('reference root relativo queda fuera del repo después de resolver symlinks: ' . $rootInput);
+        if (!self::isInside($absolute, $repoRoot)) {
+            throw self::error(
+                'reference_root_outside_repo',
+                'Reference root queda fuera del repo después de resolver symlinks: ' . $rootInput
+            );
         }
 
         return [
@@ -68,28 +82,31 @@ final class ReferenceRootResolver
 
     public static function causeCodeFor(\Throwable $error): string
     {
+        if ($error instanceof ReferenceConfigException) {
+            return $error->causeCode;
+        }
+
         $message = $error->getMessage();
-        if (str_contains($message, 'reference_root_missing')) {
-            return 'reference_root_missing';
-        }
-        if (str_contains($message, 'reference_root_invalid')) {
-            return 'reference_root_invalid';
-        }
-        if (str_contains($message, 'Reference root no existe') || str_contains($message, 'no está definido') || str_contains($message, 'apunta a archivo')) {
-            return 'reference_root_missing';
+        foreach ([
+            'reference_invalid_scope',
+            'reference_invalid_dynamic_severity',
+            'reference_invalid_regex',
+            'reference_root_missing',
+            'reference_root_outside_repo',
+            'reference_root_not_directory',
+            'reference_invalid_limit',
+        ] as $causeCode) {
+            if (str_contains($message, $causeCode)) {
+                return $causeCode;
+            }
         }
 
-        return 'reference_root_invalid';
+        return 'reference_invalid_config';
     }
 
-    private static function missingRoot(string $scope, string $source, string $message): RuntimeException
+    private static function error(string $causeCode, string $message): ReferenceConfigException
     {
-        return new RuntimeException('reference_root_missing: ' . $message . ' scope=' . $scope . ' source=' . $source, 0);
-    }
-
-    private static function invalidRoot(string $message): RuntimeException
-    {
-        return new RuntimeException('reference_root_invalid: ' . $message, 0);
+        return new ReferenceConfigException($causeCode, $message);
     }
 
     private static function canonicalExistingDir(string $dir): string
