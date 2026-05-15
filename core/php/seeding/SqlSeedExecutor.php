@@ -268,11 +268,24 @@ final class SqlSeedExecutor
 
     public static function executeStatement(PDO $pdo, string $statement): void
     {
-        if (preg_match('/^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN|WITH)\b/i', $statement) === 1) {
+        if (preg_match('/^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN|WITH|EXECUTE|CALL)\b/i', $statement) === 1) {
             $result = $pdo->query($statement);
             if ($result !== false) {
-                $result->fetchAll(PDO::FETCH_ASSOC);
-                $result->closeCursor();
+                try {
+                    do {
+                        if ($result->columnCount() > 0) {
+                            $result->fetchAll(PDO::FETCH_ASSOC);
+                        }
+
+                        try {
+                            $hasNextRowset = $result->nextRowset();
+                        } catch (\Throwable) {
+                            $hasNextRowset = false;
+                        }
+                    } while ($hasNextRowset);
+                } finally {
+                    $result->closeCursor();
+                }
             }
             return;
         }
