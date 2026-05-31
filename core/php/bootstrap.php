@@ -12,6 +12,9 @@ require_once __DIR__ . '/common/Lock.php';
 require_once __DIR__ . '/config/SuiteContractRegistry.php';
 require_once __DIR__ . '/config/RunnerConfig.php';
 require_once __DIR__ . '/discovery/TestTagger.php';
+require_once __DIR__ . '/discovery/TestPatternMatcher.php';
+require_once __DIR__ . '/discovery/TestRootResolver.php';
+require_once __DIR__ . '/discovery/PhpDiscoveryConfig.php';
 require_once __DIR__ . '/discovery/TestDiscovery.php';
 require_once __DIR__ . '/discovery/TestSeedMetadata.php';
 

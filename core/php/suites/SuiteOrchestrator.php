@@ -23,6 +23,24 @@ final class SuiteOrchestrator
     /**
      * @param array<string,mixed> $config
      * @param array<int,string> $extensions
+     * @return array<int,array<string,mixed>>
+     */
+    public static function discoverTests(array $config, array $extensions): array
+    {
+        $options = is_array($config['discovery_options'] ?? null) ? $config['discovery_options'] : [];
+        $roots = is_array($options['roots'] ?? null) ? $options['roots'] : [];
+        $patterns = is_array($options['patterns'] ?? null) ? $options['patterns'] : [];
+
+        if ($roots !== [] && $patterns !== []) {
+            return TestDiscovery::discoverMany($roots, $patterns, $config, $options);
+        }
+
+        return TestDiscovery::discover((string)$config['tests_dir'], $extensions, $config);
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<int,string> $extensions
      * @param callable $buildCommand fn(array $test, int $workerId): array{cmd:array<int,string>, env:array<string,string>}
      * @param callable|null $postRun fn(array<string,mixed> &$result, array<string,mixed> $config): void
      */
@@ -60,7 +78,7 @@ final class SuiteOrchestrator
         $lockLease = null;
 
         try {
-            $tests = TestDiscovery::discover((string)$config['tests_dir'], $extensions, $config);
+            $tests = self::discoverTests($config, $extensions);
             $reportRoot = Paths::resolveReportRoot($tests);
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, (string)($config['suite_id'] ?? 'suite'));
@@ -266,9 +284,7 @@ final class SuiteOrchestrator
         }
     }
 
-    /**
-     * @param array<int,string> $extensions
-     */
+    /** @param array<int,string> $extensions */
     private static function extensionsContainPhp(array $extensions): bool
     {
         foreach ($extensions as $ext) {
@@ -301,9 +317,7 @@ final class SuiteOrchestrator
         return gmdate('Ymd\THis\Z') . '_' . $suffix;
     }
 
-    /**
-     * @return array<string,int>
-     */
+    /** @return array<string,int> */
     private static function emptyPhaseTimings(): array
     {
         return [
@@ -314,9 +328,7 @@ final class SuiteOrchestrator
         ];
     }
 
-    /**
-     * @param array<string,int> &$phaseTimings
-     */
+    /** @param array<string,int> &$phaseTimings */
     private static function transitionPhase(string &$currentPhase, string $nextPhase, int &$phaseStartedMs, array &$phaseTimings): void
     {
         $nowMs = self::nowMs();
@@ -328,10 +340,7 @@ final class SuiteOrchestrator
         $phaseStartedMs = $nowMs;
     }
 
-    /**
-     * @param array<string,int> $phaseTimings
-     * @return array<string,int>
-     */
+    /** @param array<string,int> $phaseTimings @return array<string,int> */
     private static function phaseTimingsSnapshot(array $phaseTimings, string $currentPhase, int $phaseStartedMs): array
     {
         $snapshot = self::emptyPhaseTimings();
@@ -346,9 +355,7 @@ final class SuiteOrchestrator
         return $snapshot;
     }
 
-    /**
-     * @param array<string,mixed> &$result
-     */
+    /** @param array<string,mixed> &$result */
     private static function attachObservabilityDefaults(array &$result, int $selectedTestCount): void
     {
         if (!is_array($result['progress_policy'] ?? null)) {
@@ -361,11 +368,7 @@ final class SuiteOrchestrator
         }
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $left
-     * @param array<int,array<string,mixed>> $right
-     * @return array<int,array<string,mixed>>
-     */
+    /** @param array<int,array<string,mixed>> $left @param array<int,array<string,mixed>> $right @return array<int,array<string,mixed>> */
     private static function mergeWarnings(array $left, array $right): array
     {
         $merged = [];

@@ -11,6 +11,7 @@ use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\DbProfiling\MysqlProfileConfig;
 use Testkit\Core\DbProfiling\MysqlProfileReporter;
+use Testkit\Core\Discovery\PhpDiscoveryConfig;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Discovery\TestSeedMetadata;
 use Testkit\Core\Execution\SuiteExecutor;
@@ -29,9 +30,8 @@ final class BackPhpSuite
         $repoRoot = Paths::repoRoot();
         $testkitRoot = Paths::testkitRoot();
 
-        $testRel = Env::string('TK_BACK_PHP_DIR', 'test/back');
-        $testsRoot = $repoRoot . '/' . $testRel;
-        $testsDir = is_dir($testsRoot . '/tests') ? ($testsRoot . '/tests') : $testsRoot;
+        $discoveryConfig = PhpDiscoveryConfig::backPhpFromEnv($repoRoot);
+        $testsDir = (string)$discoveryConfig['tests_dir'];
 
         $config = RunnerConfig::forSuite(
             'back_php',
@@ -39,6 +39,11 @@ final class BackPhpSuite
             $repoRoot . '/test/coverage/php_back',
             'php'
         );
+
+        if (isset($discoveryConfig['discovery_options']) && is_array($discoveryConfig['discovery_options'])) {
+            $config['discovery_options'] = $discoveryConfig['discovery_options'];
+        }
+        self::attachDiscoveryWarnings($config, $discoveryConfig['warnings'] ?? []);
 
         $runId = self::ensureRunId('TEST_RUN_ID');
         $metaRunId = self::ensureRunId('TEST_META_RUN_ID', $runId);
@@ -98,7 +103,7 @@ final class BackPhpSuite
         $resolved = ['db_env_path' => '', 'warnings' => []];
 
         try {
-            $selectedTests = TestDiscovery::discover($testsDir, ['.test.php'], $config);
+            $selectedTests = SuiteOrchestrator::discoverTests($config, ['.test.php']);
             $reportRoot = Paths::resolveReportRoot($selectedTests);
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, 'back_php');
@@ -322,6 +327,19 @@ final class BackPhpSuite
             'domain' => 'bootstrap',
             'cause_code' => 'bootstrap_failed',
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<int,array<string,mixed>> $warnings
+     */
+    private static function attachDiscoveryWarnings(array &$config, array $warnings): void
+    {
+        if ($warnings === []) {
+            return;
+        }
+        $existing = is_array($config['env_warnings'] ?? null) ? $config['env_warnings'] : [];
+        $config['env_warnings'] = array_values(array_merge($existing, $warnings));
     }
 
     /**
