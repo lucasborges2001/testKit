@@ -70,6 +70,7 @@ Para baseline `layered`:
 - `test/seeds/<driver>/base/`
 - `test/seeds/<driver>/validations/` es opcional
 - `test/seeds/<driver>/migrations/<id>/` aplica solo si el proyecto decide usar migraciones explícitas
+- `test/seeds/<driver>/migrations.disabled` permite desactivar el catálogo runtime y reconstruir solo desde `schema + base + validations`
 
 Para baseline `snapshot`:
 

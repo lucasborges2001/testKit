@@ -10,12 +10,26 @@ final class MigrationCatalog
     public const KIND_OPTIONAL = 'optional_migration';
     public const KIND_ACTIVE = 'active_migration';
     public const KIND_HISTORICAL_ABSORBED = 'historical_absorbed_change';
+    private const DISABLED_MARKER = 'migrations.disabled';
 
     /**
      * @return array<string,mixed>
      */
     public static function load(string $seedDir): array
     {
+        $disabledMarker = self::disabledMarkerPath($seedDir);
+        if (is_file($disabledMarker)) {
+            return [
+                'entries' => [],
+                'executable' => [],
+                'active' => [],
+                'optional' => [],
+                'historical_absorbed' => [],
+                'disabled' => true,
+                'disabled_marker' => str_replace('\\', '/', $disabledMarker),
+            ];
+        }
+
         $root = rtrim($seedDir, '/\\') . '/migrations';
         if (!is_dir($root)) {
             return [
@@ -24,6 +38,8 @@ final class MigrationCatalog
                 'active' => [],
                 'optional' => [],
                 'historical_absorbed' => [],
+                'disabled' => false,
+                'disabled_marker' => null,
             ];
         }
 
@@ -72,7 +88,17 @@ final class MigrationCatalog
             'active' => $active,
             'optional' => $optional,
             'historical_absorbed' => $historicalAbsorbed,
+            'disabled' => false,
+            'disabled_marker' => null,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $catalog
+     */
+    public static function isDisabled(array $catalog): bool
+    {
+        return !empty($catalog['disabled']);
     }
 
     public static function isExecutableKind(string $kind): bool
@@ -99,6 +125,10 @@ final class MigrationCatalog
     {
         $normalized = self::normalizeIds($selected);
         if ($normalized === []) {
+            return [];
+        }
+
+        if (self::isDisabled($catalog)) {
             return [];
         }
 
@@ -236,5 +266,10 @@ final class MigrationCatalog
         $files = glob(rtrim($dir, '/\\') . '/*.sql') ?: [];
         natcasesort($files);
         return array_values($files);
+    }
+
+    private static function disabledMarkerPath(string $seedDir): string
+    {
+        return rtrim($seedDir, '/\\') . '/' . self::DISABLED_MARKER;
     }
 }
