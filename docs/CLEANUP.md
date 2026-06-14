@@ -1,156 +1,177 @@
 # testKit cleanup
 
-`cleanup` elimina artefactos operativos generados por testKit en el repo host.
+`cleanup` removes generated artifacts from host projects that use testKit. It is conservative by default: it plans first and deletes only with `--apply`.
 
-El objetivo es reducir crecimiento de `.testkit/` sin borrar tests, seeds, bases de datos ni volúmenes de Docker.
-
-## Uso rápido
+## Common commands
 
 ```bash
-./bin/testkit cleanup reports --dry-run
-./bin/testkit cleanup reports --apply
-./bin/testkit cleanup reports --max-runs=10 --apply
+./testkit/bin/testkit cleanup reports --dry-run
+./testkit/bin/testkit cleanup reports --apply
+./testkit/bin/testkit cleanup reports --max-runs=10 --dry-run
+./testkit/bin/testkit cleanup reports --max-runs=10 --apply
+./testkit/bin/testkit cleanup all --dry-run
 ```
 
-En PowerShell:
+PowerShell:
 
 ```powershell
-.\bin\testkit.ps1 cleanup reports --dry-run
-.\bin\testkit.ps1 cleanup reports --apply
+.\testkit\bin\testkit.ps1 cleanup reports --dry-run
+.\testkit\bin\testkit.ps1 cleanup reports --max-runs=10 --apply
 ```
 
-`--dry-run` es el modo por defecto. Para borrar realmente, usar `--apply`.
+## Retention semantics
 
-## Comandos
+`--keep-runs` and `--keep-days` are additive protections. A run is kept if either condition protects it.
+
+Use `--max-runs=N` when you want a hard cap on report run directories and profile shard directories.
+
+Example:
 
 ```bash
-./bin/testkit cleanup all --dry-run
-./bin/testkit cleanup reports --keep-runs=10 --keep-days=14 --apply
-./bin/testkit cleanup reports --max-runs=10 --apply
-./bin/testkit cleanup profiles --keep-runs=10 --keep-days=14 --apply
-./bin/testkit cleanup profiles --max-runs=5 --apply
-./bin/testkit cleanup coverage --apply
-./bin/testkit cleanup locks --apply
-./bin/testkit cleanup history --apply
-./bin/testkit cleanup baselines --force --apply
+./testkit/bin/testkit cleanup reports --max-runs=10 --apply
 ```
 
-## Grupos
+This keeps only the 10 newest report run directories, even when more runs are still within `--keep-days`.
 
-| Grupo | Qué revisa | Default seguro |
-| --- | --- | --- |
-| `reports` | `.testkit/reports/runs/<run_id>` y JSON timestamped viejos | sí |
-| `profiles` | `.testkit/mysql_profile/shards/<run_id>` y `.testkit/influx_profile/shards/<run_id>` | sí |
-| `coverage` | `test/coverage` y `TEST_COVERAGE_DIR` seguro | sí |
-| `locks` | `.testkit/locks/*` | solo locks stale |
-| `history` | `.testkit/history/*.json` | solo si se pide explícitamente, o con `--include-history` en `all` |
-| `baselines` | `.testkit/baselines/**/*.manifest.json` | requiere `--force` |
+## Groups
 
-## Retención
+```text
+all
+reports
+profiles
+coverage
+locks
+history
+baselines
+```
 
-`cleanup` conserva artefactos por dos criterios normales:
+### reports
 
-- `--keep-runs=N`: conserva los N más recientes.
-- `--keep-days=N`: conserva artefactos más nuevos que N días.
+Targets:
 
-Esos dos criterios son aditivos: un artefacto se borra solo si queda fuera de ambos. Por eso, si hay muchas corridas recientes dentro de `--keep-days`, pueden quedar más de `--keep-runs` directorios.
+```text
+.testkit/reports/runs/<run_id>/
+.testkit/reports/*_<timestamp>.json
+```
 
-Default:
+Preserves:
+
+```text
+*_latest.json
+latest_run.json
+```
+
+### profiles
+
+Targets:
+
+```text
+.testkit/mysql_profile/shards/<run_id>/
+.testkit/influx_profile/shards/<run_id>/
+```
+
+### coverage
+
+Targets safe coverage artifacts only:
+
+```text
+test/coverage
+$TEST_COVERAGE_DIR when it is inside an allowed coverage location
+```
+
+### locks
+
+Targets stale lock directories under:
+
+```text
+.testkit/locks
+```
+
+Active locks are preserved unless `--all-locks --force` is used.
+
+### history
+
+Not included in `all` by default. Use:
 
 ```bash
---keep-runs=10 --keep-days=14
+./testkit/bin/testkit cleanup all --include-history --dry-run
 ```
 
-### Techo duro con `--max-runs`
+### baselines
 
-Usar `--max-runs=N` cuando se necesita un límite real de directorios de corrida, aunque todos sean recientes.
+Requires `--force`. Deletes only baseline manifest files, not databases or stores.
 
 ```bash
-./bin/testkit cleanup reports --max-runs=10 --dry-run
-./bin/testkit cleanup reports --max-runs=10 --apply
+./testkit/bin/testkit cleanup baselines --force --dry-run
 ```
 
-`--max-runs` aplica a:
+## Safety rules
 
-- `.testkit/reports/runs/<run_id>`
-- `.testkit/mysql_profile/shards/<run_id>`
-- `.testkit/influx_profile/shards/<run_id>`
+`cleanup` never deletes:
 
-No aplica a `history`, `coverage`, `locks` ni `baselines`.
-
-## JSON
-
-```bash
-./bin/testkit cleanup reports --dry-run --json
+```text
+databases
+Docker volumes
+test seeds
+test source files
+env files
+repo root
+testkit root
+.testkit root itself
 ```
 
-Devuelve un payload con:
+Deletion requires:
 
-- `summary.scanned`
-- `summary.delete_candidates`
-- `summary.bytes_reclaimable`
-- `groups.*`
-- `candidates[]`
-- `errors[]`
+```text
+--apply
+```
 
-## Auditoría
+Destructive special cases require:
 
-Cada ejecución escribe:
+```text
+--force
+```
+
+## Audit artifacts
+
+Every run writes:
 
 ```text
 .testkit/reports/cleanup/cleanup_latest.json
 .testkit/reports/cleanup/cleanup_<timestamp>.json
 ```
 
-Esto ocurre también en dry-run, para dejar evidencia del plan calculado.
+## Internal split
 
-## Seguridad
+`core/php/cleanup/CleanupCommand.php` is intentionally small. The cleanup implementation is split into:
 
-`cleanup` no borra:
-
-- bases de datos
-- volúmenes Docker
-- seeds
-- tests fuente
-- `test/_support`
-- `.env.test`
-- `*_latest.json`
-- `latest_run.json`
-- locks activos, salvo `--all-locks --force`
-
-La limpieza de baselines solo borra manifests `.manifest.json`. No intenta dropear databases ni resetear stores.
-
-## Casos recomendados
-
-### Reducir explosión de corridas conservando los últimos días
-
-```bash
-./bin/testkit cleanup reports --keep-runs=10 --keep-days=7 --dry-run
-./bin/testkit cleanup reports --keep-runs=10 --keep-days=7 --apply
+```text
+CleanupOptions.php        CLI option parsing and validation
+CleanupPlanner.php        Candidate discovery and plan construction
+CleanupExecutor.php       Deletion execution after --apply
+CleanupFilesystem.php     File traversal, deletion, size and formatting helpers
+CleanupSafety.php         Path safety policy
+CleanupLockInspector.php  Stale lock detection
+CleanupAuditWriter.php    Cleanup audit artifact writer
+CleanupReporter.php       Text and JSON output
 ```
 
-### Reducir a un número exacto de corridas
+The external entrypoint remains unchanged:
 
-```bash
-./bin/testkit cleanup reports --max-runs=10 --dry-run
-./bin/testkit cleanup reports --max-runs=10 --apply
+```text
+scripts/cleanup.php -> Testkit\Core\Cleanup\CleanupCommand::runCli($argv)
 ```
 
-### Limpiar profiling viejo
+## Contract test
 
 ```bash
-./bin/testkit cleanup profiles --keep-runs=5 --keep-days=7 --apply
+php tests/framework/test_cleanup_contract.php
 ```
 
-### Limpiar cobertura generada
+The test validates:
 
-```bash
-./bin/testkit cleanup coverage --apply
-```
-
-### Limpiar locks stale
-
-```bash
-./bin/testkit cleanup locks --apply
-```
-
+- `--dry-run` does not delete.
+- `--apply` deletes only candidates beyond `--max-runs`.
+- only the newest run dirs remain.
+- `*_latest.json` is preserved.
+- `cleanup_latest.json` is written.
