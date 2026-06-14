@@ -22,6 +22,7 @@ require_once __DIR__ . '/execution/ProcessRunner.php';
 require_once __DIR__ . '/execution/SuiteExecutor.php';
 require_once __DIR__ . '/execution/ParallelGuard.php';
 
+require_once __DIR__ . '/coverage/CoverageFilter.php';
 require_once __DIR__ . '/coverage/CoverageMerger.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 

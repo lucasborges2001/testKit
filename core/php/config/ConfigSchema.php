@@ -11,49 +11,18 @@ final class ConfigSchema
     public static function inspectPayload(): array
     {
         return [
-            'schema_version' => 3,
+            'schema_version' => 4,
             'support_contract_version' => 1,
             'commands' => [
-                [
-                    'command' => 'php runTest.php --help',
-                    'purpose' => 'mostrar ayuda del runner',
-                ],
-                [
-                    'command' => 'php runTest.php <target> --list',
-                    'purpose' => 'listar la selección efectiva sin ejecutar tests',
-                ],
-                [
-                    'command' => 'php scripts/inspect.php config-schema',
-                    'purpose' => 'ver el esquema soportado en formato texto',
-                ],
-                [
-                    'command' => 'php scripts/inspect.php config-schema --json',
-                    'purpose' => 'serializar el esquema soportado',
-                ],
+                ['command' => 'php runTest.php --help', 'purpose' => 'mostrar ayuda del runner'],
+                ['command' => 'php runTest.php <target> --list', 'purpose' => 'listar la selección efectiva sin ejecutar tests'],
+                ['command' => 'php scripts/inspect.php config-schema', 'purpose' => 'ver el esquema soportado en formato texto'],
+                ['command' => 'php scripts/inspect.php config-schema --json', 'purpose' => 'serializar el esquema soportado'],
             ],
             'targets' => [
-                'all',
-                'back',
-                'front',
-                'public_html',
-                'back-php',
-                'back-py',
-                'back-python',
-                'python',
-                'py',
-                'front-php',
-                'front-js',
-                'php',
-                'js',
-                'smoke',
-                'perf',
-                'stress',
-                'contract',
-                'critical',
-                'slow',
-                'migration-contract',
-                'migration',
-                'migrations',
+                'all', 'back', 'front', 'public_html', 'back-php', 'back-py', 'back-python',
+                'python', 'py', 'front-php', 'front-js', 'php', 'js', 'smoke', 'perf',
+                'stress', 'contract', 'critical', 'slow', 'migration-contract', 'migration', 'migrations',
             ],
             'support_matrix' => self::supportMatrix(),
             'db_strategies' => [
@@ -88,201 +57,102 @@ final class ConfigSchema
                 ],
             ],
             'environment' => [
-                self::env(
-                    key: 'TEST_SCOPE',
-                    type: 'string',
-                    default: 'all',
-                    validValues: ['all', 'unit', 'integration', 'e2e'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'Se usa para filtrar tests por scope visible.',
-                        'Si no se declara, el runner cae a all.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_CATEGORY',
-                    type: 'string',
-                    default: 'all',
-                    validValues: ['all', 'smoke', 'perf', 'stress', 'contract', 'critical', 'slow'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'Los category targets pueden inyectarla automáticamente si no está definida.',
-                        'Una contradicción visible entre target y TEST_CATEGORY debería verse en doctor.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_MATCH',
-                    type: 'string',
-                    default: '',
-                    validValues: [],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'Filtra la selección efectiva.',
-                        'Un rerun sugerido suele materializarse vía TEST_MATCH.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_LIST',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'runTest.php --list fuerza TEST_LIST=1 para esa corrida.',
-                        'Valores bool inválidos deben quedar visibles vía warnings.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_FAIL_FAST',
-                    type: 'bool',
-                    default: true,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Controla fail-fast intra-suite.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_META_FAIL_FAST',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['meta'],
-                    notes: [
-                        'Controla fail-fast del agregado meta.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_CHILD_FAIL_FAST',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['meta'],
-                    notes: [
-                        'Meta puede reescribir TEST_FAIL_FAST para child suites.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_JOBS',
-                    type: 'int',
-                    default: 1,
-                    validValues: ['integer >= 1'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'TEST_JOBS>1 sin per_worker es una ruta de riesgo visible.',
-                        'Enteros inválidos deben quedar visibles vía warnings.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_DB_STRATEGY',
-                    type: 'string',
-                    default: 'shared',
-                    validValues: ['shared', 'per_worker'],
-                    rejectedValues: ['clean'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'clean no es un modo operativo soportado y debe rechazarse explícitamente.',
-                        'per_worker aísla workers dentro de una suite; no habilita múltiples runners top-level.',
-                        'migration-contract exige shared.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_REQUIRE_TESTS',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Hace visible que selección vacía no es aceptable para esa corrida.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_COVERAGE',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Habilita cobertura donde la suite/lenguaje la soporte.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_COVERAGE_FORMAT',
-                    type: 'string',
-                    default: 'lcov',
-                    validValues: ['lcov', 'json', 'both'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Se usa solo cuando TEST_COVERAGE está activo.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_COVERAGE_DIR',
-                    type: 'string',
-                    default: '',
-                    validValues: [],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Si está presente, redefine el root de artifacts de coverage por suite.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_BASELINE_MODE',
-                    type: 'string',
-                    default: 'layered',
-                    validValues: ['layered', 'snapshot'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'migration-contract exige snapshot.',
-                        'snapshot cerrado actualmente solo en la ruta MySQL.',
-                    ]
-                ),
-                self::env(
-                    key: 'TEST_STORE_DRIVER',
-                    type: 'string',
-                    default: 'mysql',
-                    validValues: ['mysql', 'pgsql'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'mysql es la ruta principal cerrada.',
-                        'pgsql es parcial: runtime/provision/reset básico; sin snapshot/clone cerrado.',
-                        'redis e influx no son store drivers principales.',
-                    ]
-                ),
-                self::env(
-                    key: 'DB_DRIVER',
-                    type: 'string',
-                    default: 'mysql',
-                    validValues: ['mysql', 'pgsql'],
-                    appliesTo: ['suite', 'meta'],
-                    notes: [
-                        'Alias runtime para resolver driver de store.',
-                        'No convierte pgsql en ruta cerrada de snapshot/clone.',
-                    ]
-                ),
-                self::env(
-                    key: 'TESTKIT_STACK',
-                    type: 'csv',
-                    default: 'mysql,redis',
-                    validValues: ['mysql', 'pg', 'redis', 'influx'],
-                    appliesTo: ['wrapper', 'doctor'],
-                    notes: [
-                        'mysql describe el servicio principal cerrado.',
-                        'pg describe infraestructura parcial.',
-                        'redis es auxiliar, no lifecycle estructural core.',
-                        'influx es auxiliar/perfilado, no store principal.',
-                    ]
-                ),
-                self::env(
-                    key: 'TESTKIT_SKIP_STORE_BOOTSTRAP',
-                    type: 'bool',
-                    default: false,
-                    validValues: ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'],
-                    appliesTo: ['suite'],
-                    notes: [
-                        'Útil para cortar bootstrap/store cuando la corrida necesita aislar otra cosa.',
-                    ]
-                ),
+                self::env('TEST_SCOPE', 'string', 'all', ['all', 'unit', 'integration', 'e2e'], ['suite', 'meta'], [
+                    'Se usa para filtrar tests por scope visible.',
+                    'Si no se declara, el runner cae a all.',
+                ]),
+                self::env('TEST_CATEGORY', 'string', 'all', ['all', 'smoke', 'perf', 'stress', 'contract', 'critical', 'slow'], ['suite', 'meta'], [
+                    'Los category targets pueden inyectarla automáticamente si no está definida.',
+                    'Una contradicción visible entre target y TEST_CATEGORY debería verse en doctor.',
+                ]),
+                self::env('TEST_MATCH', 'string', '', [], ['suite', 'meta'], [
+                    'Filtra la selección efectiva.',
+                    'Un rerun sugerido suele materializarse vía TEST_MATCH.',
+                ]),
+                self::env('TEST_LIST', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'runTest.php --list fuerza TEST_LIST=1 para esa corrida.',
+                    'Valores bool inválidos deben quedar visibles vía warnings.',
+                ]),
+                self::env('TEST_FAIL_FAST', 'bool', true, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'Controla fail-fast intra-suite.',
+                ]),
+                self::env('TEST_META_FAIL_FAST', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['meta'], [
+                    'Controla fail-fast del agregado meta.',
+                ]),
+                self::env('TEST_CHILD_FAIL_FAST', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['meta'], [
+                    'Meta puede reescribir TEST_FAIL_FAST para child suites.',
+                ]),
+                self::env('TEST_JOBS', 'int', 1, ['integer >= 1'], ['suite', 'meta'], [
+                    'TEST_JOBS>1 sin per_worker es una ruta de riesgo visible.',
+                    'Enteros inválidos deben quedar visibles vía warnings.',
+                ]),
+                self::env('TEST_DB_STRATEGY', 'string', 'shared', ['shared', 'per_worker'], ['suite', 'meta'], [
+                    'clean no es un modo operativo soportado y debe rechazarse explícitamente.',
+                    'per_worker aísla workers dentro de una suite; no habilita múltiples runners top-level.',
+                    'migration-contract exige shared.',
+                ], ['clean']),
+                self::env('TEST_REQUIRE_TESTS', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'Hace visible que selección vacía no es aceptable para esa corrida.',
+                ]),
+                self::env('TEST_COVERAGE', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'Habilita cobertura donde la suite/lenguaje la soporte.',
+                ]),
+                self::env('TEST_COVERAGE_FORMAT', 'string', 'lcov', ['lcov', 'json', 'both'], ['suite'], [
+                    'Se usa solo cuando TEST_COVERAGE está activo.',
+                ]),
+                self::env('TEST_COVERAGE_ROOT', 'string', '.testkit/coverage', [], ['suite'], [
+                    'Root canónico de artifacts de coverage.',
+                    'El directorio final se resuelve agregando el suite_id: <root>/<suite_id>.',
+                    'Ejemplo: TEST_COVERAGE_ROOT=/tmp/cov produce /tmp/cov/back_php para back_php.',
+                ]),
+                self::env('TEST_COVERAGE_DIR', 'string', '', [], ['suite'], [
+                    'Alias legacy de TEST_COVERAGE_ROOT.',
+                    'Se preserva la semántica histórica: funciona como root y el runner agrega el suite_id.',
+                    'Preferir TEST_COVERAGE_ROOT en configuración nueva.',
+                ]),
+                self::env('TEST_COVERAGE_SOURCE_DIRS', 'csv', 'TK_BACK_DIR,TK_PUBLIC_DIR', [], ['suite'], [
+                    'Filtra el cálculo real de overall, files, modules, low_files, critical_missing y critical_low.',
+                    'Ejemplo: back,public_html mide solo archivos bajo back/ y public_html/.',
+                ]),
+                self::env('TEST_COVERAGE_EXCLUDE_DIRS', 'csv', 'test,testkit,docker,vendor,logs,storage', [], ['suite'], [
+                    'Política centralizada de directorios excluidos de coverage.',
+                    'Se aplica tanto en captura PHP por proceso como en diagnósticos agregados.',
+                ]),
+                self::env('TEST_COVERAGE_CRITICAL_FILES', 'csv', '', [], ['suite'], [
+                    'Patrones fnmatch repo-relativos para marcar archivos críticos.',
+                    'Se evalúan después de source_dirs/exclude_dirs.',
+                ]),
+                self::env('TEST_COVERAGE_CRITICAL_THRESHOLD', 'int', 85, ['integer >= 1'], ['suite'], [
+                    'Porcentaje mínimo para que un archivo crítico no figure como critical_low.',
+                ]),
+                self::env('TEST_COVERAGE_LOW_THRESHOLD', 'int', 70, ['integer >= 1'], ['suite'], [
+                    'Porcentaje usado para low_files.',
+                ]),
+                self::env('TEST_COVERAGE_SUMMARY_TOP', 'int', 10, ['integer >= 0'], ['report'], [
+                    'Cantidad máxima de archivos missing/low mostrados por scripts/report.php.',
+                ]),
+                self::env('TEST_BASELINE_MODE', 'string', 'layered', ['layered', 'snapshot'], ['suite', 'meta'], [
+                    'migration-contract exige snapshot.',
+                    'snapshot cerrado actualmente solo en la ruta MySQL.',
+                ]),
+                self::env('TEST_STORE_DRIVER', 'string', 'mysql', ['mysql', 'pgsql'], ['suite', 'meta'], [
+                    'mysql es la ruta principal cerrada.',
+                    'pgsql es parcial: runtime/provision/reset básico; sin snapshot/clone cerrado.',
+                    'redis e influx no son store drivers principales.',
+                ]),
+                self::env('DB_DRIVER', 'string', 'mysql', ['mysql', 'pgsql'], ['suite', 'meta'], [
+                    'Alias runtime para resolver driver de store.',
+                    'No convierte pgsql en ruta cerrada de snapshot/clone.',
+                ]),
+                self::env('TESTKIT_STACK', 'csv', 'mysql,redis', ['mysql', 'pg', 'redis', 'influx'], ['wrapper', 'doctor'], [
+                    'mysql describe el servicio principal cerrado.',
+                    'pg describe infraestructura parcial.',
+                    'redis es auxiliar, no lifecycle estructural core.',
+                    'influx es auxiliar/perfilado, no store principal.',
+                ]),
+                self::env('TESTKIT_SKIP_STORE_BOOTSTRAP', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'Útil para cortar bootstrap/store cuando la corrida necesita aislar otra cosa.',
+                ]),
             ],
             'notes' => [
                 'Valores bool inválidos y enteros no parseables deben quedar visibles vía warnings y persistirse en reportes.',

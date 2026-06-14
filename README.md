@@ -56,6 +56,56 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 inspect latest
 ```
 
+## Coverage quick start
+
+Coverage is an operational artifact and is written under `.testkit` by default.
+
+```bash
+./bin/testkit run --rm \
+  -e TEST_COVERAGE=1 \
+  -e TEST_COVERAGE_FORMAT=both \
+  -e TEST_COVERAGE_SOURCE_DIRS='back,public_html' \
+  testkit php runTest.php back-php
+```
+
+Default coverage paths:
+
+```text
+.testkit/coverage/back_php
+.testkit/coverage/front_php
+.testkit/coverage/back_python
+```
+
+Use `TEST_COVERAGE_ROOT` to override the coverage root:
+
+```bash
+-e TEST_COVERAGE_ROOT=/tmp/cov
+```
+
+That produces:
+
+```text
+/tmp/cov/back_php
+```
+
+`TEST_COVERAGE_DIR` is still accepted as a legacy alias for the root. Its historical behavior is preserved: the suite id is appended to it. New configuration should prefer `TEST_COVERAGE_ROOT`.
+
+Common coverage env:
+
+| Env | Purpose |
+|---|---|
+| `TEST_COVERAGE=1` | Enables coverage where supported. |
+| `TEST_COVERAGE_FORMAT=lcov\|json\|both` | Controls generated coverage formats. |
+| `TEST_COVERAGE_ROOT` | Canonical coverage root. Final dir is `<root>/<suite_id>`. |
+| `TEST_COVERAGE_DIR` | Legacy root alias; suite id is still appended. |
+| `TEST_COVERAGE_SOURCE_DIRS` | Includes only these repo-relative source dirs in calculations. |
+| `TEST_COVERAGE_EXCLUDE_DIRS` | Central exclude policy; default `test,testkit,docker,vendor,logs,storage`. |
+| `TEST_COVERAGE_CRITICAL_FILES` | Comma-separated `fnmatch` patterns for critical files. |
+| `TEST_COVERAGE_CRITICAL_THRESHOLD` | Threshold for `critical_low`; default `85`. |
+| `TEST_COVERAGE_SUMMARY_TOP` | Max files shown by `scripts/report.php`; default `10`. |
+
+The executive report reads diagnostics from the new `.testkit/coverage/<suite_id>` paths and keeps fallback support for legacy `test/coverage/*` paths.
+
 ## Cleanup generated artifacts
 
 Framework-generated operational artifacts are written inside the host project, mainly under `.testkit/`. Long-running development cycles can produce many report run directories, profiling shards and coverage files.
@@ -92,7 +142,7 @@ Detailed contract: [`docs/CLEANUP.md`](docs/CLEANUP.md).
 
 ## Doctor modes
 
-`doctor` now has two operator-facing modes over the same underlying checks.
+`doctor` has two operator-facing modes over the same underlying checks.
 
 - `--full`: full narrative output. Prints base checks, capability checks and explicit status per rule.
 - `--compact`: compressed operator summary. Keeps status totals and only surfaces relevant warnings, unknowns and failures.
@@ -102,29 +152,6 @@ Default behavior:
 - if no mode is provided, `doctor` uses `full`
 - `TESTKIT_DOCTOR_MODE=compact|full` can provide a default
 - explicit CLI flags override the env default
-
-Examples:
-
-```bash
-./bin/testkit doctor --compact
-./bin/testkit doctor --full
-./bin/testkit doctor --compact migration-contract
-./bin/testkit doctor --dump --full migration-contract
-```
-
-```powershell
-.\bin\testkit.ps1 doctor --compact
-.\bin\testkit.ps1 doctor --full
-.\bin\testkit.ps1 doctor --compact migration-contract
-.\bin\testkit.ps1 doctor --dump --full migration-contract
-```
-
-Reading guidance:
-
-- `full` is the better default for framework debugging and wrapper work
-- `compact` is better for repeated operator runs or CI logs where you want lower noise
-- `Capability doctor: PASS` still does **not** prove runtime safety; it only reports visible config alignment
-- `Doctor: FAIL` still follows the base doctor status, not the capability advisory status
 
 ## Support matrix summary
 
@@ -140,61 +167,6 @@ Do not infer support from service names in compose or from partial adapters. The
 | `TEST_DB_STRATEGY=per_worker` | intra-suite only | isolates workers inside one suite; does not make concurrent top-level runners safe |
 
 Full detail: [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) and [`docs/CONTRATO.md`](docs/CONTRATO.md).
-
-## PowerShell note
-
-This doctor update does **not** change the runtime command contract outside doctor itself.
-
-For wrapper-safe container env injection, keep using explicit `-e` flags on `run`, for example:
-
-```powershell
-.\bin\testkit.ps1 run --rm -e TEST_MATCH=alerta testkit php runTest.php back-php
-```
-
-Do not assume that doctor-mode work also changes unrelated runtime parsing semantics.
-
-## Execution observability
-
-Long suites now expose operator-facing progress and summarized execution metrics as part of the framework contract.
-
-What exists:
-
-- periodic `[Progress]` heartbeats during execution
-- `[WARN] long_running_test` for tests that cross the configured threshold
-- `[Phase Timings]` at the end of the suite
-- operator-first failed suite summaries that surface status, focus and next action near the top of the report
-- summarized observability fields persisted in suite JSON and local history
-- a config-visible capability section in `doctor` for generic store constraints and the closed `migration-contract` path
-- dual `doctor` render modes: `full` and `compact`
-- structured capability fields in `doctor --dump` (`TESTKIT_CAPABILITY_CHECK_<n>_*`)
-
-What does **not** exist here:
-
-- per-heartbeat persistence
-- proof that a runtime path is safe just because `doctor` emitted `PASS`
-- automatic diagnosis of business tests
-- closed PostgreSQL snapshot/clone parity with MySQL
-- Redis or Influx lifecycle as structural store drivers
-
-The detailed contract lives in:
-
-- [`docs/USO.md`](docs/USO.md) for operator reading
-- [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) for stable JSON/report semantics
-
-## Current support limits
-
-This repository does not try to hide its current limits. The detailed contract lives in [`docs/CONTRATO.md`](docs/CONTRATO.md). In particular:
-
-- the main closed path is MySQL
-- PostgreSQL is partial and must not be described as MySQL-equivalent
-- Redis is auxiliary service infrastructure, not a core structured store lifecycle
-- Influx is auxiliary/profiling infrastructure, not a primary store driver
-- `TEST_DB_STRATEGY=clean` is rejected
-- `per_worker` isolates workers inside one suite; it does not make concurrent top-level runs safe
-- `migration-contract` is a narrow technical suite, not a general functional suite
-- capability checks in `doctor` are config-visible only and do not replace a real run
-- `compact` changes rendering density, not the underlying doctor semantics
-- fragility hints, failure families and similar triage signals are heuristics, not source of truth
 
 ## Artifact ownership
 

@@ -72,6 +72,62 @@ final class Paths
         return self::normalize(self::outRoot() . '/history');
     }
 
+    /**
+     * Canonical coverage artifact root.
+     *
+     * Priority:
+     * 1. TEST_COVERAGE_ROOT: explicit canonical coverage root.
+     * 2. TEST_COVERAGE_DIR: legacy alias, kept as a root for backwards compatibility.
+     * 3. .testkit/coverage under the host project artifact root.
+     */
+    public static function coverageRoot(): string
+    {
+        $root = Env::string('TEST_COVERAGE_ROOT', '');
+        if ($root !== '') {
+            return self::normalize($root);
+        }
+
+        $legacyRoot = Env::string('TEST_COVERAGE_DIR', '');
+        if ($legacyRoot !== '') {
+            return self::normalize($legacyRoot);
+        }
+
+        return self::normalize(self::outRoot() . '/coverage');
+    }
+
+    public static function coverageDirForSuite(string $suiteId): string
+    {
+        return self::normalize(self::coverageRoot() . '/' . self::sanitizeSuiteId($suiteId));
+    }
+
+    public static function legacyCoverageDirForSuite(string $suiteId): string
+    {
+        $legacyName = match (self::sanitizeSuiteId($suiteId)) {
+            'back_php' => 'php_back',
+            'front_php' => 'php_front',
+            'back_python' => 'python_back',
+            default => self::sanitizeSuiteId($suiteId),
+        };
+
+        return self::normalize(self::testRoot() . '/coverage/' . $legacyName);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    public static function coverageDirCandidatesForSuite(string $suiteId): array
+    {
+        $suiteId = self::sanitizeSuiteId($suiteId);
+        $candidates = [self::coverageDirForSuite($suiteId)];
+
+        $legacy = self::legacyCoverageDirForSuite($suiteId);
+        if (!in_array($legacy, $candidates, true)) {
+            $candidates[] = $legacy;
+        }
+
+        return $candidates;
+    }
+
     public static function normalize(string $path): string
     {
         return rtrim(str_replace('\\', '/', $path), '/');
@@ -185,5 +241,11 @@ final class Paths
             return $fallback;
         }
         return count($unique) === 1 ? $unique[0] : $fallback;
+    }
+
+    private static function sanitizeSuiteId(string $suiteId): string
+    {
+        $suiteId = preg_replace('/[^a-z0-9._-]+/i', '_', trim($suiteId)) ?: '';
+        return $suiteId !== '' ? $suiteId : 'suite';
     }
 }

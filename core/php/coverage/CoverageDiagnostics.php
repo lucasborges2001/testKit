@@ -3,9 +3,6 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Coverage;
 
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 
@@ -21,16 +18,17 @@ final class CoverageDiagnostics
         $repoRoot = Paths::repoRoot();
         $lowThreshold = max(1, Env::int('TEST_COVERAGE_LOW_THRESHOLD', 70));
         $criticalThreshold = max(1, Env::int('TEST_COVERAGE_CRITICAL_THRESHOLD', 85));
-
-        $sourceDirs = Env::csv('TEST_COVERAGE_SOURCE_DIRS');
-        if (!$sourceDirs) {
-            $sourceDirs = [Env::string('TK_BACK_DIR', 'back'), Env::string('TK_PUBLIC_DIR', 'public_html')];
-        }
+        $sourceDirs = CoverageFilter::sourceDirsFromEnv();
+        $excludeDirs = CoverageFilter::excludeDirsFromEnv();
 
         $coverageByFile = [];
         $coverageByModule = [];
 
         foreach ($merged as $file => $lines) {
+            if (!CoverageFilter::shouldInclude((string)$file, $repoRoot, $sourceDirs, $excludeDirs)) {
+                continue;
+            }
+
             $total = 0;
             $hit = 0;
             foreach ($lines as $count) {
@@ -44,7 +42,7 @@ final class CoverageDiagnostics
                 continue;
             }
 
-            $rel = Paths::relativeToRepo($file);
+            $rel = Paths::relativeToRepo((string)$file);
             $pct = round(($hit / $total) * 100, 2);
             $module = self::moduleFromRel($rel);
 
@@ -73,7 +71,7 @@ final class CoverageDiagnostics
         uasort($coverageByModule, static fn(array $a, array $b): int => ($a['percent'] <=> $b['percent']));
 
         $criticalPatterns = Env::csv('TEST_COVERAGE_CRITICAL_FILES');
-        $criticalFiles = self::resolveCriticalFiles($sourceDirs, $criticalPatterns);
+        $criticalFiles = self::resolveCriticalFiles($sourceDirs, $criticalPatterns, $excludeDirs);
 
         $criticalMissing = [];
         $criticalLow = [];
@@ -106,6 +104,7 @@ final class CoverageDiagnostics
             'critical_missing' => $criticalMissing,
             'critical_low' => array_slice($criticalLow, 0, 30),
             'source_dirs' => $sourceDirs,
+            'exclude_dirs' => $excludeDirs,
         ];
     }
 
@@ -128,6 +127,8 @@ final class CoverageDiagnostics
         $lines[] = '- overall_percent: ' . ($overall['percent'] ?? 0);
         $lines[] = '- lines_hit: ' . ($overall['lines_hit'] ?? 0);
         $lines[] = '- lines_total: ' . ($overall['lines_total'] ?? 0);
+        $lines[] = '- source_dirs: ' . implode(',', array_map('strval', (array)($diagnostics['source_dirs'] ?? [])));
+        $lines[] = '- exclude_dirs: ' . implode(',', array_map('strval', (array)($diagnostics['exclude_dirs'] ?? [])));
         $lines[] = '';
 
         $lines[] = '## Lowest Coverage Files';
@@ -197,15 +198,16 @@ final class CoverageDiagnostics
     /**
      * @param array<int,string> $sourceDirs
      * @param array<int,string> $patterns
+     * @param array<int,string> $excludeDirs
      * @return array<int,string>
      */
-    private static function resolveCriticalFiles(array $sourceDirs, array $patterns): array
+    private static function resolveCriticalFiles(array $sourceDirs, array $patterns, array $excludeDirs): array
     {
         if (!$patterns) {
             return [];
         }
 
-        $files = self::collectSourceFiles($sourceDirs);
+        $files = CoverageFilter::collectPhpFiles(Paths::repoRoot(), $sourceDirs, $excludeDirs);
         $matches = [];
         foreach ($files as $rel) {
             foreach ($patterns as $pattern) {
@@ -223,43 +225,5 @@ final class CoverageDiagnostics
         $matches = array_values(array_unique($matches));
         sort($matches);
         return $matches;
-    }
-
-    /**
-     * @param array<int,string> $sourceDirs
-     * @return array<int,string>
-     */
-    private static function collectSourceFiles(array $sourceDirs): array
-    {
-        $repoRoot = Paths::repoRoot();
-        $files = [];
-
-        foreach ($sourceDirs as $dir) {
-            $full = Paths::normalize($repoRoot . '/' . trim($dir, '/'));
-            if (!is_dir($full)) {
-                continue;
-            }
-
-            $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($full));
-            foreach ($it as $file) {
-                if (!$file instanceof SplFileInfo || !$file->isFile()) {
-                    continue;
-                }
-
-                $path = Paths::normalize($file->getPathname());
-                if (!str_ends_with(strtolower($path), '.php')) {
-                    continue;
-                }
-                if (str_contains(strtolower($path), '/vendor/')) {
-                    continue;
-                }
-
-                $files[] = Paths::relativeToRepo($path);
-            }
-        }
-
-        $files = array_values(array_unique($files));
-        sort($files);
-        return $files;
     }
 }

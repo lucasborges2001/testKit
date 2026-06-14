@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../core/php/bootstrap.php';
 
+use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Reporting\FailureClassifier;
 use Testkit\Core\Reporting\ReportSummary;
@@ -303,30 +304,23 @@ if (!$hasFragility) {
 }
 
 echo "\nCoverage diagnostics\n";
-$covDirs = [
-    $repoRoot . '/test/coverage/php_back',
-    $repoRoot . '/test/coverage/php_front',
-    $repoRoot . '/test/coverage/python_back',
-];
 $printedCoverage = false;
-foreach ($covDirs as $dir) {
-    $diag = $dir . '/coverage_diagnostics.json';
-    if (!is_file($diag)) {
-        continue;
-    }
-    $raw = file_get_contents($diag);
-    $json = is_string($raw) ? json_decode($raw, true) : null;
-    if (!is_array($json)) {
+$summaryTop = max(0, Env::int('TEST_COVERAGE_SUMMARY_TOP', 10));
+foreach (coverageDiagnosticsFiles($reportsRoot) as $entry) {
+    $json = readCoverageDiagnostics((string)$entry['path']);
+    if ($json === null) {
         continue;
     }
 
     $printedCoverage = true;
-    $name = basename($dir);
+    $suite = (string)$entry['suite'];
     $overall = (float)($json['overall']['percent'] ?? 0.0);
-    $criticalMissing = is_array($json['critical_missing'] ?? null) ? count($json['critical_missing']) : 0;
-    $criticalLow = is_array($json['critical_low'] ?? null) ? count($json['critical_low']) : 0;
+    $criticalMissing = is_array($json['critical_missing'] ?? null) ? $json['critical_missing'] : [];
+    $criticalLow = is_array($json['critical_low'] ?? null) ? $json['critical_low'] : [];
 
-    echo "- {$name}: overall={$overall}% critical_missing={$criticalMissing} critical_low={$criticalLow}\n";
+    echo "- {$suite}: overall={$overall}% critical_missing=" . count($criticalMissing) . ' critical_low=' . count($criticalLow) . "\n";
+    printCoverageMissing($criticalMissing, $summaryTop);
+    printCoverageLow($criticalLow, $summaryTop);
 }
 
 if (!$printedCoverage) {
@@ -422,4 +416,106 @@ function resolveActiveReportsRoot(): string
     }
 
     return Paths::reportsRoot();
+}
+
+/**
+ * @return array<int,array{suite:string,path:string,dir:string,source:string}>
+ */
+function coverageDiagnosticsFiles(string $reportsRoot): array
+{
+    $suiteIds = ['back_php', 'front_php', 'back_python'];
+    $found = [];
+
+    foreach ($suiteIds as $suiteId) {
+        foreach (coverageDiagnosticCandidatesForSuite($suiteId, $reportsRoot) as $candidate) {
+            $diag = rtrim($candidate['dir'], '/\\') . '/coverage_diagnostics.json';
+            if (!is_file($diag)) {
+                continue;
+            }
+            $found[] = [
+                'suite' => $suiteId,
+                'path' => str_replace('\\', '/', $diag),
+                'dir' => str_replace('\\', '/', $candidate['dir']),
+                'source' => $candidate['source'],
+            ];
+            continue 2;
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * @return array<int,array{dir:string,source:string}>
+ */
+function coverageDiagnosticCandidatesForSuite(string $suiteId, string $reportsRoot): array
+{
+    $candidates = [];
+
+    foreach (Paths::coverageDirCandidatesForSuite($suiteId) as $dir) {
+        $candidates[] = ['dir' => $dir, 'source' => str_contains($dir, '/test/coverage/') ? 'legacy' : 'canonical'];
+    }
+
+    $runCoverageDir = Paths::normalize($reportsRoot . '/coverage/' . $suiteId);
+    $exists = false;
+    foreach ($candidates as $candidate) {
+        if (Paths::normalize($candidate['dir']) === $runCoverageDir) {
+            $exists = true;
+            break;
+        }
+    }
+    if (!$exists) {
+        $candidates[] = ['dir' => $runCoverageDir, 'source' => 'run'];
+    }
+
+    return $candidates;
+}
+
+/**
+ * @return array<string,mixed>|null
+ */
+function readCoverageDiagnostics(string $path): ?array
+{
+    $raw = file_get_contents($path);
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    return is_array($json) ? $json : null;
+}
+
+/** @param array<int,mixed> $items */
+function printCoverageMissing(array $items, int $limit): void
+{
+    if ($items === []) {
+        return;
+    }
+
+    echo "  missing:\n";
+    foreach (array_slice($items, 0, $limit) as $rel) {
+        echo '    * ' . (string)$rel . "\n";
+    }
+    $remaining = count($items) - $limit;
+    if ($remaining > 0) {
+        echo "    ... {$remaining} more\n";
+    }
+}
+
+/** @param array<int,mixed> $items */
+function printCoverageLow(array $items, int $limit): void
+{
+    if ($items === []) {
+        return;
+    }
+
+    echo "  low:\n";
+    foreach (array_slice($items, 0, $limit) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $percent = (float)($row['percent'] ?? 0.0);
+        $rel = (string)($row['rel'] ?? 'unknown');
+        echo "    * {$percent}% {$rel}\n";
+    }
+    $remaining = count($items) - $limit;
+    if ($remaining > 0) {
+        echo "    ... {$remaining} more\n";
+    }
 }

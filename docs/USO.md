@@ -8,6 +8,7 @@
 - `./bin/testkit inspect config-schema --json` expone el esquema soportado de configuración.
 - Warnings por env inválido deben quedar visibles en consola y en los reportes persistidos.
 - `inspect config-schema --json` incluye la matriz honesta de soporte por motor/servicio.
+- Coverage ahora se centraliza por defecto en `.testkit/coverage/<suite_id>` y su filtro de cálculo usa una política única.
 
 ## Matriz corta de soporte
 
@@ -23,7 +24,7 @@
 
 Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 
-## Reglas operativas nuevas
+## Reglas operativas
 
 - Targets agregados (`all`, `back`, `front`, `php`, `js`) son válidos, pero no son la primera corrida diagnóstica más nítida.
 - Category targets (`smoke`, `perf`, `stress`, `contract`, `critical`, `slow`) no deben mezclarse con `TEST_CATEGORY` explícito distinto.
@@ -43,6 +44,66 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 ./bin/testkit run --rm testkit php runTest.php back-php --list
 ./bin/testkit run --rm testkit php runTest.php reference-contract
 ```
+
+## Coverage operativo
+
+Coverage se activa por suite:
+
+```bash
+./bin/testkit run --rm \
+  -e TEST_COVERAGE=1 \
+  -e TEST_COVERAGE_FORMAT=both \
+  -e TEST_COVERAGE_SOURCE_DIRS='back,public_html' \
+  testkit php runTest.php back-php
+```
+
+Ruta default:
+
+```text
+.testkit/coverage/back_php
+.testkit/coverage/front_php
+.testkit/coverage/back_python
+```
+
+Overrides:
+
+```bash
+-e TEST_COVERAGE_ROOT=/tmp/cov
+```
+
+produce:
+
+```text
+/tmp/cov/back_php
+```
+
+`TEST_COVERAGE_DIR` sigue funcionando por compatibilidad, pero se considera legacy. Mantiene la semántica histórica de root: si se define `TEST_COVERAGE_DIR=/tmp/cov`, el directorio final será `/tmp/cov/<suite_id>`.
+
+Variables relevantes:
+
+```bash
+TEST_COVERAGE=1
+TEST_COVERAGE_FORMAT=both
+TEST_COVERAGE_ROOT=.testkit/coverage
+TEST_COVERAGE_DIR=              # legacy root alias
+TEST_COVERAGE_SOURCE_DIRS=back,public_html
+TEST_COVERAGE_EXCLUDE_DIRS=test,testkit,docker,vendor,logs,storage
+TEST_COVERAGE_CRITICAL_FILES='back/service/*.php,public_html/api/*.php'
+TEST_COVERAGE_CRITICAL_THRESHOLD=85
+TEST_COVERAGE_SUMMARY_TOP=10
+```
+
+`TEST_COVERAGE_SOURCE_DIRS` filtra el cálculo real, no solo la resolución de críticos. Afecta `overall`, `files`, `modules`, `low_files`, `critical_missing` y `critical_low`.
+
+`TEST_COVERAGE_EXCLUDE_DIRS` es la política centralizada para excluir directorios. Se aplica en la captura PHP por proceso y en los diagnósticos agregados.
+
+Después de correr coverage, el resumen humano se obtiene con:
+
+```bash
+./bin/testkit run --rm testkit php /workspace/testkit/scripts/report.php
+```
+
+El bloque `Coverage diagnostics` lista conteos y, hasta `TEST_COVERAGE_SUMMARY_TOP`, archivos concretos de `critical_missing` y `critical_low`.
 
 ## Reference contract PHP
 
@@ -90,95 +151,4 @@ El reporte JSON se escribe bajo:
 
 ```text
 .testkit/reports/reference_contract/
-```
-
-### Segunda pasada de endurecimiento
-
-La suite queda acotada deliberadamente a includes PHP estáticos:
-
-- soportado: `require`, `require_once`, `include`, `include_once`
-- no soportado en esta suite: JS imports, CSS, HTML assets, Markdown links, rutas HTTP
-- no escanea todo el repo salvo pedido explícito con `TESTKIT_REFERENCE_ROOT=.`
-
-El reporte estable se publica bajo:
-
-```text
-.testkit/reports/reference_contract/reference_contract_latest.json
-```
-
-Además del latest canónico, el writer global puede generar archivos timestamped y entradas en `runs_index.json` siguiendo el patrón normal de `testKit`.
-
-Dinámicos:
-
-```bash
-TESTKIT_REFERENCE_DYNAMIC_SEVERITY=warn   # default: warning, no falla si no hay rotos
-TESTKIT_REFERENCE_DYNAMIC_SEVERITY=ignore # no emite warning/failure
-TESTKIT_REFERENCE_DYNAMIC_SEVERITY=error  # falla la suite
-```
-
-Límites operativos:
-
-```bash
-TESTKIT_REFERENCE_TIMEOUT_SEC=20
-TESTKIT_REFERENCE_MAX_FILES=3000
-TESTKIT_REFERENCE_MAX_BYTES_PER_FILE=1048576
-TESTKIT_REFERENCE_MAX_VIOLATIONS=200
-TESTKIT_REFERENCE_IGNORE_DIRS=vendor,node_modules,.git,.testkit,testkit/_out,_out
-```
-
-Fallos operativos principales:
-
-| cause_code | Cuándo aparece |
-|---|---|
-| `reference_root_missing` | root no definido, inexistente o archivo en vez de directorio |
-| `reference_root_invalid` | root relativo intenta escapar del repo |
-| `reference_scan_timeout` | timeout global alcanzado |
-| `reference_max_files_exceeded` | límite de archivos PHP escaneables alcanzado |
-| `reference_max_violations_exceeded` | límite de violaciones alcanzado; `truncated=true` |
-| `missing_php_include` | include literal apunta a archivo inexistente |
-| `dynamic_php_include` | include dinámico con severity `error` |
-
-## `reference-contract` para includes PHP
-
-`reference-contract` es una suite técnica de lectura estática. No ejecuta código de aplicación ni bootstrap de DB. En esta fase solo analiza includes PHP:
-
-- `require`
-- `require_once`
-- `include`
-- `include_once`
-
-Comandos base:
-
-```bash
-TESTKIT_REFERENCE_SCOPE=back php runTest.php reference-contract
-TESTKIT_REFERENCE_SCOPE=front php runTest.php reference-contract
-TESTKIT_REFERENCE_ROOT=web_cargadores/PHP php runTest.php reference-contract
-TESTKIT_REFERENCE_ROOT=web_cargadores/public php runTest.php reference-contract
-```
-
-Resolución de roots:
-
-- `TESTKIT_REFERENCE_ROOT` tiene prioridad y debe apuntar a un directorio dentro del repo.
-- `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
-- `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si no existe, usa `TK_PUBLIC_DIR`.
-
-Ignores auditables:
-
-```bash
-TESTKIT_REFERENCE_IGNORE_REFS=vendor/autoload.php
-TESTKIT_REFERENCE_IGNORE_REF_REGEX='~/legacy/.*\.php$~'
-TESTKIT_REFERENCE_IGNORE_FILES=web_cargadores/PHP/tmp/local.php
-TESTKIT_REFERENCE_IGNORE_FILE_REGEX='~/(legacy|tmp)/~'
-```
-
-Los ignores no desaparecen silenciosamente:
-
-- referencias ignoradas suman `ignored_references`
-- archivos ignorados suman `skipped_files`
-- errores de configuración, root faltante, root fuera del repo y timeouts no se ocultan con ignores
-
-El JSON latest de esta suite queda en:
-
-```text
-.testkit/reports/reference_contract/reference_contract_latest.json
 ```

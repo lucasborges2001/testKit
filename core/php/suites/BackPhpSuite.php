@@ -36,7 +36,7 @@ final class BackPhpSuite
         $config = RunnerConfig::forSuite(
             'back_php',
             $testsDir,
-            $repoRoot . '/test/coverage/php_back',
+            Paths::legacyCoverageDirForSuite('back_php'),
             'php'
         );
 
@@ -187,6 +187,7 @@ final class BackPhpSuite
                     $env['TEST_COVERAGE'] = '1';
                     $env['TEST_COVERAGE_FILE'] = (string)$config['coverage_dir'] . '/' . $safe . '.json';
                     $env['TEST_COVERAGE_FORMAT'] = (string)$config['coverage_format'];
+                    $env['TEST_COVERAGE_ROOT'] = (string)$config['coverage_root'];
                     $env['TEST_COVERAGE_DIR'] = (string)$config['coverage_dir'];
                 }
 

@@ -22,12 +22,8 @@ final class RunnerConfig
             $category = 'all';
         }
 
-        $coverageRoot = Env::string('TEST_COVERAGE_DIR', '');
-        if ($coverageRoot !== '') {
-            $coverageDir = Paths::normalize($coverageRoot . '/' . $suiteId);
-        } else {
-            $coverageDir = $defaultCoverageDir;
-        }
+        $coverageRoot = Paths::coverageRoot();
+        $coverageDir = Paths::coverageDirForSuite($suiteId);
 
         $thresholds = [
             'slow_ms' => max(1, Env::int('TEST_SLOW_THRESHOLD_MS', 1500)),
@@ -60,7 +56,10 @@ final class RunnerConfig
             'require_tests' => Env::bool('TEST_REQUIRE_TESTS', false),
             'coverage' => Env::bool('TEST_COVERAGE', false),
             'coverage_format' => strtolower(Env::string('TEST_COVERAGE_FORMAT', 'lcov')),
+            'coverage_root' => $coverageRoot,
             'coverage_dir' => $coverageDir,
+            'coverage_legacy_dir' => $defaultCoverageDir !== '' ? Paths::normalize($defaultCoverageDir) : Paths::legacyCoverageDirForSuite($suiteId),
+            'coverage_dir_semantics' => 'TEST_COVERAGE_ROOT is the canonical root; TEST_COVERAGE_DIR is a legacy root alias and suite_id is appended.',
             'thresholds' => $thresholds,
             'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
             'python_binary' => Env::string('TEST_PYTHON_BINARY', 'python3'),
@@ -99,6 +98,7 @@ final class RunnerConfig
             'testkit_root' => Paths::testkitRoot(),
             'repo_root' => Paths::repoRoot(),
             'reports_root' => Paths::reportsRoot(),
+            'coverage_root' => Paths::coverageRoot(),
             'report_keep' => $reportKeep,
             'runs_index_keep' => $runsIndexKeep,
             'env_warnings' => [],

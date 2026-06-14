@@ -20,7 +20,7 @@ final class BackPythonSuite
         $config = RunnerConfig::forSuite(
             'back_python',
             $testsRoot,
-            $repoRoot . '/test/coverage/python_back',
+            Paths::legacyCoverageDirForSuite('back_python'),
             'python'
         );
         ContractWorldBootstrap::prepare('back_python', $repoRoot);

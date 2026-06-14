@@ -12,32 +12,17 @@ Usar este documento para responder:
 - qué partes son diagnósticos heurísticos
 - cómo leer coverage y qué límites tiene
 
-No usarlo para:
-
-- quick start
-- troubleshooting de bootstrap/store
-- arquitectura interna del lifecycle
-- redefinir el contrato general de adopción
-
-Para eso, leer:
-
-- [`USO.md`](USO.md)
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
-- [`ARQUITECTURA.md`](ARQUITECTURA.md)
-- [`CONTRATO.md`](CONTRATO.md)
+No usarlo para quick start, troubleshooting de bootstrap/store ni arquitectura interna. Para eso, leer `USO.md`, `TROUBLESHOOTING.md`, `ARQUITECTURA.md` y `CONTRATO.md`.
 
 ## 2) Superficies de salida
-
-`testkit` emite varias superficies. No tienen el mismo peso contractual.
 
 | Superficie | Para qué sirve | Cómo leerla |
 |---|---|---|
 | JSON suite/meta bajo `.testkit/reports/` | automatización y evidencia persistida | superficie principal |
 | `canonical_report` dentro del JSON | normalización derivada del reporte persistido | útil, pero no sustituye el top-level |
 | consola del runner | lectura rápida humana | no consumir como contrato de automatización |
-| `[Progress]`, `[Test]` y `[Phase Timings]` en consola | observabilidad operatoria durante la corrida | semántica estable para humanos, no parser stable |
 | `php scripts/report.php` | resumen humano agregado | no consumir como contrato estable |
-| `inspect` | diagnóstico asistido sobre reportes existentes | interfaz operativa, no formato persistido |
+| `inspect` | diagnóstico asistido sobre reportes existentes | interfaz operativa |
 | artifacts de coverage | diagnóstico de cobertura | útiles para lectura y tooling, no gate implícito |
 
 ## 3) Artefactos persistidos
@@ -58,21 +43,18 @@ Por corrida meta:
 - `.testkit/reports/latest_run.json` cuando la corrida usó root por run
 - `.testkit/history/<suite>.json`
 
-Coverage PHP:
+Coverage:
 
-- `coverage.json`
-- `lcov.info`
-- `coverage_diagnostics.json`
-- `coverage_report.md`
+- `.testkit/coverage/<suite_id>/coverage.json`
+- `.testkit/coverage/<suite_id>/lcov.info`
+- `.testkit/coverage/<suite_id>/coverage_diagnostics.json`
+- `.testkit/coverage/<suite_id>/coverage_report.md`
 
-### Historia local por suite
+Durante una transición, `scripts/report.php` también lee legacy coverage bajo:
 
-`.testkit/history/<suite>.json` mantiene dos cosas distintas:
-
-- historial por test para fragility hints y regression delta
-- `suite_runs[]` con métricas resumidas por corrida para baseline futuro
-
-No guarda heartbeats individuales ni eventos de progreso uno por uno.
+- `test/coverage/php_back`
+- `test/coverage/php_front`
+- `test/coverage/python_back`
 
 ## 4) Qué consumir para automatización
 
@@ -96,30 +78,21 @@ Campos canónicos a priorizar:
 - `progress_policy`
 - `execution_metrics`
 
-`failures` es la colección canónica de fallos.
-`failed_tests` existe como fallback legacy y no debe ser la primera elección.
+`failures` es la colección canónica de fallos. `failed_tests` existe como fallback legacy y no debe ser la primera elección.
 
 ## 5) Estados: no mezclar niveles
 
 ### 5.1) `suite_status`
 
-` suite_status` describe el resultado de la selección/ejecución de la suite en un nivel operativo directo.
+`suite_status` describe el resultado de la selección/ejecución de la suite en un nivel operativo directo.
 
-Valores relevantes que hoy aparecen:
+Valores relevantes:
 
 - `passed`
 - `failed`
 - `all_skipped`
 - `no_tests`
 - `listed`
-
-Lectura correcta:
-
-- `no_tests` significa que la selección quedó vacía
-- `all_skipped` significa que entraron tests, pero todos se saltaron
-- `listed` significa modo list-only
-
-No usar `suite_status` como único “resultado final” de la corrida.
 
 ### 5.2) `outcome_status`
 
@@ -146,242 +119,22 @@ Para branching de automatización, este es el campo más fuerte.
 
 `no_tests_reason` solo debe leerse cuando `suite_status=no_tests`.
 
-Hoy suele expresar que ningún test coincidió con los filtros activos (`scope`, `category`, `match`).
+## 6) Observabilidad
 
-No leerlo como explicación general de cualquier fallo.
+`[Progress]`, `[Test]` y `[Phase Timings]` son señales operatorias humanas. El contrato fuerte para automatización está en el JSON final.
 
-## 6) Contrato de observabilidad
+`execution_metrics` resume:
 
-### 6.1) `[Progress]` en consola
+- `selected_test_count`
+- `completed_test_count`
+- `avg_test_ms`
+- `estimated_total_ms`
 
-`[Progress]` es una señal operatoria humana emitida durante `execution` cuando `progress_policy.mode=heartbeat`.
+No hay persistencia de cada heartbeat.
 
-Semántica estable de los campos:
+## 7) Humanos vs automatización
 
-- `el`: elapsed total de la fase de ejecución
-- `done`: tests completados / tests seleccionados
-- `p/f/s/to`: contadores acumulados de pass, fail, skip y timeout
-- `cur`: test actualmente en ejecución; puede aparecer compactado o truncado
-- `cur_el`: tiempo transcurrido del test actual
-- `avg`: promedio simple `elapsed / completed`
-- `eta`: `avg * remaining`
-- `jobs`: paralelismo efectivo de la suite
-- `workers`: resumen compacto de workers activos cuando `TEST_JOBS > 1`
-
-No estable:
-
-- colores ANSI
-- spacing exacto
-- largo exacto del path
-- política visual exacta de truncado/compactación del path
-
-No consumir esta línea con parsers frágiles. El contrato fuerte para automatización está en el JSON final.
-
-### 6.2) `[Test]` en consola
-
-`[Test]` es una señal operatoria humana emitida por cada test completado cuando `progress_policy.mode=per_test`.
-
-Semántica estable de los campos:
-
-- `status`: estado final del test completado
-- `worker`: worker que cerró ese test
-- `done`: tests completados / tests seleccionados
-- `dur`: duración del test completado
-- `rel`: path relativo del test completado; puede aparecer compactado o truncado
-- `el`: elapsed total de la fase de ejecución al momento de cerrar ese test
-- `p/f/s/to`: contadores acumulados
-- `jobs`: paralelismo efectivo de la suite
-- `active`: resumen compacto de workers que siguen corriendo, si los hay
-
-No estable:
-
-- colores ANSI
-- spacing exacto
-- largo exacto del path
-- forma exacta del truncado
-
-`per_test` sigue siendo una superficie humana. No persiste cada evento en JSON.
-
-### 6.3) Warnings de long-running test
-
-`[WARN] long_running_test` es una advertencia operatoria, no una policy de fallo.
-
-Contrato:
-
-- no cambia exit code
-- no cambia `suite_status`
-- bucketiza por thresholds razonables para no spammear
-- aplica en `heartbeat` y `per_test`
-- se suprime en `quiet`
-
-### 6.4) `[Phase Timings]` en consola
-
-`[Phase Timings]` resume tiempos gruesos de la corrida por fase:
-
-- `discovery`
-- `admission`
-- `execution`
-- `reporting`
-
-Sirve para lectura humana rápida y para contrastar contra `phase_timings_ms` del JSON.
-
-### 6.5) `progress_policy`
-
-```json
-{
-  "progress_policy": {
-    "mode": "per_test",
-    "interval_sec": 15,
-    "long_test_warn_sec": 60
-  }
-}
-```
-
-Contrato:
-
-- describe la política activa usada por el runner
-- no implica persistencia de heartbeats ni eventos por test
-- `mode` estable hoy:
-  - `heartbeat`
-  - `per_test`
-  - `quiet`
-- `heartbeat` usa `interval_sec`
-- `per_test` mantiene `interval_sec` como parte de la policy estable, aunque no emita heartbeats periódicos
-- `quiet` suprime progreso operatorio, pero no elimina el reporte final
-
-### 6.6) `phase_timings_ms`
-
-```json
-{
-  "phase_timings_ms": {
-    "discovery": 120,
-    "admission": 45,
-    "execution": 603221,
-    "reporting": 380
-  }
-}
-```
-
-Contrato:
-
-- tiempos en milisegundos
-- granularidad de suite, no por test
-- útiles para comparación relativa y baseline operativo
-- no prometen precisión de microbenchmark
-
-### 6.7) `execution_metrics`
-
-```json
-{
-  "execution_metrics": {
-    "selected_test_count": 267,
-    "completed_test_count": 267,
-    "avg_test_ms": 2847,
-    "estimated_total_ms": 760000
-  }
-}
-```
-
-Contrato:
-
-- `selected_test_count`: cantidad seleccionada para la suite
-- `completed_test_count`: cantidad efectivamente completada en ejecución real
-- `avg_test_ms`: promedio simple final; puede ser `null` si no hubo tests completados
-- `estimated_total_ms`: estimado simple derivado del promedio final; puede ser `null` si no aplica
-
-Importante:
-
-- `list_only` y `no_tests` pueden dejar `avg_test_ms=null`
-- no hay baseline histórico ni heurística sofisticada en este campo
-- no se persisten heartbeats individuales para reconstruir timelines detallados
-
-## 7) Campos principales
-
-### `runner_capabilities`
-
-Declara capacidades del runner/suite.
-Es metadato contractual del runner, no evidencia de que una corrida concreta haya usado todas esas capacidades.
-
-### `summary`
-
-Es un agregado compacto del resultado ya enriquecido.
-
-Usarlo para:
-
-- `total`
-- `passed`
-- `failed`
-- `skipped`
-- `duration_ms`
-
-También puede incluir campos derivados como:
-
-- `suite_status`
-- `outcome_status`
-- `status_counts`
-- `phase_failure_counts`
-- `cause_counts`
-
-No inferir semántica fuera de lo que el propio reporte ya resolvió.
-
-### `failures`
-
-Es la lista canónica de fallos normalizados.
-
-Cada entrada puede incluir, entre otros:
-
-- `test_id`
-- `suite_id`
-- `file`
-- `case`
-- `kind`
-- `phase`
-- `failure_domain`
-- `cause_code`
-- `message`
-- `exception_class`
-- `artifact_path`
-
-Consumirla como evidencia principal de fallo.
-
-## 8) Qué es estable y qué es derivado
-
-### 8.1) Más estable
-
-- campos top-level versionados
-- `suite_status`
-- `outcome_status`
-- `summary`
-- `failures`
-- `first_failure`
-- `report_links`
-- `selection_manifest`
-- `phase_timings_ms`
-- `progress_policy`
-- `execution_metrics`
-
-### 8.2) Derivado pero útil
-
-- `canonical_report`
-- `diagnostics`
-- `phase_timeline`
-- `normalized_artifacts`
-- `regression_delta`
-- `suite_runs[]` dentro de `.testkit/history/<suite>.json`
-
-### 8.3) Heurístico o de ayuda
-
-- `fragility_hints`
-- familias/clusters de fallo
-- `recommended_actions`
-- `agent_summary`
-- lectura humana de `scripts/report.php`
-
-Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
-
-## 9) Humanos vs automatización
-
-### Para humanos
+Para humanos:
 
 - consola del runner
 - `[Progress]`
@@ -391,7 +144,7 @@ Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
 - `inspect`
 - `coverage_report.md`
 
-### Para automatización
+Para automatización:
 
 - JSON suite/meta persistidos
 - `failures`
@@ -403,9 +156,9 @@ Estos campos ayudan a triage. No deben tratarse como verdad fuerte del dominio.
 - `execution_metrics`
 - `canonical_report` solo como ayuda de normalización, no como único origen
 
-## 10) Fragility hints
+## 8) Fragility hints
 
-`fragility_hints` hoy salen del historial local por suite.
+`fragility_hints` salen del historial local por suite.
 
 Lectura correcta:
 
@@ -414,27 +167,90 @@ Lectura correcta:
 - no prueban causalidad
 - no reemplazan triage manual
 
-Sirven para priorizar investigación, no para cerrar diagnóstico.
+## 9) Coverage: lectura correcta
 
-## 11) Coverage: lectura correcta
-
-## 11.1) Coverage como diagnóstico
-
-Coverage en `testkit` es, ante todo, una señal diagnóstica.
-
-Sirve para:
+Coverage en `testkit` es una señal diagnóstica. Sirve para:
 
 - ver cobertura agregada
 - detectar archivos con cobertura baja
 - resaltar archivos críticos sin cobertura o bajo threshold
 
-No implica por sí sola un gate contractual de calidad.
+No implica por sí sola un gate contractual de calidad. Si un proyecto quiere usar coverage como gate, ese gate tiene que vivir en la política del proyecto.
 
-Si un proyecto quiere usar coverage como gate, ese gate tiene que vivir en la política del proyecto, no asumirse implícitamente desde `testkit`.
+## 10) Rutas de coverage
 
-## 11.2) Coverage PHP
+Default canónico:
 
-La ruta diagnóstica cerrada hoy está en suites PHP.
+```text
+.testkit/coverage/back_php
+.testkit/coverage/front_php
+.testkit/coverage/back_python
+```
+
+Override canónico:
+
+```bash
+TEST_COVERAGE_ROOT=/tmp/cov
+```
+
+produce:
+
+```text
+/tmp/cov/back_php
+```
+
+Compatibilidad legacy:
+
+```bash
+TEST_COVERAGE_DIR=/tmp/cov
+```
+
+mantiene la semántica histórica de root y también produce:
+
+```text
+/tmp/cov/back_php
+```
+
+`TEST_COVERAGE_DIR` no debe interpretarse como ruta final nueva. Se conserva para no romper proyectos existentes, pero la configuración nueva debe usar `TEST_COVERAGE_ROOT`.
+
+## 11) Variables de coverage
+
+| Env | Default | Semántica |
+|---|---:|---|
+| `TEST_COVERAGE` | `0` | Habilita coverage en suites soportadas. |
+| `TEST_COVERAGE_FORMAT` | `lcov` | `lcov`, `json` o `both`. |
+| `TEST_COVERAGE_ROOT` | `.testkit/coverage` | Root canónico; el runner agrega `<suite_id>`. |
+| `TEST_COVERAGE_DIR` | vacío | Alias legacy de root; el runner agrega `<suite_id>`. |
+| `TEST_COVERAGE_SOURCE_DIRS` | `TK_BACK_DIR,TK_PUBLIC_DIR` | Directorios fuente incluidos en cálculos. |
+| `TEST_COVERAGE_EXCLUDE_DIRS` | `test,testkit,docker,vendor,logs,storage` | Directorios excluidos por política central. |
+| `TEST_COVERAGE_CRITICAL_FILES` | vacío | Patrones `fnmatch` repo-relativos para críticos. |
+| `TEST_COVERAGE_CRITICAL_THRESHOLD` | `85` | Threshold para `critical_low`. |
+| `TEST_COVERAGE_LOW_THRESHOLD` | `70` | Threshold para `low_files`. |
+| `TEST_COVERAGE_SUMMARY_TOP` | `10` | Límite de archivos por lista en `scripts/report.php`. |
+
+## 12) Filtro de coverage
+
+La política central está en `CoverageFilter`.
+
+`TEST_COVERAGE_SOURCE_DIRS=back,public_html` significa que el cálculo se hace solo sobre archivos repo-relativos bajo:
+
+```text
+back/
+public_html/
+```
+
+Ese filtro afecta:
+
+- `overall.percent`
+- `files`
+- `modules`
+- `low_files`
+- `critical_missing`
+- `critical_low`
+
+No debe incluir `testkit/`, `test/`, `vendor/`, `docker/`, `logs/` ni `storage/` salvo que el proyecto cambie explícitamente `TEST_COVERAGE_EXCLUDE_DIRS`.
+
+## 13) Coverage PHP
 
 Artifacts típicos:
 
@@ -453,10 +269,9 @@ Artifacts típicos:
 - `critical_missing`
 - `critical_low`
 - `source_dirs`
+- `exclude_dirs`
 
-Es diagnóstico estructurado. No describe exhaustivamente la intención del proyecto.
-
-## 11.3) Coverage Python
+## 14) Coverage Python
 
 Python usa `trace` de la stdlib.
 
@@ -465,11 +280,28 @@ Lectura correcta:
 - es una señal liviana
 - no equivale al pipeline diagnóstico PHP
 - no debe venderse como analítica avanzada
-- puede servir para smoke diagnóstico, no para conclusiones finas por sí sola
+- puede servir para smoke diagnóstico
 
-## 12) Regla práctica de consumo
+## 15) Resumen ejecutivo
 
-Si necesitás una decisión automática:
+`scripts/report.php` lee primero la ruta canónica y luego legacy. El bloque de coverage muestra conteos y listas accionables:
+
+```text
+Coverage diagnostics
+- back_php: overall=54.54% critical_missing=4 critical_low=10
+  missing:
+    * back/curso/service/delivery_service.php
+    * back/curso/service/contenido_service.php
+  low:
+    * 2.94% back/curso/service/delivery/pdf_resolver_para_consumo.php
+    * 4.35% back/auth/service/plan.php
+```
+
+Si hay más de `TEST_COVERAGE_SUMMARY_TOP`, imprime `... N more`.
+
+## 16) Regla práctica de consumo
+
+Para una decisión automática:
 
 1. usar el JSON persistido
 2. leer `outcome_status`
@@ -478,11 +310,9 @@ Si necesitás una decisión automática:
 5. leer `phase_timings_ms`, `progress_policy` y `execution_metrics`
 6. usar `canonical_report` solo como ayuda de uniformidad
 
-Si necesitás entender rápido qué pasó:
+Para entender rápido qué pasó:
 
 1. `inspect latest`
 2. `inspect failure`
 3. `php scripts/report.php`
 4. revisar `[Phase Timings]` y, durante la corrida, `[Progress]` o `[Test]`
-
-No mezclar ambas capas como si fueran el mismo contrato.

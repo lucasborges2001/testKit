@@ -18,6 +18,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../../core/php/store/bootstrap.php';
+require_once __DIR__ . '/../../core/php/coverage/CoverageFilter.php';
 
 // --- helpers internos --------------------------------------------------------
 
@@ -213,12 +214,10 @@ tk__store_clean_if_enabled();
 // --- Coverage por proceso (opcional) ----------------------------------------
 
 if ((getenv('TEST_COVERAGE') ?: '0') === '1' && function_exists('xdebug_start_code_coverage')) {
-  $exclude = '#/(test|docker|vendor|logs)/#';
-
   /** @phpstan-ignore-next-line */
   xdebug_start_code_coverage(XDEBUG_CC_UNUSED | XDEBUG_CC_DEAD_CODE);
 
-  register_shutdown_function(function () use ($repoRoot, $exclude) {
+  register_shutdown_function(function () use ($repoRoot) {
     if (!function_exists('xdebug_get_code_coverage')) return;
 
     $outFile = getenv('TEST_COVERAGE_FILE') ?: '';
@@ -226,13 +225,12 @@ if ((getenv('TEST_COVERAGE') ?: '0') === '1' && function_exists('xdebug_start_co
 
     $raw = xdebug_get_code_coverage();
     $filtered = [];
-
-    $rootNorm = str_replace('\\', '/', $repoRoot) . '/';
+    $sourceDirs = \Testkit\Core\Coverage\CoverageFilter::sourceDirsFromEnv();
+    $excludeDirs = \Testkit\Core\Coverage\CoverageFilter::excludeDirsFromEnv();
 
     foreach ($raw as $file => $lines) {
       $fileNorm = str_replace('\\', '/', (string)$file);
-      if (!str_starts_with($fileNorm, $rootNorm)) continue;
-      if (preg_match($exclude, $fileNorm)) continue;
+      if (!\Testkit\Core\Coverage\CoverageFilter::shouldInclude($fileNorm, $repoRoot, $sourceDirs, $excludeDirs)) continue;
       $filtered[$fileNorm] = $lines;
     }
 
