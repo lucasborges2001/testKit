@@ -84,6 +84,7 @@ final class CleanupCommand
             'force' => false,
             'keep_runs' => self::DEFAULT_KEEP_RUNS,
             'keep_days' => self::DEFAULT_KEEP_DAYS,
+            'max_runs' => null,
             'include_history' => false,
             'include_baselines' => false,
             'all_locks' => false,
@@ -130,6 +131,10 @@ final class CleanupCommand
                 $options['keep_days'] = max(0, (int)$m[1]);
                 continue;
             }
+            if (preg_match('/^--max-runs=(\d+)$/', $arg, $m) === 1) {
+                $options['max_runs'] = max(0, (int)$m[1]);
+                continue;
+            }
 
             if (!$seenGroup && in_array($arg, self::GROUPS, true)) {
                 $group = $arg;
@@ -174,6 +179,7 @@ final class CleanupCommand
                 'group' => $options['group'],
                 'keep_runs' => $options['keep_runs'],
                 'keep_days' => $options['keep_days'],
+                'max_runs' => $options['max_runs'],
                 'include_history' => $options['include_history'],
                 'include_baselines' => $options['include_baselines'],
                 'force' => $options['force'],
@@ -225,6 +231,7 @@ final class CleanupCommand
         $group = [
             'run_dirs_scanned' => 0,
             'run_dirs_delete' => 0,
+            'run_dirs_delete_by_max_runs' => 0,
             'timestamped_json_scanned' => 0,
             'timestamped_json_delete' => 0,
         ];
@@ -236,7 +243,16 @@ final class CleanupCommand
 
         $runDirs = self::sortByMtimeDesc($runDirs);
         $now = time();
+        $maxRuns = self::nullableInt($options['max_runs'] ?? null);
         foreach ($runDirs as $index => $dir) {
+            if ($maxRuns !== null && $index >= $maxRuns) {
+                if (self::addCandidate($payload, 'reports', 'run_dir', $dir, 'report run directory beyond --max-runs hard cap')) {
+                    $group['run_dirs_delete']++;
+                    $group['run_dirs_delete_by_max_runs']++;
+                }
+                continue;
+            }
+
             $ageDays = self::ageDays($dir, $now);
             $protectedByCount = $index < (int)$options['keep_runs'];
             $protectedByAge = ((int)$options['keep_days'] > 0) && $ageDays <= (int)$options['keep_days'];
@@ -287,8 +303,10 @@ final class CleanupCommand
         $group = [
             'shard_dirs_scanned' => 0,
             'shard_dirs_delete' => 0,
+            'shard_dirs_delete_by_max_runs' => 0,
         ];
 
+        $maxRuns = self::nullableInt($options['max_runs'] ?? null);
         foreach (['mysql_profile', 'influx_profile'] as $profileRootName) {
             $shardsRoot = $artifactsRoot . '/' . $profileRootName . '/shards';
             $shards = self::sortByMtimeDesc(self::listChildDirs($shardsRoot));
@@ -297,6 +315,14 @@ final class CleanupCommand
 
             $now = time();
             foreach ($shards as $index => $dir) {
+                if ($maxRuns !== null && $index >= $maxRuns) {
+                    if (self::addCandidate($payload, 'profiles', 'profile_shard_dir', $dir, 'profiling shard directory beyond --max-runs hard cap')) {
+                        $group['shard_dirs_delete']++;
+                        $group['shard_dirs_delete_by_max_runs']++;
+                    }
+                    continue;
+                }
+
                 $ageDays = self::ageDays($dir, $now);
                 $protectedByCount = $index < (int)$options['keep_runs'];
                 $protectedByAge = ((int)$options['keep_days'] > 0) && $ageDays <= (int)$options['keep_days'];
@@ -542,6 +568,7 @@ final class CleanupCommand
         echo 'group:          ' . (string)$options['group'] . PHP_EOL;
         echo 'keep_runs:      ' . (int)$options['keep_runs'] . PHP_EOL;
         echo 'keep_days:      ' . (int)$options['keep_days'] . PHP_EOL;
+        echo 'max_runs:       ' . ($options['max_runs'] === null ? '-' : (string)(int)$options['max_runs']) . PHP_EOL;
         echo PHP_EOL;
 
         foreach ($payload['groups'] as $name => $group) {
@@ -591,6 +618,7 @@ Options:
   --json                 Print JSON output.
   --keep-runs=N          Keep the newest N run/shard/history artifacts. Default: 10.
   --keep-days=N          Keep artifacts newer than N days. Default: 14.
+  --max-runs=N           Hard cap for report run dirs and profile shard dirs.
   --include-history      Include .testkit/history when group is all.
   --include-baselines    Include baseline manifests when group is all. Requires --force.
   --all-locks            Delete active and stale lock dirs. Requires --force.
@@ -600,6 +628,7 @@ Notes:
   - cleanup never drops databases or docker volumes.
   - cleanup never deletes test seeds or test source files.
   - baseline cleanup only removes .manifest.json files, not database state.
+  - --keep-runs and --keep-days are additive; use --max-runs for a hard cap.
 TXT;
     }
 
@@ -720,6 +749,14 @@ TXT;
             return PHP_INT_MAX;
         }
         return (int)floor(max(0, $now - $mtime) / 86400);
+    }
+
+    private static function nullableInt(mixed $value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+        return max(0, (int)$value);
     }
 
     private static function jsonPrefix(string $file): string

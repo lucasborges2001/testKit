@@ -9,6 +9,7 @@ El objetivo es reducir crecimiento de `.testkit/` sin borrar tests, seeds, bases
 ```bash
 ./bin/testkit cleanup reports --dry-run
 ./bin/testkit cleanup reports --apply
+./bin/testkit cleanup reports --max-runs=10 --apply
 ```
 
 En PowerShell:
@@ -25,7 +26,9 @@ En PowerShell:
 ```bash
 ./bin/testkit cleanup all --dry-run
 ./bin/testkit cleanup reports --keep-runs=10 --keep-days=14 --apply
+./bin/testkit cleanup reports --max-runs=10 --apply
 ./bin/testkit cleanup profiles --keep-runs=10 --keep-days=14 --apply
+./bin/testkit cleanup profiles --max-runs=5 --apply
 ./bin/testkit cleanup coverage --apply
 ./bin/testkit cleanup locks --apply
 ./bin/testkit cleanup history --apply
@@ -45,18 +48,35 @@ En PowerShell:
 
 ## Retención
 
-`cleanup` conserva artefactos por dos criterios:
+`cleanup` conserva artefactos por dos criterios normales:
 
 - `--keep-runs=N`: conserva los N más recientes.
 - `--keep-days=N`: conserva artefactos más nuevos que N días.
 
-Un artefacto se borra solo si queda fuera de ambos criterios.
+Esos dos criterios son aditivos: un artefacto se borra solo si queda fuera de ambos. Por eso, si hay muchas corridas recientes dentro de `--keep-days`, pueden quedar más de `--keep-runs` directorios.
 
 Default:
 
 ```bash
 --keep-runs=10 --keep-days=14
 ```
+
+### Techo duro con `--max-runs`
+
+Usar `--max-runs=N` cuando se necesita un límite real de directorios de corrida, aunque todos sean recientes.
+
+```bash
+./bin/testkit cleanup reports --max-runs=10 --dry-run
+./bin/testkit cleanup reports --max-runs=10 --apply
+```
+
+`--max-runs` aplica a:
+
+- `.testkit/reports/runs/<run_id>`
+- `.testkit/mysql_profile/shards/<run_id>`
+- `.testkit/influx_profile/shards/<run_id>`
+
+No aplica a `history`, `coverage`, `locks` ni `baselines`.
 
 ## JSON
 
@@ -102,11 +122,18 @@ La limpieza de baselines solo borra manifests `.manifest.json`. No intenta drope
 
 ## Casos recomendados
 
-### Reducir explosión de corridas
+### Reducir explosión de corridas conservando los últimos días
 
 ```bash
 ./bin/testkit cleanup reports --keep-runs=10 --keep-days=7 --dry-run
 ./bin/testkit cleanup reports --keep-runs=10 --keep-days=7 --apply
+```
+
+### Reducir a un número exacto de corridas
+
+```bash
+./bin/testkit cleanup reports --max-runs=10 --dry-run
+./bin/testkit cleanup reports --max-runs=10 --apply
 ```
 
 ### Limpiar profiling viejo
