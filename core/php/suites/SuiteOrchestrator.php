@@ -8,6 +8,7 @@ use Testkit\Core\Common\AgentMode;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Coverage\CoverageDiagnostics;
 use Testkit\Core\Coverage\CoverageMerger;
+use Testkit\Core\Coverage\CoverageMetadata;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Execution\SuiteExecutor;
@@ -183,6 +184,7 @@ final class SuiteOrchestrator
             $result['evidence_valid'] = true;
             $result['evidence_invalid_reason'] = null;
             self::attachObservabilityDefaults($result, count($tests));
+            $result['coverage'] = self::coverageAttachmentBase($config, $reportRoot);
 
             $result['failures'] = ReportSummary::canonicalFailures($result);
             $result['grouped_failures'] = ReportSummary::groupFailures($result['failures']);
@@ -207,18 +209,28 @@ final class SuiteOrchestrator
                 $merged = CoverageMerger::mergeFromDir((string)$config['coverage_dir']);
                 if ($merged) {
                     $format = (string)$config['coverage_format'];
+                    $coverageArtifacts = [];
                     if ($format === 'json' || $format === 'both') {
                         $result['coverage_json'] = CoverageMerger::writeJson((string)$config['coverage_dir'], $merged);
+                        $coverageArtifacts['coverage_json'] = $result['coverage_json'];
                     }
                     if ($format === 'lcov' || $format === 'both') {
                         $result['coverage_lcov'] = CoverageMerger::writeLcov((string)$config['coverage_dir'], $merged, Paths::repoRoot());
+                        $coverageArtifacts['coverage_lcov'] = $result['coverage_lcov'];
                     }
 
                     $diagnostics = CoverageDiagnostics::analyze($merged, $config);
-                    CoverageDiagnostics::write((string)$config['coverage_dir'], $diagnostics);
+                    $diagnosticArtifacts = CoverageDiagnostics::write((string)$config['coverage_dir'], $diagnostics);
+                    $coverageArtifacts = array_merge($coverageArtifacts, $diagnosticArtifacts);
+                    $metadata = CoverageMetadata::write($config, $result, $reportRoot, $diagnostics, $coverageArtifacts);
                     $result['coverage_diagnostics'] = $diagnostics;
+                    $result['coverage_metadata'] = $metadata;
+                    $result['coverage'] = CoverageMetadata::suiteAttachment($metadata, $diagnostics);
                 } else {
                     $result['coverage_error'] = 'Coverage habilitado pero no se generaron archivos por test.';
+                    $result['coverage'] = self::coverageAttachmentBase($config, $reportRoot);
+                    $result['coverage']['status'] = 'missing_artifacts';
+                    $result['coverage']['error'] = (string)$result['coverage_error'];
                     if ((int)$result['exit_code'] === SuiteExecutor::EXIT_PASS) {
                         $result['exit_code'] = SuiteExecutor::EXIT_ERROR;
                     }
@@ -267,6 +279,7 @@ final class SuiteOrchestrator
                 ? $config['agent_mode']
                 : AgentMode::reportPayload();
             $result['warnings'] = $warnings;
+            $result['coverage'] = self::coverageAttachmentBase($config, $reportRoot);
 
             self::attachObservabilityDefaults($result, count($tests));
             $result = SuiteSeedState::attachToReport($result, Paths::repoRoot());
@@ -366,6 +379,33 @@ final class SuiteOrchestrator
             $result['tests_total'] = (int)($result['tests_total'] ?? $selectedTestCount);
             $result['execution_metrics'] = SuiteExecutor::executionMetricsSnapshot($result);
         }
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private static function coverageAttachmentBase(array $config, string $reportRoot): array
+    {
+        $enabled = (bool)($config['coverage'] ?? false);
+        $suiteId = (string)($config['suite_id'] ?? 'suite');
+        $coverageDir = Paths::normalize((string)($config['coverage_dir'] ?? Paths::coverageDirForSuite($suiteId)));
+        $runId = self::envString('TEST_RUN_ID');
+        $metaRunId = self::envString('TEST_META_RUN_ID', $runId);
+
+        return [
+            'enabled' => $enabled,
+            'generated' => false,
+            'status' => $enabled ? 'enabled_pending' : 'disabled',
+            'dir' => $coverageDir,
+            'dir_rel' => Paths::relativeToRepo($coverageDir),
+            'metadata_file' => null,
+            'diagnostics_file' => null,
+            'run_id' => $runId,
+            'meta_run_id' => $metaRunId,
+            'report_root' => Paths::normalize($reportRoot),
+            'report_root_rel' => Paths::relativeToRepo($reportRoot),
+        ];
     }
 
     /** @param array<int,array<string,mixed>> $left @param array<int,array<string,mixed>> $right @return array<int,array<string,mixed>> */

@@ -49,12 +49,15 @@ Coverage:
 - `.testkit/coverage/<suite_id>/lcov.info`
 - `.testkit/coverage/<suite_id>/coverage_diagnostics.json`
 - `.testkit/coverage/<suite_id>/coverage_report.md`
+- `.testkit/coverage/<suite_id>/coverage_meta.json`
 
-Durante una transición, `scripts/report.php` también lee legacy coverage bajo:
+Durante una transición, `scripts/report.php` también reconoce legacy coverage bajo:
 
 - `test/coverage/php_back`
 - `test/coverage/php_front`
 - `test/coverage/python_back`
+
+Ese fallback no se presenta como evidencia actual si no puede asociarse al `run_id` vigente. Sin metadata compatible se informa como `legacy/stale`.
 
 ## 4) Qué consumir para automatización
 
@@ -250,7 +253,58 @@ Ese filtro afecta:
 
 No debe incluir `testkit/`, `test/`, `vendor/`, `docker/`, `logs/` ni `storage/` salvo que el proyecto cambie explícitamente `TEST_COVERAGE_EXCLUDE_DIRS`.
 
-## 13) Coverage PHP
+## 13) Metadata anti-stale
+
+Cuando una suite genera coverage, TestKit escribe `coverage_meta.json` junto a los artefactos. Campos relevantes:
+
+- `suite_id`
+- `generated_at`
+- `coverage_dir` y `coverage_dir_rel`
+- `report_root` y `report_root_rel`
+- `run_id` y `meta_run_id`
+- `coverage_enabled`
+- `coverage_format`
+- `source_dirs`
+- `exclude_dirs`
+- `diagnostics_file`
+- `report_file`
+- `coverage_file`
+- `lcov_file`
+- `diagnostics_summary`
+
+El JSON de suite también incluye un bloque `coverage`:
+
+```json
+{
+  "coverage": {
+    "enabled": true,
+    "generated": true,
+    "status": "generated",
+    "dir": "/workspace/project/.testkit/coverage/back_php",
+    "metadata_file": "/workspace/project/.testkit/coverage/back_php/coverage_meta.json",
+    "run_id": "20260614T204957Z_d21d61",
+    "overall_percent": 59.7,
+    "critical_missing_count": 0,
+    "critical_low_count": 0
+  }
+}
+```
+
+Si coverage no estuvo activo en esa corrida:
+
+```json
+{
+  "coverage": {
+    "enabled": false,
+    "generated": false,
+    "status": "disabled"
+  }
+}
+```
+
+`report.php` valida que la metadata coincida con el `suite_id`, el `run_id` y el `report_root` del latest report. Si no coincide, no imprime `overall` ni listas como si fueran actuales. En su lugar informa `stale coverage available ... not attached to current run`.
+
+## 14) Coverage PHP
 
 Artifacts típicos:
 
@@ -271,7 +325,7 @@ Artifacts típicos:
 - `source_dirs`
 - `exclude_dirs`
 
-## 14) Coverage Python
+## 15) Coverage Python
 
 Python usa `trace` de la stdlib.
 
@@ -282,9 +336,9 @@ Lectura correcta:
 - no debe venderse como analítica avanzada
 - puede servir para smoke diagnóstico
 
-## 15) Resumen ejecutivo
+## 16) Resumen ejecutivo
 
-`scripts/report.php` lee primero la ruta canónica y luego legacy. El bloque de coverage muestra conteos y listas accionables:
+`scripts/report.php` lee coverage asociado al latest report de cada suite. Primero valida metadata/run actual; recién después muestra conteos y listas accionables:
 
 ```text
 Coverage diagnostics
@@ -299,7 +353,21 @@ Coverage diagnostics
 
 Si hay más de `TEST_COVERAGE_SUMMARY_TOP`, imprime `... N more`.
 
-## 16) Regla práctica de consumo
+Si hay coverage viejo no asociado al latest report:
+
+```text
+Coverage diagnostics
+- back_php: stale coverage available at .testkit/coverage/back_php, not attached to current run
+```
+
+Si hay fallback legacy sin metadata compatible:
+
+```text
+Coverage diagnostics
+- back_php: legacy/stale coverage available at test/coverage/php_back, not attached to current run
+```
+
+## 17) Regla práctica de consumo
 
 Para una decisión automática:
 

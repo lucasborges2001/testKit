@@ -20,7 +20,7 @@ final class CoverageMerger
 
         foreach ($files as $file) {
             $base = strtolower((string)basename($file));
-            if (in_array($base, ['coverage.json', 'coverage_diagnostics.json'], true)) {
+            if (in_array($base, ['coverage.json', 'coverage_diagnostics.json', 'coverage_meta.json'], true)) {
                 continue;
             }
 

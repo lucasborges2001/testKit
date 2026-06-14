@@ -76,6 +76,8 @@ Default coverage paths:
 .testkit/coverage/back_python
 ```
 
+Each coverage directory also carries `coverage_meta.json` when coverage is generated. The metadata records `suite_id`, `run_id`, `report_root`, format and filter settings so later reports can distinguish current coverage from stale files left by an older run.
+
 Use `TEST_COVERAGE_ROOT` to override the coverage root:
 
 ```bash
@@ -104,7 +106,7 @@ Common coverage env:
 | `TEST_COVERAGE_CRITICAL_THRESHOLD` | Threshold for `critical_low`; default `85`. |
 | `TEST_COVERAGE_SUMMARY_TOP` | Max files shown by `scripts/report.php`; default `10`. |
 
-The executive report reads diagnostics from the new `.testkit/coverage/<suite_id>` paths and keeps fallback support for legacy `test/coverage/*` paths.
+The executive report reads diagnostics only when they are attached to the latest suite run through `coverage_meta.json` or through the suite report itself. If a later run did not enable coverage, old files under `.testkit/coverage/<suite_id>` are reported as stale instead of being shown as current evidence. Legacy `test/coverage/*` paths remain supported, but are marked as legacy/current only with compatible metadata; otherwise they are shown as legacy/stale.
 
 ## Cleanup generated artifacts
 

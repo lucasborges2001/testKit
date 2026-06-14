@@ -24,6 +24,7 @@ require_once __DIR__ . '/execution/ParallelGuard.php';
 
 require_once __DIR__ . '/coverage/CoverageFilter.php';
 require_once __DIR__ . '/coverage/CoverageMerger.php';
+require_once __DIR__ . '/coverage/CoverageMetadata.php';
 require_once __DIR__ . '/coverage/CoverageDiagnostics.php';
 
 require_once __DIR__ . '/store/bootstrap.php';

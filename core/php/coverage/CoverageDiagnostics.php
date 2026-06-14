@@ -110,8 +110,9 @@ final class CoverageDiagnostics
 
     /**
      * @param array<string,mixed> $diagnostics
+     * @return array{diagnostics_file:string,report_file:string}
      */
-    public static function write(string $coverageDir, array $diagnostics): void
+    public static function write(string $coverageDir, array $diagnostics): array
     {
         @mkdir($coverageDir, 0777, true);
 
@@ -164,6 +165,11 @@ final class CoverageDiagnostics
         }
 
         file_put_contents($mdPath, implode(PHP_EOL, $lines) . PHP_EOL);
+
+        return [
+            'diagnostics_file' => $jsonPath,
+            'report_file' => $mdPath,
+        ];
     }
 
     /**

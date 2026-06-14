@@ -65,6 +65,8 @@ Ruta default:
 .testkit/coverage/back_python
 ```
 
+Cuando coverage está activo, cada directorio contiene `coverage_meta.json`. Ese archivo vincula los artefactos con `suite_id`, `run_id` y `report_root`.
+
 Overrides:
 
 ```bash
@@ -103,7 +105,7 @@ Después de correr coverage, el resumen humano se obtiene con:
 ./bin/testkit run --rm testkit php /workspace/testkit/scripts/report.php
 ```
 
-El bloque `Coverage diagnostics` lista conteos y, hasta `TEST_COVERAGE_SUMMARY_TOP`, archivos concretos de `critical_missing` y `critical_low`.
+El bloque `Coverage diagnostics` lista conteos y, hasta `TEST_COVERAGE_SUMMARY_TOP`, archivos concretos de `critical_missing` y `critical_low`. Si corrés la misma suite sin coverage después de una corrida con coverage, `report.php` no reutiliza los archivos anteriores como evidencia actual: muestra `not generated for this run` o marca el directorio como `stale`/`legacy/stale`.
 
 ## Reference contract PHP
 

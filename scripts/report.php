@@ -5,6 +5,7 @@ require_once __DIR__ . '/../core/php/bootstrap.php';
 
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Coverage\CoverageMetadata;
 use Testkit\Core\Reporting\FailureClassifier;
 use Testkit\Core\Reporting\ReportSummary;
 
@@ -306,21 +307,46 @@ if (!$hasFragility) {
 echo "\nCoverage diagnostics\n";
 $printedCoverage = false;
 $summaryTop = max(0, Env::int('TEST_COVERAGE_SUMMARY_TOP', 10));
-foreach (coverageDiagnosticsFiles($reportsRoot) as $entry) {
-    $json = readCoverageDiagnostics((string)$entry['path']);
-    if ($json === null) {
+foreach ($reports as $report) {
+    $status = coverageStatusForReport($report, $reportsRoot);
+    if ($status === null) {
         continue;
     }
 
     $printedCoverage = true;
-    $suite = (string)$entry['suite'];
-    $overall = (float)($json['overall']['percent'] ?? 0.0);
-    $criticalMissing = is_array($json['critical_missing'] ?? null) ? $json['critical_missing'] : [];
-    $criticalLow = is_array($json['critical_low'] ?? null) ? $json['critical_low'] : [];
+    $suite = (string)$status['suite'];
+    $state = (string)$status['state'];
 
-    echo "- {$suite}: overall={$overall}% critical_missing=" . count($criticalMissing) . ' critical_low=' . count($criticalLow) . "\n";
-    printCoverageMissing($criticalMissing, $summaryTop);
-    printCoverageLow($criticalLow, $summaryTop);
+    if ($state === 'current') {
+        $json = is_array($status['diagnostics'] ?? null)
+            ? $status['diagnostics']
+            : readCoverageDiagnostics((string)($status['path'] ?? ''));
+        if ($json === null) {
+            echo "- {$suite}: not generated for this run\n";
+            continue;
+        }
+
+        $overall = (float)($json['overall']['percent'] ?? 0.0);
+        $criticalMissing = is_array($json['critical_missing'] ?? null) ? $json['critical_missing'] : [];
+        $criticalLow = is_array($json['critical_low'] ?? null) ? $json['critical_low'] : [];
+        $source = (string)($status['source'] ?? 'canonical');
+        $suffix = $source === 'legacy' ? ' (legacy)' : '';
+
+        echo "- {$suite}: overall={$overall}% critical_missing=" . count($criticalMissing) . ' critical_low=' . count($criticalLow) . $suffix . "\n";
+        printCoverageMissing($criticalMissing, $summaryTop);
+        printCoverageLow($criticalLow, $summaryTop);
+        continue;
+    }
+
+    if ($state === 'stale') {
+        $dir = displayPath((string)($status['dir'] ?? ''));
+        $source = (string)($status['source'] ?? 'canonical');
+        $label = $source === 'legacy' ? 'legacy/stale' : 'stale';
+        echo "- {$suite}: {$label} coverage available at {$dir}, not attached to current run\n";
+        continue;
+    }
+
+    echo "- {$suite}: not generated for this run\n";
 }
 
 if (!$printedCoverage) {
@@ -419,33 +445,6 @@ function resolveActiveReportsRoot(): string
 }
 
 /**
- * @return array<int,array{suite:string,path:string,dir:string,source:string}>
- */
-function coverageDiagnosticsFiles(string $reportsRoot): array
-{
-    $suiteIds = ['back_php', 'front_php', 'back_python'];
-    $found = [];
-
-    foreach ($suiteIds as $suiteId) {
-        foreach (coverageDiagnosticCandidatesForSuite($suiteId, $reportsRoot) as $candidate) {
-            $diag = rtrim($candidate['dir'], '/\\') . '/coverage_diagnostics.json';
-            if (!is_file($diag)) {
-                continue;
-            }
-            $found[] = [
-                'suite' => $suiteId,
-                'path' => str_replace('\\', '/', $diag),
-                'dir' => str_replace('\\', '/', $candidate['dir']),
-                'source' => $candidate['source'],
-            ];
-            continue 2;
-        }
-    }
-
-    return $found;
-}
-
-/**
  * @return array<int,array{dir:string,source:string}>
  */
 function coverageDiagnosticCandidatesForSuite(string $suiteId, string $reportsRoot): array
@@ -472,10 +471,209 @@ function coverageDiagnosticCandidatesForSuite(string $suiteId, string $reportsRo
 }
 
 /**
+ * @param array<string,mixed> $report
+ * @return array<string,mixed>|null
+ */
+function coverageStatusForReport(array $report, string $reportsRoot): ?array
+{
+    $suiteId = trim((string)($report['suite_id'] ?? ''));
+    if (!isCoverageSuite($suiteId)) {
+        return null;
+    }
+
+    $coverage = is_array($report['coverage'] ?? null) ? $report['coverage'] : null;
+    if ($coverage !== null) {
+        $enabled = (bool)($coverage['enabled'] ?? false);
+        $generated = (bool)($coverage['generated'] ?? false);
+        if ($enabled && $generated) {
+            $current = coverageStatusFromAttachment($report, $coverage);
+            if ($current !== null) {
+                return $current;
+            }
+
+            $stale = staleCoverageCandidate($suiteId, $reportsRoot);
+            if ($stale !== null) {
+                return $stale;
+            }
+
+            return ['suite' => $suiteId, 'state' => 'not_generated'];
+        }
+
+        $stale = staleCoverageCandidate($suiteId, $reportsRoot);
+        if ($stale !== null) {
+            return $stale;
+        }
+
+        return ['suite' => $suiteId, 'state' => 'not_generated'];
+    }
+
+    $currentFromMetadata = currentCoverageCandidateForReport($suiteId, $reportsRoot, $report);
+    if ($currentFromMetadata !== null) {
+        return $currentFromMetadata;
+    }
+
+    if (is_array($report['coverage_diagnostics'] ?? null)) {
+        return [
+            'suite' => $suiteId,
+            'state' => 'current',
+            'source' => 'report',
+            'diagnostics' => $report['coverage_diagnostics'],
+        ];
+    }
+
+    $stale = staleCoverageCandidate($suiteId, $reportsRoot);
+    if ($stale !== null) {
+        return $stale;
+    }
+
+    return ['suite' => $suiteId, 'state' => 'not_generated'];
+}
+
+/** @param array<string,mixed> $report @param array<string,mixed> $coverage @return array<string,mixed>|null */
+function coverageStatusFromAttachment(array $report, array $coverage): ?array
+{
+    $suiteId = (string)($report['suite_id'] ?? '');
+    $metadata = null;
+    $metadataFound = false;
+    $metadataFile = trim((string)($coverage['metadata_file'] ?? ''));
+    if ($metadataFile === '') {
+        $metadataFile = trim((string)($coverage['metadata_file_rel'] ?? ''));
+    }
+    if ($metadataFile !== '') {
+        $metadataPath = resolvePossiblyRelativeRepoPath($metadataFile);
+        $metadataFound = is_file($metadataPath);
+        $metadata = CoverageMetadata::readFile($metadataPath);
+    }
+
+    if ($metadata === null) {
+        $dir = trim((string)($coverage['dir'] ?? ''));
+        if ($dir !== '') {
+            $metadataPath = rtrim(Paths::normalize($dir), '/') . '/' . CoverageMetadata::FILE;
+            $metadataFound = $metadataFound || is_file($metadataPath);
+            $metadata = CoverageMetadata::readFile($metadataPath);
+        }
+    }
+
+    if ($metadata !== null && CoverageMetadata::matchesReport($metadata, $report)) {
+        $diag = CoverageMetadata::resolveArtifactPath($metadata, 'diagnostics_file', 'coverage_diagnostics.json');
+        if (is_file($diag)) {
+            return [
+                'suite' => $suiteId,
+                'state' => 'current',
+                'path' => $diag,
+                'dir' => (string)($metadata['coverage_dir'] ?? dirname($diag)),
+                'source' => str_contains(Paths::normalize((string)($metadata['coverage_dir'] ?? '')), '/test/coverage/') ? 'legacy' : 'canonical',
+            ];
+        }
+    }
+
+    if ($metadataFound) {
+        return null;
+    }
+
+    $coverageRunId = trim((string)($coverage['run_id'] ?? ''));
+    $reportRunId = trim((string)($report['run_id'] ?? ''));
+    $diag = trim((string)($coverage['diagnostics_file'] ?? ''));
+    if ($coverageRunId !== '' && $coverageRunId === $reportRunId && $diag !== '') {
+        $diagPath = resolvePossiblyRelativeRepoPath($diag);
+        if (is_file($diagPath)) {
+            return [
+                'suite' => $suiteId,
+                'state' => 'current',
+                'path' => $diagPath,
+                'dir' => dirname($diagPath),
+                'source' => str_contains(Paths::normalize(dirname($diagPath)), '/test/coverage/') ? 'legacy' : 'canonical',
+            ];
+        }
+    }
+
+    return null;
+}
+
+/** @param array<string,mixed> $report @return array<string,mixed>|null */
+function currentCoverageCandidateForReport(string $suiteId, string $reportsRoot, array $report): ?array
+{
+    foreach (coverageDiagnosticCandidatesForSuite($suiteId, $reportsRoot) as $candidate) {
+        $dir = Paths::normalize((string)$candidate['dir']);
+        $metadata = CoverageMetadata::readFromDir($dir);
+        if ($metadata === null || !CoverageMetadata::matchesReport($metadata, $report)) {
+            continue;
+        }
+
+        $diag = CoverageMetadata::resolveArtifactPath($metadata, 'diagnostics_file', 'coverage_diagnostics.json');
+        if (!is_file($diag)) {
+            continue;
+        }
+
+        return [
+            'suite' => $suiteId,
+            'state' => 'current',
+            'path' => $diag,
+            'dir' => $dir,
+            'source' => (string)$candidate['source'],
+        ];
+    }
+
+    return null;
+}
+
+/** @return array<string,mixed>|null */
+function staleCoverageCandidate(string $suiteId, string $reportsRoot): ?array
+{
+    foreach (coverageDiagnosticCandidatesForSuite($suiteId, $reportsRoot) as $candidate) {
+        $diag = rtrim((string)$candidate['dir'], '/\\') . '/coverage_diagnostics.json';
+        if (!is_file($diag)) {
+            continue;
+        }
+
+        return [
+            'suite' => $suiteId,
+            'state' => 'stale',
+            'path' => str_replace('\\', '/', $diag),
+            'dir' => str_replace('\\', '/', (string)$candidate['dir']),
+            'source' => (string)$candidate['source'],
+        ];
+    }
+
+    return null;
+}
+
+function isCoverageSuite(string $suiteId): bool
+{
+    return in_array($suiteId, ['back_php', 'front_php', 'back_python'], true);
+}
+
+function resolvePossiblyRelativeRepoPath(string $path): string
+{
+    $path = trim(str_replace('\\', '/', $path));
+    if ($path === '') {
+        return '';
+    }
+    if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:[\\\/]/', $path) === 1) {
+        return Paths::normalize($path);
+    }
+
+    return Paths::normalize(Paths::repoRoot() . '/' . ltrim($path, '/'));
+}
+
+function displayPath(string $path): string
+{
+    if ($path === '') {
+        return '(unknown)';
+    }
+
+    return Paths::relativeToRepo($path);
+}
+
+/**
  * @return array<string,mixed>|null
  */
 function readCoverageDiagnostics(string $path): ?array
 {
+    if ($path === '' || !is_file($path)) {
+        return null;
+    }
+
     $raw = file_get_contents($path);
     $json = is_string($raw) ? json_decode($raw, true) : null;
     return is_array($json) ? $json : null;
