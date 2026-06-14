@@ -29,6 +29,23 @@ function Invoke-TestkitInspect([string]$EnvFilePath, [string[]]$InspectArgs) {
   return $LASTEXITCODE
 }
 
+function Invoke-TestkitCleanup([string]$EnvFilePath, [string[]]$CleanupArgs) {
+  $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
+  $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
+  $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
+  $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
+
+  $files = Get-TestkitComposeFiles $stackCsv
+  $cmd = @('compose','--env-file',$EnvFilePath) + $files + @(
+    'run','--rm',
+    '-e','TESTKIT_WRAPPER_KIND=powershell',
+    'testkit','php','/workspace/testkit/scripts/cleanup.php'
+  ) + $CleanupArgs
+
+  & docker @cmd
+  return $LASTEXITCODE
+}
+
 function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$CliArgs) {
   $legacyPg = $false
   $runtimeArgs = @($CliArgs)
@@ -84,6 +101,11 @@ Import-TestkitEnvKV $envFile.Path
 if ($Args.Count -gt 0 -and $Args[0] -eq 'inspect') {
   $inspectArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
   exit (Invoke-TestkitInspect $envFile.Path $inspectArgs)
+}
+
+if ($Args.Count -gt 0 -and $Args[0] -eq 'cleanup') {
+  $cleanupArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+  exit (Invoke-TestkitCleanup $envFile.Path $cleanupArgs)
 }
 
 exit (Invoke-TestkitRuntime $envFile.Path $Args)

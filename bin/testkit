@@ -38,6 +38,26 @@ testkit_dispatch_inspect() {
     testkit php /workspace/testkit/scripts/inspect.php "$@"
 }
 
+testkit_dispatch_cleanup() {
+  local env_file="$1"
+  shift || true
+
+  local stack_csv
+  stack_csv="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || return 1
+
+  export TESTKIT_DB_ENV_PATH
+  TESTKIT_DB_ENV_PATH="$(testkit_env_file_to_container_path "${env_file}")"
+  export TESTKIT_PROJECT_ROOT="${PROJECT_ROOT}"
+  export TESTKIT_ROOT="${TESTKIT_ROOT_HOST}"
+
+  local files=()
+  testkit_resolve_compose_files "${stack_csv}" files
+
+  docker compose --env-file "${env_file}" "${files[@]}" run --rm \
+    -e TESTKIT_WRAPPER_KIND="bash" \
+    testkit php /workspace/testkit/scripts/cleanup.php "$@"
+}
+
 testkit_dispatch_runtime() {
   local env_file="$1"
   shift || true
@@ -110,6 +130,11 @@ main() {
     inspect)
       shift || true
       testkit_dispatch_inspect "${env_file}" "$@"
+      return $?
+      ;;
+    cleanup)
+      shift || true
+      testkit_dispatch_cleanup "${env_file}" "$@"
       return $?
       ;;
     *)
