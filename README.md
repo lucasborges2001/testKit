@@ -13,6 +13,7 @@ Read by question, not by file order:
 | What does a project need to adopt `testkit`? What does `testkit` own? What is out of scope? | [`docs/CONTRATO.md`](docs/CONTRATO.md) |
 | What engines/services are actually supported right now? | [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) |
 | How do I run it safely for the first time? Which commands are normal? | [`docs/USO.md`](docs/USO.md) |
+| How do I prune generated reports, coverage and profiling artifacts? | [`docs/CLEANUP.md`](docs/CLEANUP.md) |
 | Setup failed. Which command should I run next? | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | How is execution wired internally? How do bootstrap, baseline and locks fit together? | [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
 | Which report fields are stable? What is heuristic? How should coverage and observability be read? | [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) |
@@ -22,9 +23,10 @@ Suggested reading order for a new adopter:
 1. `CONTRATO.md`
 2. `SUPPORT_MATRIX.md`
 3. `USO.md`
-4. `TROUBLESHOOTING.md`
-5. `ARQUITECTURA.md`
-6. `REPORTING_COVERAGE.md`
+4. `CLEANUP.md`
+5. `TROUBLESHOOTING.md`
+6. `ARQUITECTURA.md`
+7. `REPORTING_COVERAGE.md`
 
 ## Quick start
 
@@ -53,6 +55,40 @@ $env:TESTKIT_PROJECT_ROOT = 'D:\Proyecto'
 .\bin\testkit.ps1 run --rm testkit php runTest.php back-php
 .\bin\testkit.ps1 inspect latest
 ```
+
+## Cleanup generated artifacts
+
+Framework-generated operational artifacts are written inside the host project, mainly under `.testkit/`. Long-running development cycles can produce many report run directories, profiling shards and coverage files.
+
+Use `cleanup` to inspect and prune those generated artifacts without touching databases, Docker volumes, seeds, source tests or env files.
+
+Dry-run is the default safety mode:
+
+```bash
+./bin/testkit cleanup reports --max-runs=10 --dry-run
+```
+
+Deletion requires `--apply`:
+
+```bash
+./bin/testkit cleanup reports --max-runs=10 --apply
+```
+
+PowerShell:
+
+```powershell
+.\bin\testkit.ps1 cleanup reports --max-runs=10 --dry-run
+.\bin\testkit.ps1 cleanup reports --max-runs=10 --apply
+```
+
+Retention rules:
+
+- `--keep-runs=N` preserves at least the newest N runs.
+- `--keep-days=N` preserves runs newer than N days.
+- `--max-runs=N` is a hard cap and removes older run directories beyond N even when they are still inside `--keep-days`.
+- `*_latest.json` and `latest_run.json` are preserved.
+
+Detailed contract: [`docs/CLEANUP.md`](docs/CLEANUP.md).
 
 ## Doctor modes
 

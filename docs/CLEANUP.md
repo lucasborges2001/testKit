@@ -2,6 +2,8 @@
 
 `cleanup` removes generated artifacts from host projects that use testKit. It is conservative by default: it plans first and deletes only with `--apply`.
 
+The command is for generated operational artifacts. It is not a database reset command and it is not a project-source cleanup command.
+
 ## Common commands
 
 ```bash
@@ -19,6 +21,28 @@ PowerShell:
 .\testkit\bin\testkit.ps1 cleanup reports --max-runs=10 --apply
 ```
 
+## Recommended operator flow
+
+1. Inspect candidates first:
+
+   ```bash
+   ./testkit/bin/testkit cleanup reports --max-runs=10 --dry-run
+   ```
+
+2. Apply only after the plan looks correct:
+
+   ```bash
+   ./testkit/bin/testkit cleanup reports --max-runs=10 --apply
+   ```
+
+3. Verify the retained run count:
+
+   ```bash
+   find .testkit/reports/runs -mindepth 1 -maxdepth 1 -type d | wc -l
+   ```
+
+`tree .testkit/reports/runs` counts the root directory too. For the exact number of run directories, prefer the `find` command above.
+
 ## Retention semantics
 
 `--keep-runs` and `--keep-days` are additive protections. A run is kept if either condition protects it.
@@ -32,6 +56,20 @@ Example:
 ```
 
 This keeps only the 10 newest report run directories, even when more runs are still within `--keep-days`.
+
+### Practical difference
+
+```bash
+./testkit/bin/testkit cleanup reports --keep-runs=10 --keep-days=7 --apply
+```
+
+This can keep more than 10 runs if many runs happened during the last 7 days.
+
+```bash
+./testkit/bin/testkit cleanup reports --max-runs=10 --apply
+```
+
+This keeps at most 10 runs.
 
 ## Groups
 
@@ -141,6 +179,8 @@ Every run writes:
 .testkit/reports/cleanup/cleanup_<timestamp>.json
 ```
 
+A cleanup audit includes the mode, group, options, scanned counts, delete candidates, deleted counts, byte estimates and per-candidate reasons.
+
 ## Internal split
 
 `core/php/cleanup/CleanupCommand.php` is intentionally small. The cleanup implementation is split into:
@@ -162,16 +202,25 @@ The external entrypoint remains unchanged:
 scripts/cleanup.php -> Testkit\Core\Cleanup\CleanupCommand::runCli($argv)
 ```
 
-## Contract test
+## Contract tests
+
+Core contract:
 
 ```bash
 php tests/framework/test_cleanup_contract.php
 ```
 
-The test validates:
+Script entrypoint smoke:
+
+```bash
+bash tests/framework/test_cleanup_cli.sh
+```
+
+The tests validate:
 
 - `--dry-run` does not delete.
 - `--apply` deletes only candidates beyond `--max-runs`.
 - only the newest run dirs remain.
 - `*_latest.json` is preserved.
 - `cleanup_latest.json` is written.
+- `scripts/cleanup.php` returns valid JSON through the real CLI entrypoint.
