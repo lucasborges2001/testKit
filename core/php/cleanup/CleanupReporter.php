@@ -30,6 +30,7 @@ final class CleanupReporter
         echo 'keep_runs:      ' . (int)$options['keep_runs'] . PHP_EOL;
         echo 'keep_days:      ' . (int)$options['keep_days'] . PHP_EOL;
         echo 'max_runs:       ' . ($options['max_runs'] === null ? '-' : (string)(int)$options['max_runs']) . PHP_EOL;
+        echo 'max_artifacts:  ' . ($options['max_artifacts'] === null ? '-' : (string)(int)$options['max_artifacts']) . PHP_EOL;
         echo PHP_EOL;
 
         foreach ($payload['groups'] as $name => $group) {

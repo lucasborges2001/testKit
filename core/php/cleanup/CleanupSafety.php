@@ -35,13 +35,18 @@ final class CleanupSafety
     public static function isSafeCoveragePath(string $path): bool
     {
         $path = Paths::normalize($path);
-        $defaultCoverage = Paths::normalize(Paths::repoRoot() . '/test/coverage');
+        $repoRoot = Paths::repoRoot();
+        if ($path !== $repoRoot && !self::isDescendant($path, $repoRoot)) {
+            return false;
+        }
+
+        $defaultCoverage = Paths::normalize($repoRoot . '/test/coverage');
         if ($path === $defaultCoverage || self::isDescendant($path, $defaultCoverage)) {
             return true;
         }
 
-        $artifactsRoot = Paths::artifactsRoot();
-        if (self::isDescendant($path, $artifactsRoot) && str_contains('/' . $path . '/', '/coverage/')) {
+        $artifactCoverage = Paths::normalize(Paths::artifactsRoot() . '/coverage');
+        if ($path === $artifactCoverage || self::isDescendant($path, $artifactCoverage)) {
             return true;
         }
 

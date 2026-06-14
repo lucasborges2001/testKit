@@ -11,7 +11,11 @@ The command is for generated operational artifacts. It is not a database reset c
 ./testkit/bin/testkit cleanup reports --apply
 ./testkit/bin/testkit cleanup reports --max-runs=10 --dry-run
 ./testkit/bin/testkit cleanup reports --max-runs=10 --apply
+./testkit/bin/testkit cleanup coverage --dry-run
+./testkit/bin/testkit cleanup coverage --apply
 ./testkit/bin/testkit cleanup all --dry-run
+./testkit/bin/testkit cleanup all --prune-to-latest --dry-run
+./testkit/bin/testkit cleanup all --prune-to-latest --apply
 ```
 
 PowerShell:
@@ -49,6 +53,10 @@ PowerShell:
 
 Use `--max-runs=N` when you want a hard cap on report run directories and profile shard directories.
 
+Use `--max-artifacts=N` when you want a hard cap across run directories, profile shards and timestamped JSON groups. This disables the `--keep-days` age protection and sets the retained count to `N` for supported artifact families.
+
+Use `--prune-to-latest` as the operational shortcut for `--max-artifacts=1`.
+
 Example:
 
 ```bash
@@ -69,7 +77,22 @@ This can keep more than 10 runs if many runs happened during the last 7 days.
 ./testkit/bin/testkit cleanup reports --max-runs=10 --apply
 ```
 
-This keeps at most 10 runs.
+This keeps at most 10 report run directories and profile shard directories.
+
+```bash
+./testkit/bin/testkit cleanup all --prune-to-latest --apply
+```
+
+This leaves the operational minimum for generated artifacts:
+
+- report runs: newest run directory only
+- profile shards: newest shard per profile only
+- timestamped report JSON: newest JSON per prefix only
+- cleanup audits: `cleanup_latest.json` plus at most the current `cleanup_<timestamp>.json`
+- history: newest timestamped JSON per prefix when timestamped history artifacts exist
+- coverage: removed because it is regenerable
+- locks: stale locks only, unless `--all-locks --force` is used
+- baselines: not touched unless `--include-baselines --force` is used
 
 ## Groups
 
@@ -90,6 +113,7 @@ Targets:
 ```text
 .testkit/reports/runs/<run_id>/
 .testkit/reports/*_<timestamp>.json
+.testkit/reports/cleanup/cleanup_<timestamp>.json
 ```
 
 Preserves:
@@ -98,6 +122,8 @@ Preserves:
 *_latest.json
 latest_run.json
 ```
+
+When `--prune-to-latest` is used, old cleanup audit JSON files are removed before the current audit is written, so the final tree keeps `cleanup_latest.json` and at most one timestamped cleanup audit.
 
 ### profiles
 
@@ -114,8 +140,34 @@ Targets safe coverage artifacts only:
 
 ```text
 test/coverage
-$TEST_COVERAGE_DIR when it is inside an allowed coverage location
+.testkit/coverage
+.testkit/coverage/*
+$TEST_COVERAGE_ROOT when it resolves to a safe coverage location
+$TEST_COVERAGE_DIR when it resolves to a safe coverage location
 ```
+
+Default `cleanup coverage` deletes direct children under `.testkit/coverage`, such as `.testkit/coverage/back_php`, and preserves the `.testkit/coverage` container directory when it still has sibling coverage entries.
+
+`cleanup all --prune-to-latest` deletes the complete `.testkit/coverage` root because coverage is regenerable.
+
+Safe coverage locations are restricted to:
+
+```text
+test/coverage
+.testkit/coverage
+```
+
+Relative `TEST_COVERAGE_DIR` values are resolved from the host project root. The Docker wrapper forwards `TEST_COVERAGE_DIR` and `TEST_COVERAGE_ROOT` into the cleanup container.
+
+Examples:
+
+```bash
+./testkit/bin/testkit cleanup coverage --dry-run
+TEST_COVERAGE_DIR=.testkit/coverage/back_php ./testkit/bin/testkit cleanup coverage --dry-run
+TEST_COVERAGE_DIR=.testkit/coverage/back_php ./testkit/bin/testkit cleanup coverage --apply
+```
+
+Unsafe values are rejected, including the repo root, testkit root, `.testkit` root, test source directories, seed directories, database paths, Docker volume paths and env files.
 
 ### locks
 
@@ -134,6 +186,8 @@ Not included in `all` by default. Use:
 ```bash
 ./testkit/bin/testkit cleanup all --include-history --dry-run
 ```
+
+`--max-artifacts=N` and `--prune-to-latest` include history automatically for `cleanup all` and retain timestamped history JSON by prefix.
 
 ### baselines
 
@@ -218,9 +272,12 @@ bash tests/framework/test_cleanup_cli.sh
 
 The tests validate:
 
-- `--dry-run` does not delete.
-- `--apply` deletes only candidates beyond `--max-runs`.
-- only the newest run dirs remain.
-- `*_latest.json` is preserved.
+- `cleanup coverage --dry-run` detects `.testkit/coverage/back_php`.
+- `cleanup coverage --apply` deletes `.testkit/coverage/back_php`.
+- `TEST_COVERAGE_DIR=.testkit/coverage/back_php` reaches the cleanup runtime.
+- unsafe `TEST_COVERAGE_DIR` values are rejected.
+- `cleanup all --max-runs=1` keeps only the newest report run directory.
+- `--prune-to-latest` leaves the operational minimum for supported artifact families.
+- cleanup does not delete database files, Docker volume files, seeds, source tests, env files or the `.testkit` root.
 - `cleanup_latest.json` is written.
 - `scripts/cleanup.php` returns valid JSON through the real CLI entrypoint.

@@ -31,6 +31,8 @@ final class CleanupPlanner
                 'keep_runs' => $options['keep_runs'],
                 'keep_days' => $options['keep_days'],
                 'max_runs' => $options['max_runs'],
+                'max_artifacts' => $options['max_artifacts'] ?? null,
+                'prune_to_latest' => $options['prune_to_latest'] ?? false,
                 'include_history' => $options['include_history'],
                 'include_baselines' => $options['include_baselines'],
                 'force' => $options['force'],
@@ -97,7 +99,7 @@ final class CleanupPlanner
         $maxRuns = CleanupFilesystem::nullableInt($options['max_runs'] ?? null);
         foreach ($runDirs as $index => $dir) {
             if ($maxRuns !== null && $index >= $maxRuns) {
-                if (self::addCandidate($payload, 'reports', 'run_dir', $dir, 'report run directory beyond --max-runs hard cap')) {
+                if (self::addCandidate($payload, 'reports', 'run_dir', $dir, 'report run directory beyond hard cap')) {
                     $group['run_dirs_delete']++;
                     $group['run_dirs_delete_by_max_runs']++;
                 }
@@ -126,11 +128,18 @@ final class CleanupPlanner
             $byPrefix[$prefix][] = $file;
         }
 
+        $maxArtifacts = CleanupFilesystem::nullableInt($options['max_artifacts'] ?? null);
         foreach ($byPrefix as $files) {
             $files = CleanupFilesystem::sortByMtimeDesc($files);
             foreach ($files as $index => $file) {
                 $ageDays = CleanupFilesystem::ageDays($file, $now);
-                $protectedByCount = $index < (int)$options['keep_runs'];
+                $keepCount = (int)$options['keep_runs'];
+                if ($maxArtifacts !== null && self::isCleanupAuditFile($file)) {
+                    // CleanupAuditWriter writes a fresh cleanup_<timestamp>.json after execution.
+                    // Keep one slot free so --prune-to-latest leaves only that final audit file.
+                    $keepCount = max(0, $maxArtifacts - 1);
+                }
+                $protectedByCount = $index < $keepCount;
                 $protectedByAge = ((int)$options['keep_days'] > 0) && $ageDays <= (int)$options['keep_days'];
                 if ($protectedByCount || $protectedByAge) {
                     continue;
@@ -167,7 +176,7 @@ final class CleanupPlanner
             $now = time();
             foreach ($shards as $index => $dir) {
                 if ($maxRuns !== null && $index >= $maxRuns) {
-                    if (self::addCandidate($payload, 'profiles', 'profile_shard_dir', $dir, 'profiling shard directory beyond --max-runs hard cap')) {
+                    if (self::addCandidate($payload, 'profiles', 'profile_shard_dir', $dir, 'profiling shard directory beyond hard cap')) {
                         $group['shard_dirs_delete']++;
                         $group['shard_dirs_delete_by_max_runs']++;
                     }
@@ -196,20 +205,29 @@ final class CleanupPlanner
      */
     private static function appendCoverageCandidates(array &$payload, array $options): void
     {
-        unset($options);
         $group = [
             'paths_scanned' => 0,
             'paths_delete' => 0,
             'skipped_unsafe' => 0,
         ];
 
+        /** @var array<string,bool> $paths */
         $paths = [];
-        $defaultCoverage = Paths::repoRoot() . '/test/coverage';
-        $paths[$defaultCoverage] = true;
+        self::appendCoveragePath($paths, Paths::repoRoot() . '/test/coverage');
 
-        $fromEnv = Env::string('TEST_COVERAGE_DIR');
-        if ($fromEnv !== '') {
-            $paths[CleanupFilesystem::resolvePath($fromEnv)] = true;
+        $artifactCoverage = Paths::artifactsRoot() . '/coverage';
+        $pruneCoverageRoot = (bool)($options['prune_to_latest'] ?? false) || CleanupFilesystem::nullableInt($options['max_artifacts'] ?? null) !== null;
+        if ($pruneCoverageRoot) {
+            self::appendCoveragePath($paths, $artifactCoverage);
+        } else {
+            self::appendCoverageChildren($paths, $artifactCoverage);
+        }
+
+        foreach (['TEST_COVERAGE_ROOT', 'TEST_COVERAGE_DIR'] as $key) {
+            $fromEnv = Env::string($key);
+            if ($fromEnv !== '') {
+                self::appendCoveragePath($paths, $fromEnv);
+            }
         }
 
         foreach (array_keys($paths) as $path) {
@@ -231,6 +249,49 @@ final class CleanupPlanner
         }
 
         $payload['groups']['coverage'] = $group;
+    }
+
+    /**
+     * @param array<string,bool> $paths
+     */
+    private static function appendCoveragePath(array &$paths, string $path): void
+    {
+        $resolved = CleanupFilesystem::resolvePath($path);
+        if ($resolved !== '') {
+            $paths[$resolved] = true;
+        }
+    }
+
+    /**
+     * @param array<string,bool> $paths
+     */
+    private static function appendCoverageChildren(array &$paths, string $coverageRoot): void
+    {
+        $coverageRoot = Paths::normalize($coverageRoot);
+        if (!is_dir($coverageRoot)) {
+            return;
+        }
+
+        $items = @scandir($coverageRoot);
+        if (!is_array($items)) {
+            return;
+        }
+
+        $foundChild = false;
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $child = Paths::normalize($coverageRoot . '/' . $item);
+            if (file_exists($child) || is_link($child)) {
+                $foundChild = true;
+                $paths[$child] = true;
+            }
+        }
+
+        if (!$foundChild) {
+            $paths[$coverageRoot] = true;
+        }
     }
 
     /**
@@ -282,11 +343,32 @@ final class CleanupPlanner
         ];
 
         $files = CleanupFilesystem::listFiles($artifactsRoot . '/history', '/\.json$/');
-        $files = CleanupFilesystem::sortByMtimeDesc($files);
         $group['history_json_scanned'] = count($files);
         self::addScanned($payload, count($files));
 
         $now = time();
+        $maxArtifacts = CleanupFilesystem::nullableInt($options['max_artifacts'] ?? null);
+        if ($maxArtifacts !== null) {
+            $byPrefix = [];
+            foreach ($files as $file) {
+                $byPrefix[CleanupFilesystem::jsonPrefix($file)][] = $file;
+            }
+            foreach ($byPrefix as $groupedFiles) {
+                $groupedFiles = CleanupFilesystem::sortByMtimeDesc($groupedFiles);
+                foreach ($groupedFiles as $index => $file) {
+                    if ($index < $maxArtifacts) {
+                        continue;
+                    }
+                    if (self::addCandidate($payload, 'history', 'history_json', $file, 'history json beyond --max-artifacts hard cap')) {
+                        $group['history_json_delete']++;
+                    }
+                }
+            }
+            $payload['groups']['history'] = $group;
+            return;
+        }
+
+        $files = CleanupFilesystem::sortByMtimeDesc($files);
         foreach ($files as $index => $file) {
             $ageDays = CleanupFilesystem::ageDays($file, $now);
             $protectedByCount = $index < (int)$options['keep_runs'];
@@ -326,6 +408,11 @@ final class CleanupPlanner
         }
 
         $payload['groups']['baselines'] = $group;
+    }
+
+    private static function isCleanupAuditFile(string $file): bool
+    {
+        return basename(dirname($file)) === 'cleanup' && preg_match('/^cleanup_\d{8}_\d{6}\.json$/', basename($file)) === 1;
     }
 
     /**

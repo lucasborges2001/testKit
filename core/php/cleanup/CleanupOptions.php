@@ -36,6 +36,8 @@ final class CleanupOptions
             'keep_runs' => self::DEFAULT_KEEP_RUNS,
             'keep_days' => self::DEFAULT_KEEP_DAYS,
             'max_runs' => null,
+            'max_artifacts' => null,
+            'prune_to_latest' => false,
             'include_history' => false,
             'include_baselines' => false,
             'all_locks' => false,
@@ -74,6 +76,10 @@ final class CleanupOptions
                 $options['all_locks'] = true;
                 continue;
             }
+            if ($arg === '--prune-to-latest') {
+                $options['prune_to_latest'] = true;
+                continue;
+            }
             if (preg_match('/^--keep-runs=(\d+)$/', $arg, $m) === 1) {
                 $options['keep_runs'] = max(0, (int)$m[1]);
                 continue;
@@ -84,6 +90,10 @@ final class CleanupOptions
             }
             if (preg_match('/^--max-runs=(\d+)$/', $arg, $m) === 1) {
                 $options['max_runs'] = max(0, (int)$m[1]);
+                continue;
+            }
+            if (preg_match('/^--max-artifacts=(\d+)$/', $arg, $m) === 1) {
+                $options['max_artifacts'] = max(0, (int)$m[1]);
                 continue;
             }
 
@@ -97,6 +107,24 @@ final class CleanupOptions
         }
 
         $options['group'] = $group;
+
+        if ($options['prune_to_latest']) {
+            if ($options['max_artifacts'] !== null && (int)$options['max_artifacts'] !== 1) {
+                throw new \InvalidArgumentException('--prune-to-latest no se puede combinar con --max-artifacts distinto de 1');
+            }
+            $options['max_artifacts'] = 1;
+        }
+
+        if ($options['max_artifacts'] !== null) {
+            $maxArtifacts = max(0, (int)$options['max_artifacts']);
+            $options['max_artifacts'] = $maxArtifacts;
+            $options['keep_runs'] = $maxArtifacts;
+            $options['keep_days'] = 0;
+            $options['max_runs'] = $maxArtifacts;
+            if ($group === 'all') {
+                $options['include_history'] = true;
+            }
+        }
 
         if ($options['all_locks'] && !$options['force']) {
             throw new \InvalidArgumentException('--all-locks requiere --force');
@@ -126,6 +154,8 @@ Options:
   --keep-runs=N          Keep the newest N run/shard/history artifacts. Default: 10.
   --keep-days=N          Keep artifacts newer than N days. Default: 14.
   --max-runs=N           Hard cap for report run dirs and profile shard dirs.
+  --max-artifacts=N      Hard cap for run dirs, shards and timestamped JSON groups; disables keep-days.
+  --prune-to-latest      Shortcut for --max-artifacts=1.
   --include-history      Include .testkit/history when group is all.
   --include-baselines    Include baseline manifests when group is all. Requires --force.
   --all-locks            Delete active and stale lock dirs. Requires --force.
@@ -135,7 +165,7 @@ Notes:
   - cleanup never drops databases or docker volumes.
   - cleanup never deletes test seeds or test source files.
   - baseline cleanup only removes .manifest.json files, not database state.
-  - --keep-runs and --keep-days are additive; use --max-runs for a hard cap.
+  - --keep-runs and --keep-days are additive; use --max-runs or --max-artifacts for hard caps.
 TXT;
     }
 }

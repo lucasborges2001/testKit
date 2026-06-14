@@ -14,6 +14,19 @@ source "${TESTKIT_ENTRY_DIR}/lib/bash/doctor.sh"
 
 testkit_env_init
 
+testkit_docker_passthrough_env_args() {
+  local out=()
+  local key
+  for key in TEST_COVERAGE_DIR TEST_COVERAGE_ROOT; do
+    if [[ -n "${!key:-}" ]]; then
+      out+=("-e" "${key}")
+    fi
+  done
+  if [[ ${#out[@]} -gt 0 ]]; then
+    printf '%s\0' "${out[@]}"
+  fi
+}
+
 testkit_dispatch_doctor() {
   testkit_doctor_run "$@"
 }
@@ -53,8 +66,12 @@ testkit_dispatch_cleanup() {
   local files=()
   testkit_resolve_compose_files "${stack_csv}" files
 
+  local passthrough_env=()
+  mapfile -d '' -t passthrough_env < <(testkit_docker_passthrough_env_args)
+
   docker compose --env-file "${env_file}" "${files[@]}" run --rm \
     -e TESTKIT_WRAPPER_KIND="bash" \
+    "${passthrough_env[@]}" \
     testkit php /workspace/testkit/scripts/cleanup.php "$@"
 }
 
