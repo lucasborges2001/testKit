@@ -48,9 +48,13 @@ final class CoverageMetadata
             'source_dirs' => array_values(array_map('strval', (array)($diagnostics['source_dirs'] ?? CoverageFilter::sourceDirsFromEnv()))),
             'exclude_dirs' => array_values(array_map('strval', (array)($diagnostics['exclude_dirs'] ?? CoverageFilter::excludeDirsFromEnv()))),
             'diagnostics_file' => $diagnosticsFile,
+            'diagnostics_file_rel' => Paths::relativeToRepo($coverageDir . '/' . $diagnosticsFile),
             'report_file' => $reportFile,
+            'report_file_rel' => Paths::relativeToRepo($coverageDir . '/' . $reportFile),
             'coverage_file' => $coverageFile,
+            'coverage_file_rel' => Paths::relativeToRepo($coverageDir . '/' . $coverageFile),
             'lcov_file' => $lcovFile,
+            'lcov_file_rel' => Paths::relativeToRepo($coverageDir . '/' . $lcovFile),
             'diagnostics_summary' => self::diagnosticsSummary($diagnostics),
         ];
     }
@@ -123,9 +127,13 @@ final class CoverageMetadata
             'metadata_file' => (string)($metadata['metadata_file'] ?? ''),
             'metadata_file_rel' => (string)($metadata['metadata_file_rel'] ?? ''),
             'diagnostics_file' => self::resolveArtifactPath($metadata, 'diagnostics_file', 'coverage_diagnostics.json'),
+            'diagnostics_file_rel' => (string)($metadata['diagnostics_file_rel'] ?? ''),
             'report_file' => self::resolveArtifactPath($metadata, 'report_file', 'coverage_report.md'),
+            'report_file_rel' => (string)($metadata['report_file_rel'] ?? ''),
             'coverage_file' => self::resolveArtifactPath($metadata, 'coverage_file', 'coverage.json'),
+            'coverage_file_rel' => (string)($metadata['coverage_file_rel'] ?? ''),
             'lcov_file' => self::resolveArtifactPath($metadata, 'lcov_file', 'lcov.info'),
+            'lcov_file_rel' => (string)($metadata['lcov_file_rel'] ?? ''),
             'run_id' => (string)($metadata['run_id'] ?? ''),
             'meta_run_id' => (string)($metadata['meta_run_id'] ?? ''),
             'report_root' => (string)($metadata['report_root'] ?? ''),
@@ -169,26 +177,105 @@ final class CoverageMetadata
     /**
      * @param array<string,mixed> $metadata
      */
-    public static function resolveArtifactPath(array $metadata, string $field, string $fallbackBasename): string
+    public static function resolveArtifactPath(array $metadata, string $field, string $fallbackBasename, ?string $repoRoot = null): string
     {
-        $coverageDir = Paths::normalize((string)($metadata['coverage_dir'] ?? ''));
-        $value = trim((string)($metadata[$field] ?? ''));
-        if ($value === '') {
-            $value = trim($fallbackBasename);
-        }
-        if ($value === '') {
-            return '';
+        $repoRoot = self::repoRoot($repoRoot);
+        $relativeField = $field . '_rel';
+
+        $absoluteValue = trim((string)($metadata[$field] ?? ''));
+        $relativeValue = trim((string)($metadata[$relativeField] ?? ''));
+        $fallbackBasename = trim($fallbackBasename);
+
+        $absoluteCandidate = null;
+        if ($absoluteValue !== '' && self::isAbsolutePath($absoluteValue)) {
+            $absoluteCandidate = Paths::normalize($absoluteValue);
         }
 
-        if (self::isAbsolutePath($value)) {
-            return Paths::normalize($value);
+        $relativeCandidate = null;
+        if ($relativeValue !== '' && self::isSafeRelativePath($relativeValue)) {
+            $relativeCandidate = Paths::normalize($repoRoot . '/' . self::normalizeRelativePath($relativeValue));
         }
 
-        if ($coverageDir === '') {
-            return Paths::normalize($value);
+        if ($absoluteCandidate !== null && is_file($absoluteCandidate)) {
+            return $absoluteCandidate;
+        }
+        if ($relativeCandidate !== null && is_file($relativeCandidate)) {
+            return $relativeCandidate;
         }
 
-        return Paths::normalize($coverageDir . '/' . $value);
+        if ($absoluteValue === '') {
+            $absoluteValue = $fallbackBasename;
+        }
+        if ($absoluteValue === '') {
+            return $absoluteCandidate ?? $relativeCandidate ?? '';
+        }
+
+        if (self::isAbsolutePath($absoluteValue)) {
+            return $absoluteCandidate ?? Paths::normalize($absoluteValue);
+        }
+
+        if (!self::isSafeRelativePath($absoluteValue)) {
+            return $absoluteCandidate ?? $relativeCandidate ?? '';
+        }
+
+        $artifactRelative = self::normalizeRelativePath($absoluteValue);
+        $repoRelativeCandidate = str_contains($artifactRelative, '/')
+            ? Paths::normalize($repoRoot . '/' . $artifactRelative)
+            : null;
+        if ($repoRelativeCandidate !== null && is_file($repoRelativeCandidate)) {
+            return $repoRelativeCandidate;
+        }
+
+        $coverageDir = self::resolveCoverageDir($metadata, $repoRoot);
+        if ($coverageDir !== '') {
+            $coverageCandidate = Paths::normalize($coverageDir . '/' . $artifactRelative);
+            if (is_file($coverageCandidate)) {
+                return $coverageCandidate;
+            }
+
+            if ($absoluteCandidate === null && $relativeCandidate === null) {
+                return $coverageCandidate;
+            }
+        }
+
+        return $absoluteCandidate ?? $relativeCandidate ?? $repoRelativeCandidate ?? Paths::normalize($artifactRelative);
+    }
+
+    /**
+     * Resolve a path pair where one field may contain an absolute path from the
+     * execution environment and the companion *_rel field contains a repo-relative
+     * path valid from the current host checkout.
+     *
+     * @param array<string,mixed> $metadata
+     */
+    public static function resolvePathWithFallback(array $metadata, string $absoluteField, string $relativeField, string $repoRoot): ?string
+    {
+        $repoRoot = self::repoRoot($repoRoot);
+        $absoluteValue = trim((string)($metadata[$absoluteField] ?? ''));
+        $relativeValue = trim((string)($metadata[$relativeField] ?? ''));
+
+        $absoluteCandidate = null;
+        if ($absoluteValue !== '') {
+            if (self::isAbsolutePath($absoluteValue)) {
+                $absoluteCandidate = Paths::normalize($absoluteValue);
+            } elseif (self::isSafeRelativePath($absoluteValue)) {
+                $absoluteCandidate = Paths::normalize($repoRoot . '/' . self::normalizeRelativePath($absoluteValue));
+            }
+        }
+
+        $relativeCandidate = null;
+        if ($relativeValue !== '' && self::isSafeRelativePath($relativeValue)) {
+            $relativeCandidate = Paths::normalize($repoRoot . '/' . self::normalizeRelativePath($relativeValue));
+        }
+
+        if ($absoluteCandidate !== null && self::pathExists($absoluteCandidate)) {
+            return $absoluteCandidate;
+        }
+        if ($relativeCandidate !== null && self::pathExists($relativeCandidate)) {
+            return $relativeCandidate;
+        }
+
+        return $absoluteCandidate ?? $relativeCandidate;
     }
 
     /**
@@ -228,6 +315,60 @@ final class CoverageMetadata
         }
 
         return basename(str_replace('\\', '/', $value));
+    }
+
+    /** @param array<string,mixed> $metadata */
+    private static function resolveCoverageDir(array $metadata, string $repoRoot): string
+    {
+        $resolved = self::resolvePathWithFallback($metadata, 'coverage_dir', 'coverage_dir_rel', $repoRoot);
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        $coverageDir = trim((string)($metadata['coverage_dir'] ?? ''));
+        if ($coverageDir !== '') {
+            return self::isAbsolutePath($coverageDir)
+                ? Paths::normalize($coverageDir)
+                : Paths::normalize($repoRoot . '/' . self::normalizeRelativePath($coverageDir));
+        }
+
+        return '';
+    }
+
+    private static function repoRoot(?string $repoRoot): string
+    {
+        $repoRoot = trim((string)$repoRoot);
+        if ($repoRoot === '') {
+            $repoRoot = Paths::repoRoot();
+        }
+
+        return Paths::normalize($repoRoot);
+    }
+
+    private static function pathExists(string $path): bool
+    {
+        return is_file($path) || is_dir($path);
+    }
+
+    private static function normalizeRelativePath(string $path): string
+    {
+        return trim(str_replace('\\', '/', $path), '/');
+    }
+
+    private static function isSafeRelativePath(string $path): bool
+    {
+        $path = trim(str_replace('\\', '/', $path));
+        if ($path === '' || self::isAbsolutePath($path) || str_contains($path, "\0")) {
+            return false;
+        }
+
+        foreach (explode('/', trim($path, '/')) as $part) {
+            if ($part === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static function isAbsolutePath(string $path): bool

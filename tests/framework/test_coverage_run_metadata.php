@@ -143,8 +143,11 @@ try {
     assert_same_coverage_meta($metadata['coverage_enabled'] ?? null, true, 'metadata should mark coverage enabled', $errors);
     assert_same_coverage_meta($metadata['source_dirs'] ?? null, ['back', 'public_html'], 'metadata should preserve source dirs', $errors);
     assert_same_coverage_meta($metadata['diagnostics_file'] ?? null, 'coverage_diagnostics.json', 'metadata should reference diagnostics file', $errors);
+    assert_same_coverage_meta($metadata['diagnostics_file_rel'] ?? null, '.testkit/coverage/back_php/coverage_diagnostics.json', 'metadata should include repo-relative diagnostics file fallback', $errors);
     assert_same_coverage_meta($metadata['coverage_file'] ?? null, 'coverage.json', 'metadata should reference coverage json', $errors);
+    assert_same_coverage_meta($metadata['coverage_file_rel'] ?? null, '.testkit/coverage/back_php/coverage.json', 'metadata should include repo-relative coverage json fallback', $errors);
     assert_same_coverage_meta($metadata['lcov_file'] ?? null, 'lcov.info', 'metadata should reference lcov file', $errors);
+    assert_same_coverage_meta($metadata['lcov_file_rel'] ?? null, '.testkit/coverage/back_php/lcov.info', 'metadata should include repo-relative lcov fallback', $errors);
     assert_same_coverage_meta($metadata['diagnostics_summary']['overall_percent'] ?? null, 70.0, 'metadata should summarize overall percent', $errors);
     assert_same_coverage_meta($metadata['diagnostics_summary']['critical_missing_count'] ?? null, 1, 'metadata should summarize missing count', $errors);
     assert_same_coverage_meta($metadata['diagnostics_summary']['critical_low_count'] ?? null, 1, 'metadata should summarize low count', $errors);

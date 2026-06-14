@@ -535,19 +535,21 @@ function coverageStatusFromAttachment(array $report, array $coverage): ?array
     $suiteId = (string)($report['suite_id'] ?? '');
     $metadata = null;
     $metadataFound = false;
-    $metadataFile = trim((string)($coverage['metadata_file'] ?? ''));
-    if ($metadataFile === '') {
-        $metadataFile = trim((string)($coverage['metadata_file_rel'] ?? ''));
-    }
-    if ($metadataFile !== '') {
-        $metadataPath = resolvePossiblyRelativeRepoPath($metadataFile);
+    $metadataPath = CoverageMetadata::resolvePathWithFallback([
+        'metadata_file' => (string)($coverage['metadata_file'] ?? ''),
+        'metadata_file_rel' => (string)($coverage['metadata_file_rel'] ?? ''),
+    ], 'metadata_file', 'metadata_file_rel', Paths::repoRoot());
+    if ($metadataPath !== null) {
         $metadataFound = is_file($metadataPath);
         $metadata = CoverageMetadata::readFile($metadataPath);
     }
 
     if ($metadata === null) {
-        $dir = trim((string)($coverage['dir'] ?? ''));
-        if ($dir !== '') {
+        $dir = CoverageMetadata::resolvePathWithFallback([
+            'coverage_dir' => (string)($coverage['dir'] ?? ''),
+            'coverage_dir_rel' => (string)($coverage['dir_rel'] ?? ''),
+        ], 'coverage_dir', 'coverage_dir_rel', Paths::repoRoot());
+        if ($dir !== null && $dir !== '') {
             $metadataPath = rtrim(Paths::normalize($dir), '/') . '/' . CoverageMetadata::FILE;
             $metadataFound = $metadataFound || is_file($metadataPath);
             $metadata = CoverageMetadata::readFile($metadataPath);
@@ -573,10 +575,14 @@ function coverageStatusFromAttachment(array $report, array $coverage): ?array
 
     $coverageRunId = trim((string)($coverage['run_id'] ?? ''));
     $reportRunId = trim((string)($report['run_id'] ?? ''));
-    $diag = trim((string)($coverage['diagnostics_file'] ?? ''));
-    if ($coverageRunId !== '' && $coverageRunId === $reportRunId && $diag !== '') {
-        $diagPath = resolvePossiblyRelativeRepoPath($diag);
-        if (is_file($diagPath)) {
+    if ($coverageRunId !== '' && $coverageRunId === $reportRunId) {
+        $diagPath = CoverageMetadata::resolveArtifactPath([
+            'coverage_dir' => (string)($coverage['dir'] ?? ''),
+            'coverage_dir_rel' => (string)($coverage['dir_rel'] ?? ''),
+            'diagnostics_file' => (string)($coverage['diagnostics_file'] ?? ''),
+            'diagnostics_file_rel' => (string)($coverage['diagnostics_file_rel'] ?? ''),
+        ], 'diagnostics_file', 'coverage_diagnostics.json', Paths::repoRoot());
+        if ($diagPath !== '' && is_file($diagPath)) {
             return [
                 'suite' => $suiteId,
                 'state' => 'current',
@@ -645,15 +651,12 @@ function isCoverageSuite(string $suiteId): bool
 
 function resolvePossiblyRelativeRepoPath(string $path): string
 {
-    $path = trim(str_replace('\\', '/', $path));
-    if ($path === '') {
-        return '';
-    }
-    if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:[\\\/]/', $path) === 1) {
-        return Paths::normalize($path);
-    }
-
-    return Paths::normalize(Paths::repoRoot() . '/' . ltrim($path, '/'));
+    return CoverageMetadata::resolvePathWithFallback(
+        ['path' => $path],
+        'path',
+        'path_rel',
+        Paths::repoRoot()
+    ) ?? '';
 }
 
 function displayPath(string $path): string

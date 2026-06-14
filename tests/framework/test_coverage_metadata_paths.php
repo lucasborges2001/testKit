@@ -148,6 +148,27 @@ try {
         $errors
     );
 
+
+    file_put_contents($coverageDir . '/coverage.json', '{}');
+    assert_same_coverage_metadata_paths(
+        CoverageMetadata::resolvePathWithFallback([
+            'coverage_file' => '/workspace/project/.testkit/coverage/back_php/coverage.json',
+            'coverage_file_rel' => '.testkit/coverage/back_php/coverage.json',
+        ], 'coverage_file', 'coverage_file_rel', $repoRoot),
+        $coverageDir . '/coverage.json',
+        'resolvePathWithFallback should use repo-relative file when absolute belongs to a different environment',
+        $errors
+    );
+
+    assert_same_coverage_metadata_paths(
+        CoverageMetadata::resolvePathWithFallback([
+            'coverage_file_rel' => '../outside.json',
+        ], 'coverage_file', 'coverage_file_rel', $repoRoot),
+        null,
+        'unsafe relative fallback should not be resolved',
+        $errors
+    );
+
     $attachment = CoverageMetadata::suiteAttachment([
         'coverage_dir' => $coverageDir,
         'diagnostics_file' => 'coverage_diagnostics.json',
