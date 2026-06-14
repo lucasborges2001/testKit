@@ -17,16 +17,24 @@ mkdir -p "${runs_root}"
 
 create_run() {
   local name="$1"
+  local touch_stamp="$2"
   local dir="${runs_root}/${name}"
+
   mkdir -p "${dir}"
   printf '{}\n' > "${dir}/meta_latest.json"
   printf '{}\n' > "${dir}/meta_20260614_120000.json"
+
+  # Cleanup retention sorts run directories by filesystem mtime, not by name.
+  # Set directory mtimes explicitly so this smoke test is deterministic even
+  # on filesystems where several mkdir/write operations land in the same second.
+  touch -t "${touch_stamp}" "${dir}"
 }
 
-create_run '20260614T120000Z_newest'
-create_run '20260614T115900Z_second'
-create_run '20260614T115800Z_third'
-create_run '20260614T115700Z_fourth'
+# Oldest first, newest last, with explicit mtimes.
+create_run '20260614T115700Z_fourth' '202606141157.00'
+create_run '20260614T115800Z_third'  '202606141158.00'
+create_run '20260614T115900Z_second' '202606141159.00'
+create_run '20260614T120000Z_newest' '202606141200.00'
 
 printf '{}\n' > "${artifacts_root}/reports/meta_latest.json"
 
@@ -42,6 +50,7 @@ $payload = json_decode(stream_get_contents(STDIN), true);
 if (!is_array($payload)) { fwrite(STDERR, "dry-run output is not JSON\n"); exit(1); }
 if (($payload["mode"] ?? null) !== "dry_run") { fwrite(STDERR, "dry-run mode mismatch\n"); exit(1); }
 if (($payload["groups"]["reports"]["run_dirs_delete"] ?? null) !== 2) { fwrite(STDERR, "dry-run delete count mismatch\n"); exit(1); }
+if (($payload["groups"]["reports"]["run_dirs_delete_by_max_runs"] ?? null) !== 2) { fwrite(STDERR, "dry-run max-runs count mismatch\n"); exit(1); }
 if (($payload["summary"]["delete_candidates"] ?? null) !== 2) { fwrite(STDERR, "dry-run summary mismatch\n"); exit(1); }
 ' <<< "${dry_json}"
 
@@ -58,6 +67,7 @@ $payload = json_decode(stream_get_contents(STDIN), true);
 if (!is_array($payload)) { fwrite(STDERR, "apply output is not JSON\n"); exit(1); }
 if (($payload["mode"] ?? null) !== "apply") { fwrite(STDERR, "apply mode mismatch\n"); exit(1); }
 if (($payload["groups"]["reports"]["run_dirs_delete"] ?? null) !== 2) { fwrite(STDERR, "apply delete count mismatch\n"); exit(1); }
+if (($payload["groups"]["reports"]["run_dirs_delete_by_max_runs"] ?? null) !== 2) { fwrite(STDERR, "apply max-runs count mismatch\n"); exit(1); }
 if (($payload["summary"]["deleted"] ?? null) !== 2) { fwrite(STDERR, "apply deleted count mismatch\n"); exit(1); }
 ' <<< "${apply_json}"
 
@@ -74,6 +84,16 @@ fi
 
 if [[ ! -d "${runs_root}/20260614T115900Z_second" ]]; then
   echo "second newest run was deleted unexpectedly" >&2
+  exit 1
+fi
+
+if [[ -d "${runs_root}/20260614T115800Z_third" ]]; then
+  echo "third newest run should have been deleted" >&2
+  exit 1
+fi
+
+if [[ -d "${runs_root}/20260614T115700Z_fourth" ]]; then
+  echo "oldest run should have been deleted" >&2
   exit 1
 fi
 
