@@ -40,7 +40,7 @@ final class InfluxProfileConfig
                 'require_range' => self::envBool('TESTKIT_INFLUX_PROFILE_REQUIRE_RANGE', true),
                 'require_tag_filters' => self::envBool('TESTKIT_INFLUX_PROFILE_REQUIRE_TAG_FILTERS', false),
             ],
-            'tag_filters' => self::envCsv('TESTKIT_INFLUX_PROFILE_TAG_FILTERS', ['charger_id', 'station_id', 'connector_id', 'site_id', 'tenant_id', 'device_id', 'host']),
+            'tag_filters' => self::envCsv('TESTKIT_INFLUX_PROFILE_TAG_FILTERS', ['charger_id', 'station_id', 'connector_id', 'site_id', 'organization_id', 'device_id', 'host']),
             'output' => [
                 'report_path' => Paths::normalize($reportPath),
                 'history_path' => Paths::normalize($historyPath),

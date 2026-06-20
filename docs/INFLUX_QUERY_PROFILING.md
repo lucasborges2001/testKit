@@ -49,7 +49,7 @@ TESTKIT_INFLUX_PROFILE_MAX_QUERY_LENGTH=4000
 TESTKIT_INFLUX_PROFILE_REQUIRE_RANGE=1
 TESTKIT_INFLUX_PROFILE_REQUIRE_TAG_FILTERS=0
 TESTKIT_INFLUX_PROFILE_MAX_RANGE_HOURS=168
-TESTKIT_INFLUX_PROFILE_TAG_FILTERS=charger_id,station_id,connector_id,site_id,tenant_id,device_id,host
+TESTKIT_INFLUX_PROFILE_TAG_FILTERS=charger_id,station_id,connector_id,site_id,organization_id,device_id,host
 ```
 
 Salidas:
