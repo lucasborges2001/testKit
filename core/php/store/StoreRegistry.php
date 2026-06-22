@@ -15,13 +15,16 @@ final class StoreRegistry
         if ($driver === 'mysql' || $driver === '') {
             return 'mysql';
         }
+        if ($driver === 'none') {
+            return 'none';
+        }
 
-        throw new \RuntimeException('Driver inválido. Usá mysql|pgsql');
+        throw new \RuntimeException('Driver inválido. Usá mysql|pgsql|none');
     }
 
     public static function detectDriver(string $fallback = 'mysql'): string
     {
-        $driver = (string)(getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '');
+        $driver = (string)(getenv('TEST_STORE_DRIVER') ?: getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '');
         if ($driver === '') {
             $dsn = trim((string)(getenv('TEST_DB_DSN') ?: ''));
             if ($dsn !== '') {
@@ -45,6 +48,7 @@ final class StoreRegistry
         return match (self::normalizeDriver($driver)) {
             'mysql' => new MysqlStoreAdapter(),
             'pgsql' => new PgsqlStoreAdapter(),
+            default => throw new \RuntimeException('Driver sin store no tiene adapter estructural.'),
         };
     }
 }

@@ -1,5 +1,9 @@
 function Convert-TestkitStack([string]$Raw) {
-  if ([string]::IsNullOrWhiteSpace($Raw)) { $Raw = 'mysql,redis' }
+  if ([string]::IsNullOrWhiteSpace($Raw)) {
+    $storeDriver = if ($env:TEST_STORE_DRIVER) { $env:TEST_STORE_DRIVER.Trim().ToLowerInvariant() } else { '' }
+    if ($storeDriver -eq 'none') { return '' }
+    $Raw = 'mysql,redis'
+  }
   $out = New-Object System.Collections.Generic.List[string]
   $seen = @{}
   foreach ($part in ($Raw -split ',')) {
@@ -20,7 +24,10 @@ function Convert-TestkitStack([string]$Raw) {
       $out.Add($token) | Out-Null
     }
   }
-  if ($out.Count -eq 0) { $out.Add('mysql') | Out-Null; $out.Add('redis') | Out-Null }
+  if ($out.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace(($Raw -replace '[,\s]', ''))) {
+    $out.Add('mysql') | Out-Null
+    $out.Add('redis') | Out-Null
+  }
   return ($out -join ',')
 }
 

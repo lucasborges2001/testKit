@@ -79,7 +79,9 @@ function Invoke-TestkitDoctorBaseChecks {
   $storeDriver = Normalize-TestkitDoctorToken $env:TEST_STORE_DRIVER
   if ([string]::IsNullOrWhiteSpace($storeDriver)) { $storeDriver = 'mysql' }
 
-  if ($storeDriver -eq 'mysql') {
+  if ($storeDriver -eq 'none') {
+    Add-TestkitDoctorCheck 'base' 'PASS' 'STORE_DRIVER_NONE' 'proyecto sin store runtime: TEST_STORE_DRIVER=none'
+  } elseif ($storeDriver -eq 'mysql') {
     if (Test-TestkitDoctorEnvPresentAny @('DB_HOST','TEST_MYSQL_HOST','MYSQL_HOST')) {
       Add-TestkitDoctorCheck 'base' 'PASS' 'MYSQL_HOST_PRESENT' 'host MySQL visible'
     } else {

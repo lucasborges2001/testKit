@@ -74,14 +74,14 @@
     "forbid_strings": []
   },
   {
-    "id": "compact_target_unknown",
+    "id": "compact_target_concrete",
     "args": ["--compact", "back-php"],
     "env": {},
     "expect_exit": 0,
     "require_strings": [
       "[INFO] mode=compact target=back-php",
-      "Capability: status=UNKNOWN",
-      "TARGET_RULESET_PARTIAL",
+      "Capability: status=PASS",
+      "NO_RELEVANT_WARNINGS",
       "Doctor: OK"
     ],
     "forbid_strings": [

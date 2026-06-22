@@ -57,6 +57,10 @@ final class ContractWorldBootstrap
             self::currentDatabaseKey($driver)
         );
 
+        if ($driver === 'none') {
+            return;
+        }
+
         if ($strategy === 'per_worker') {
             $jobs = max(1, Env::int('TEST_JOBS', 1));
             $baseDb = self::resolveBaseDatabaseName($driver);

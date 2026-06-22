@@ -32,7 +32,7 @@ testkit_doctor_render_full() {
   echo "== TESTKIT DOCTOR =="
   echo "[INFO] mode=${TESTKIT_DOCTOR_MODE}"
   echo "[INFO] target=${TESTKIT_DOCTOR_TARGET:-generic}"
-  echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE}"
+  echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE:-<empty>}"
   echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
   echo "[INFO] TESTKIT_PROJECT_ROOT(host)=${PROJECT_ROOT}"
   echo "[INFO] TESTKIT_HOST_UID:GID=${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID}"
@@ -56,7 +56,7 @@ testkit_doctor_render_full() {
   fi
 
   echo ""
-  if [[ "${TESTKIT_DOCTOR_BASE_STATUS}" == "PASS" ]]; then
+  if [[ "${TESTKIT_DOCTOR_BASE_STATUS}" != "FAIL" ]]; then
     echo "Doctor: OK"
   else
     echo "Doctor: FAIL (ver arriba)"
@@ -102,7 +102,7 @@ testkit_doctor_render_compact() {
   fi
 
   echo ""
-  if [[ "${TESTKIT_DOCTOR_BASE_STATUS}" == "PASS" ]]; then
+  if [[ "${TESTKIT_DOCTOR_BASE_STATUS}" != "FAIL" ]]; then
     echo "Doctor: OK"
   else
     echo "Doctor: FAIL (ver arriba)"
@@ -114,7 +114,7 @@ testkit_doctor_render_dump() {
   echo "-- Effective TestKit config --"
   echo "TESTKIT_DOCTOR_MODE: ${TESTKIT_DOCTOR_MODE}"
   echo "TESTKIT_DOCTOR_TARGET: ${TESTKIT_DOCTOR_TARGET}"
-  echo "TESTKIT_STACK: ${TESTKIT_STACK_EFFECTIVE}"
+  echo "TESTKIT_STACK: ${TESTKIT_STACK_EFFECTIVE:-<empty>}"
   echo "projectRoot: ${PROJECT_ROOT}"
   echo "testkitRootHost: ${TESTKIT_ROOT_HOST}"
   echo "envFile: ${ENV_FILE}"

@@ -135,9 +135,10 @@ final class ConfigSchema
                     'migration-contract exige snapshot.',
                     'snapshot cerrado actualmente solo en la ruta MySQL.',
                 ]),
-                self::env('TEST_STORE_DRIVER', 'string', 'mysql', ['mysql', 'pgsql'], ['suite', 'meta'], [
+                self::env('TEST_STORE_DRIVER', 'string', 'mysql', ['mysql', 'pgsql', 'none'], ['suite', 'meta'], [
                     'mysql es la ruta principal cerrada.',
                     'pgsql es parcial: runtime/provision/reset básico; sin snapshot/clone cerrado.',
+                    'none declara proyecto sin store runtime; no se exige env DB ni bootstrap estructural.',
                     'redis e influx no son store drivers principales.',
                 ]),
                 self::env('DB_DRIVER', 'string', 'mysql', ['mysql', 'pgsql'], ['suite', 'meta'], [
@@ -149,6 +150,7 @@ final class ConfigSchema
                     'pg describe infraestructura parcial.',
                     'redis es auxiliar, no lifecycle estructural core.',
                     'influx es auxiliar/perfilado, no store principal.',
+                    'si TEST_STORE_DRIVER=none y TESTKIT_STACK no se declara, el stack efectivo queda vacío.',
                 ]),
                 self::env('TESTKIT_SKIP_STORE_BOOTSTRAP', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
                     'Útil para cortar bootstrap/store cuando la corrida necesita aislar otra cosa.',
@@ -288,6 +290,23 @@ final class ConfigSchema
                         'No closed snapshot restore contract.',
                         'No closed clone/per_worker contract.',
                         'Not equivalent to MySQL.',
+                    ],
+                ],
+                [
+                    'name' => 'none',
+                    'status' => 'no_store',
+                    'role' => 'no_structural_store',
+                    'contract' => [
+                        'provision' => false,
+                        'reset' => false,
+                        'layered_baseline' => false,
+                        'snapshot_restore' => false,
+                        'per_worker_clone' => false,
+                        'migration_contract' => false,
+                    ],
+                    'limits' => [
+                        'No DB credentials are required.',
+                        'No structural seed/bootstrap lifecycle runs.',
                     ],
                 ],
             ],

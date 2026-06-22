@@ -30,6 +30,26 @@
     "forbid_codes": []
   },
   {
+    "id": "no_store_closed_path",
+    "target": "",
+    "dump": false,
+    "env": {
+      "TEST_STORE_DRIVER": "none",
+      "TEST_STORE_PROVISION": "external"
+    },
+    "expect_exit": 0,
+    "expect_capability_status": "PASS",
+    "require_codes": [
+      "STORE_DRIVER_NONE",
+      "SHARED_STRATEGY_DECLARED",
+      "SINGLE_WORKER_PATH"
+    ],
+    "forbid_codes": [
+      "ENGINE_NOT_CLOSED",
+      "NON_MYSQL_BASE_CHECKS_PARTIAL"
+    ]
+  },
+  {
     "id": "migration_contract_valid",
     "target": "migration-contract",
     "dump": false,
@@ -106,14 +126,14 @@
     "forbid_codes": []
   },
   {
-    "id": "unknown_partial_target",
+    "id": "concrete_target_supported",
     "target": "back-php",
     "dump": false,
     "env": {},
     "expect_exit": 0,
-    "expect_capability_status": "UNKNOWN",
+    "expect_capability_status": "PASS",
     "require_codes": [
-      "TARGET_RULESET_PARTIAL"
+      "CONCRETE_SUITE_TARGET"
     ],
     "forbid_codes": []
   },

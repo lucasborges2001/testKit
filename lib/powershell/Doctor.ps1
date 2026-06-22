@@ -10,6 +10,12 @@ $doctorRender = Join-Path $PSScriptRoot 'Doctor.Render.ps1'
 
 function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
   Reset-TestkitDoctorState
+
+  $envFile = Get-TestkitEnvFile
+  if ($envFile) {
+    Import-TestkitEnvKV $envFile.Path
+  }
+
   try {
     $context = Parse-TestkitDoctorArgs $DoctorArgs
   } catch {
@@ -18,11 +24,6 @@ function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
   }
 
   $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
-
-  $envFile = Get-TestkitEnvFile
-  if ($envFile) {
-    Import-TestkitEnvKV $envFile.Path
-  }
 
   $ok = $true
   Invoke-TestkitDoctorBaseChecks -Context $context -EnvFile $envFile -StackCsv $stackCsv -Ok ([ref]$ok)

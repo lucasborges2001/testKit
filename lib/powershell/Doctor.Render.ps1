@@ -53,7 +53,7 @@ function Show-TestkitDoctorFull {
   }
 
   Write-Host ""
-  if ($script:TestkitDoctorBaseStatus -eq 'PASS') {
+  if ($script:TestkitDoctorBaseStatus -ne 'FAIL') {
     Write-Host "Doctor: OK"
   } else {
     Write-Host "Doctor: FAIL (ver arriba)"
@@ -100,7 +100,7 @@ function Show-TestkitDoctorCompact {
   }
 
   Write-Host ""
-  if ($script:TestkitDoctorBaseStatus -eq 'PASS') {
+  if ($script:TestkitDoctorBaseStatus -ne 'FAIL') {
     Write-Host "Doctor: OK"
   } else {
     Write-Host "Doctor: FAIL (ver arriba)"

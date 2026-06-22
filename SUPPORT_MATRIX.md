@@ -95,11 +95,22 @@ Current contract:
 
 | Key | Supported values | Rejected values | Notes |
 |---|---|---|---|
-| `TEST_STORE_DRIVER` | `mysql`, `pgsql` | `redis`, `influx` | `mysql` is closed primary. `pgsql` is partial. Redis and Influx are not primary store drivers. |
+| `TEST_STORE_DRIVER` | `mysql`, `pgsql`, `none` | `redis`, `influx` | `mysql` is closed primary. `pgsql` is partial. `none` means no runtime store. Redis and Influx are not primary store drivers. |
 | `DB_DRIVER` | `mysql`, `pgsql` | `redis`, `influx` | Runtime alias. It does not upgrade `pgsql` to closed snapshot/clone support. |
 | `TEST_DB_STRATEGY` | `shared`, `per_worker` | `clean` | `clean` is known but not implemented. |
 | `TEST_BASELINE_MODE` | `layered`, `snapshot` | — | `snapshot` is closed only in the MySQL path. |
 | `TESTKIT_STACK` | `mysql`, `pg`, `redis`, `influx` | — | Stack entries describe services to start, not full framework support. |
+
+## No-store projects
+
+Projects without a runtime/business store should declare:
+
+```env
+TEST_STORE_DRIVER=none
+TEST_STORE_PROVISION=external
+```
+
+In this mode MySQL credentials are not required, the default effective stack is empty, and suite runners can list or execute no-store tests without structural DB bootstrap. Explicit `TESTKIT_STACK` values are still honored.
 
 ## `migration-contract` path
 

@@ -192,6 +192,9 @@ final class SuiteSeedState
 
     private static function resolveDatabaseNameFromEnv(string $driver): string
     {
+        if ($driver === 'none') {
+            return '';
+        }
         if ($driver === 'pgsql') {
             return self::firstEnv(['PG_DB', 'TEST_PG_DB']);
         }

@@ -336,6 +336,10 @@ final class ParallelGuard
 
     private static function hasDbRuntimeContract(): bool
     {
+        if (strtolower(trim((string)(getenv('TEST_STORE_DRIVER') ?: ''))) === 'none') {
+            return false;
+        }
+
         $candidates = [
             'DB_NAME',
             'TEST_MYSQL_DB',
@@ -367,7 +371,7 @@ final class ParallelGuard
 
     private static function detectDriver(): string
     {
-        $driver = strtolower(trim((string)(getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '')));
+        $driver = strtolower(trim((string)(getenv('TEST_STORE_DRIVER') ?: getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '')));
         if ($driver === '') {
             $dsn = trim((string)(getenv('TEST_DB_DSN') ?: ''));
             if ($dsn !== '') {
@@ -377,6 +381,9 @@ final class ParallelGuard
 
         if (str_starts_with($driver, 'pg')) {
             return 'pgsql';
+        }
+        if ($driver === 'none') {
+            return 'none';
         }
 
         return 'mysql';

@@ -15,13 +15,6 @@ source "${_testkit_doctor_dir}/render.sh"
 testkit_doctor_run() {
   local ok=1
 
-  testkit_doctor_parse_args "$@" || return 1
-
-  TESTKIT_STACK_EFFECTIVE="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || {
-    echo "TESTKIT_STACK inválido. Corregí TESTKIT_STACK antes de correr doctor." >&2
-    return 1
-  }
-
   testkit_doctor_reset_state
 
   ENV_FILE="$(testkit_pick_env_file || true)"
@@ -29,6 +22,13 @@ testkit_doctor_run() {
     ENV_FILE="$(cd "$(dirname "${ENV_FILE}")" && pwd)/$(basename "${ENV_FILE}")"
     testkit_load_env_kv_safe "${ENV_FILE}" || true
   fi
+
+  testkit_doctor_parse_args "$@" || return 1
+
+  TESTKIT_STACK_EFFECTIVE="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || {
+    echo "TESTKIT_STACK inválido. Corregí TESTKIT_STACK antes de correr doctor." >&2
+    return 1
+  }
 
   testkit_doctor_run_base_checks ok
   if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then

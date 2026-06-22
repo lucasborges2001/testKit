@@ -16,6 +16,7 @@
 |---|---|
 | MySQL | ruta principal cerrada |
 | PostgreSQL | parcial; sin snapshot/clone cerrado |
+| Sin store (`TEST_STORE_DRIVER=none`) | ruta no-store; sin credenciales DB ni stack default |
 | Redis | auxiliar; no store estructural core |
 | Influx | auxiliar/perfilado; no store driver principal |
 | `TEST_DB_STRATEGY=clean` | rechazado explícitamente |
@@ -33,6 +34,7 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 - `TEST_JOBS>1` con `TEST_DB_STRATEGY=shared` es una señal visible de riesgo; preferí `TEST_JOBS=1` o `per_worker`.
 - `TEST_DB_STRATEGY=per_worker` con `TEST_JOBS=1` no rompe contrato, pero suele ser sobreconfiguración.
 - `TEST_DB_STRATEGY=clean` no está implementado; no lo uses como fallback.
+- Para proyectos sin store runtime usá `TEST_STORE_DRIVER=none` y `TEST_STORE_PROVISION=external`; no agregues credenciales MySQL falsas.
 - No uses `TEST_STORE_DRIVER=redis` ni `TEST_STORE_DRIVER=influx`: son servicios auxiliares, no stores estructurales.
 
 ## Comandos de referencia

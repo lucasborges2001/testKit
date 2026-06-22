@@ -5,6 +5,12 @@ testkit_normalize_stack_csv() {
   local raw="${1:-}"
   local fallback="mysql,redis"
   if [[ -z "${raw//[[:space:]]/}" ]]; then
+    local store_driver
+    store_driver="$(echo "${TEST_STORE_DRIVER:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+    if [[ "${store_driver}" == "none" ]]; then
+      echo ""
+      return 0
+    fi
     raw="${fallback}"
   fi
 
@@ -32,7 +38,7 @@ testkit_normalize_stack_csv() {
     esac
   done
 
-  if [[ ${#out[@]} -eq 0 ]]; then
+  if [[ ${#out[@]} -eq 0 && -n "${raw//[[:space:],]/}" ]]; then
     out=(mysql redis)
   fi
 

@@ -51,6 +51,7 @@ $services = is_array($matrix['services'] ?? null) ? $matrix['services'] : [];
 
 $mysql = find_matrix_entry($engines, 'mysql');
 $pgsql = find_matrix_entry($engines, 'pgsql');
+$none = find_matrix_entry($engines, 'none');
 $redis = find_matrix_entry($services, 'redis');
 $influx = find_matrix_entry($services, 'influx');
 
@@ -62,6 +63,10 @@ assert_true(($pgsql['status'] ?? '') === 'partial_experimental', 'PostgreSQL mus
 assert_true(($pgsql['contract']['snapshot_restore'] ?? null) === false, 'PostgreSQL snapshot_restore must not be advertised as closed.', $errors);
 assert_true(($pgsql['contract']['per_worker_clone'] ?? null) === false, 'PostgreSQL per_worker clone must not be advertised as closed.', $errors);
 assert_true(($pgsql['contract']['migration_contract'] ?? null) === false, 'PostgreSQL migration-contract must not be advertised as closed.', $errors);
+
+assert_true(($none['status'] ?? '') === 'no_store', 'none must be declared as no_store.', $errors);
+assert_true(($none['contract']['provision'] ?? null) === false, 'none must not advertise provision.', $errors);
+assert_true(($none['contract']['migration_contract'] ?? null) === false, 'none must not advertise migration-contract.', $errors);
 
 assert_true(($redis['status'] ?? '') === 'auxiliary', 'Redis must be auxiliary.', $errors);
 assert_true(($redis['contract']['structural_store_lifecycle'] ?? null) === false, 'Redis must not be structural lifecycle store.', $errors);
@@ -83,6 +88,7 @@ assert_true(in_array('clean', (array)($dbStrategy['rejected_values'] ?? []), tru
 $driver = find_env_entry($payload, 'TEST_STORE_DRIVER');
 assert_true(in_array('mysql', (array)($driver['valid_values'] ?? []), true), 'TEST_STORE_DRIVER must include mysql.', $errors);
 assert_true(in_array('pgsql', (array)($driver['valid_values'] ?? []), true), 'TEST_STORE_DRIVER may include pgsql as partial.', $errors);
+assert_true(in_array('none', (array)($driver['valid_values'] ?? []), true), 'TEST_STORE_DRIVER must include none.', $errors);
 assert_true(!in_array('redis', (array)($driver['valid_values'] ?? []), true), 'TEST_STORE_DRIVER must not include redis.', $errors);
 assert_true(!in_array('influx', (array)($driver['valid_values'] ?? []), true), 'TEST_STORE_DRIVER must not include influx.', $errors);
 
@@ -91,6 +97,7 @@ $psDoctor = read_repo_file('lib/powershell/Doctor.CapabilityChecks.ps1');
 foreach ([$bashDoctor, $psDoctor] as $index => $doctor) {
     $label = $index === 0 ? 'bash doctor' : 'powershell doctor';
     assert_true(str_contains($doctor, 'POSTGRES_PARTIAL_SUPPORT'), $label . ' must classify PostgreSQL as partial.', $errors);
+    assert_true(str_contains($doctor, 'STORE_DRIVER_NONE'), $label . ' must classify none as no-store.', $errors);
     assert_true(str_contains($doctor, 'REDIS_AUXILIARY_SERVICE'), $label . ' must classify Redis as auxiliary.', $errors);
     assert_true(str_contains($doctor, 'INFLUX_AUXILIARY_PROFILING'), $label . ' must classify Influx as auxiliary/profiling.', $errors);
     assert_true(str_contains($doctor, 'CLEAN_STRATEGY_UNSUPPORTED'), $label . ' must reject clean.', $errors);

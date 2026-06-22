@@ -93,6 +93,16 @@ final class FrontJsSuite
             if ((bool)($config['list_only'] ?? false)) {
                 ConsoleReporter::printList($discovered);
             }
+            if ($discovered === []) {
+                $currentPhase = 'reporting';
+                $exitCode = (bool)($config['list_only'] ?? false)
+                    ? SuiteExecutor::EXIT_PASS
+                    : ((bool)($config['require_tests'] ?? false) ? SuiteExecutor::EXIT_FAIL : SuiteExecutor::EXIT_SKIP);
+                $report = self::emptySelectionReport($config, $reportRoot, $policy, $warnings, $admission, $runId, $metaRunId, $exitCode);
+                ConsoleReporter::printSuiteResult($report);
+                self::safeWriteSuite($report, 'front_js.emptySelectionReport');
+                return $exitCode;
+            }
 
             $currentPhase = 'execution';
             $runner = Paths::testkitRoot() . '/runners/runFrontTest.mjs';
@@ -227,6 +237,60 @@ final class FrontJsSuite
         }
 
         return $options;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @param array<string,mixed> $policy
+     * @param array<int,array<string,mixed>> $warnings
+     * @param array<string,mixed> $admission
+     * @return array<string,mixed>
+     */
+    private static function emptySelectionReport(
+        array $config,
+        string $reportRoot,
+        array $policy,
+        array $warnings,
+        array $admission,
+        string $runId,
+        string $metaRunId,
+        int $exitCode
+    ): array {
+        $report = [
+            'suite_id' => 'front_js',
+            'language' => 'js',
+            'scope' => (string)($config['scope'] ?? 'all'),
+            'category' => (string)($config['category'] ?? 'all'),
+            'tests_total' => 0,
+            'pass' => 0,
+            'fail' => 0,
+            'skip' => 0,
+            'timeout' => 0,
+            'tests' => [],
+            'failed_tests' => [],
+            'slow_tests' => [],
+            'perf_violations' => [],
+            'exit_code' => $exitCode,
+            'duration_ms' => 0,
+            'list_only' => (bool)($config['list_only'] ?? false),
+            'require_tests' => (bool)($config['require_tests'] ?? false),
+            'jobs' => (int)($config['jobs'] ?? 1),
+            'report_root' => $reportRoot,
+            'report_scope_rel' => Paths::relativeToRepo($reportRoot),
+            'selected_common_dir' => '',
+            'selected_module_scope' => '',
+            'selected_test_count' => 0,
+            'selected_test_files' => [],
+            'warnings' => $warnings,
+            'filters' => [
+                'suite' => 'front_js',
+                'scope' => (string)($config['scope'] ?? 'all'),
+                'category' => (string)($config['category'] ?? 'all'),
+                'match' => (string)($config['match'] ?? ''),
+            ],
+        ];
+
+        return self::decorateNodeReport($report, $config, $policy, $warnings, $admission, $runId, $metaRunId);
     }
 
     /**

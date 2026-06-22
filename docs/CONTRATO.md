@@ -158,6 +158,7 @@ Esta tabla es el contrato vigente. No debe leerse como roadmap.
 |---|---|---|---|
 | MySQL | cerrado / principal | provision, reset, baseline layered, snapshot restore, clone para `per_worker`, `migration-contract` | requiere env DB válido; `per_worker` no habilita múltiples runners top-level |
 | PostgreSQL | parcial / experimental | adapter runtime con provision/reset básico cuando el env está completo | sin snapshot restore cerrado; sin clone cerrado; no es ruta cerrada de `migration-contract` |
+| Sin store (`none`) | soportado / no-store | no hay lifecycle estructural de DB; las suites pueden listar/ejecutar sin credenciales DB | no participa en baseline/snapshot/clone ni en `migration-contract` |
 | Redis | auxiliar | servicio disponible si el stack lo levanta | sin lifecycle estructural en core PHP; no participa en baseline/snapshot/clone |
 | Influx | auxiliar / perfilado | profiling/reporting si está habilitado | no es store driver principal; no participa en seed/bootstrap estructural |
 | `reference-contract` | técnico / estático | scanner PHP de includes resolubles | no analiza JS/CSS/HTML/HTTP ni expresiones dinámicas de negocio |
@@ -166,6 +167,7 @@ Semántica operativa:
 
 - MySQL es la única ruta principal cerrada en esta fase.
 - PostgreSQL puede existir como infraestructura parcial, pero no debe venderse como equivalente a MySQL.
+- `TEST_STORE_DRIVER=none` declara explícitamente un proyecto sin store runtime.
 - Redis no tiene lifecycle estructural equivalente dentro del core PHP.
 - Influx funciona como servicio auxiliar/perfilado, no como store driver principal.
 - `reference-contract` es independiente del store.
@@ -188,6 +190,22 @@ Estos límites forman parte del contrato actual y no deben maquillarse como sopo
 - `clean` no está implementado como modo operativo. Intentar usarlo debe fallar explícitamente.
 
 ### 7.3) Motores
+
+### 7.3.1) Proyectos sin store
+
+Contrato:
+
+```env
+TEST_STORE_DRIVER=none
+TEST_STORE_PROVISION=external
+```
+
+Comportamiento esperado:
+
+- no se requieren credenciales MySQL ni variables `DB_*`/`TEST_MYSQL_*`
+- no se arranca stack `mysql,redis` por default si `TESTKIT_STACK` no fue declarado
+- `runTest.php` puede listar o ejecutar suites sin bootstrap estructural de store
+- si el proyecto declara `TESTKIT_STACK` explícitamente, se respeta
 
 - MySQL es la ruta principal cerrada para bootstrap, snapshot restore y clone por worker.
 - PostgreSQL puede existir como infraestructura de test, pero snapshot/clone no forman parte del contrato cerrado de esta fase.

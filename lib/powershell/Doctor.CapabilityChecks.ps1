@@ -46,6 +46,7 @@ function Get-TestkitDoctorEffectiveStoreDriver {
     'pg' { 'pgsql' }
     'postgres' { 'pgsql' }
     'postgresql' { 'pgsql' }
+    'none' { 'none' }
     '' { 'mysql' }
     default { $raw }
   }
@@ -71,6 +72,9 @@ function Add-TestkitDoctorEngineCapability([string]$StoreDriver) {
     }
     'pgsql' {
       Add-TestkitDoctorCheck 'capability' 'WARN' 'POSTGRES_PARTIAL_SUPPORT' 'PostgreSQL está clasificado como soporte parcial: runtime/provision/reset básico, sin snapshot/clone cerrado.' 'No lo trates como equivalente a MySQL ni como ruta cerrada de migration-contract.'
+    }
+    'none' {
+      Add-TestkitDoctorCheck 'capability' 'PASS' 'STORE_DRIVER_NONE' 'proyecto sin store runtime: no hay lifecycle estructural DB para bootstrap/seed.'
     }
     'redis' {
       Add-TestkitDoctorCheck 'capability' 'FAIL' 'REDIS_NOT_STRUCTURAL_STORE' 'Redis no es un TEST_STORE_DRIVER estructural soportado por el core PHP.' 'Usalo solo como servicio auxiliar del proyecto, no como store driver principal.'

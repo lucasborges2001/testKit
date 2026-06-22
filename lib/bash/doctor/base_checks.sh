@@ -63,7 +63,7 @@ testkit_doctor_run_base_checks() {
     ok_ref=0
   fi
 
-  testkit_doctor_add_check base PASS STACK_RESOLVED "TESTKIT_STACK efectivo: ${TESTKIT_STACK_EFFECTIVE:-mysql,redis}"
+  testkit_doctor_add_check base PASS STACK_RESOLVED "TESTKIT_STACK efectivo: ${TESTKIT_STACK_EFFECTIVE:-<empty>}"
 
   local provision_mode
   provision_mode="$(testkit_doctor_normalize_token "${TEST_STORE_PROVISION:-managed}")"
@@ -83,7 +83,10 @@ testkit_doctor_run_base_checks() {
     store_driver="mysql"
   fi
 
-  if [[ "${store_driver}" == "mysql" ]]; then
+  if [[ "${store_driver}" == "none" ]]; then
+    testkit_doctor_add_check base PASS STORE_DRIVER_NONE \
+      "proyecto sin store runtime: TEST_STORE_DRIVER=none"
+  elif [[ "${store_driver}" == "mysql" ]]; then
     if testkit_doctor_env_present_any DB_HOST TEST_MYSQL_HOST MYSQL_HOST; then
       testkit_doctor_add_check base PASS MYSQL_HOST_PRESENT "host MySQL visible"
     else

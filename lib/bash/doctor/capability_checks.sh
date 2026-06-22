@@ -37,6 +37,7 @@ testkit_doctor_effective_store_driver() {
   raw="$(testkit_doctor_normalize_token "${raw:-mysql}")"
   case "${raw}" in
     pg|postgres|postgresql) echo "pgsql" ;;
+    none) echo "none" ;;
     mysql|"") echo "mysql" ;;
     *) echo "${raw}" ;;
   esac
@@ -71,6 +72,10 @@ testkit_doctor_emit_engine_capability() {
       testkit_doctor_add_check capability WARN POSTGRES_PARTIAL_SUPPORT \
         "PostgreSQL está clasificado como soporte parcial: runtime/provision/reset básico, sin snapshot/clone cerrado." \
         "No lo trates como equivalente a MySQL ni como ruta cerrada de migration-contract."
+      ;;
+    none)
+      testkit_doctor_add_check capability PASS STORE_DRIVER_NONE \
+        "proyecto sin store runtime: no hay lifecycle estructural DB para bootstrap/seed."
       ;;
     redis)
       testkit_doctor_add_check capability FAIL REDIS_NOT_STRUCTURAL_STORE \

@@ -163,12 +163,24 @@ Do not infer support from service names in compose or from partial adapters. The
 |---|---|---|
 | MySQL | closed / primary | provision, reset, layered baseline, snapshot restore, per-worker clone |
 | PostgreSQL | partial | runtime/provision/reset only where explicitly implemented; no closed snapshot/clone contract |
+| No store (`TEST_STORE_DRIVER=none`) | supported no-store | no DB credentials, no structural bootstrap, empty stack by default |
 | Redis | auxiliary | service only; no structural store lifecycle in core PHP |
 | Influx | auxiliary / profiling | profiling/reporting service; not a primary store driver |
 | `TEST_DB_STRATEGY=clean` | rejected | recognized as not implemented; use `shared` or `per_worker` |
 | `TEST_DB_STRATEGY=per_worker` | intra-suite only | isolates workers inside one suite; does not make concurrent top-level runners safe |
 
 Full detail: [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) and [`docs/CONTRATO.md`](docs/CONTRATO.md).
+
+## Proyectos sin store
+
+Para proyectos que no tienen store runtime ni DB de negocio, declaralo en el env de tests:
+
+```env
+TEST_STORE_DRIVER=none
+TEST_STORE_PROVISION=external
+```
+
+Con ese contrato testkit no exige credenciales MySQL, no arranca `mysql`/`redis` por default cuando `TESTKIT_STACK` no fue declarado, y `runTest.php` puede listar o ejecutar suites sin bootstrap estructural de store. Si el proyecto declara `TESTKIT_STACK` explícitamente, esa decisión se respeta.
 
 ## Artifact ownership
 
