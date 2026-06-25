@@ -64,6 +64,9 @@ final class FrontJsSuite
         $lockLease = null;
         try {
             $discovered = TestDiscovery::discover((string)$config['tests_dir'], ['.test.mjs'], $config);
+            if (!(bool)($config['list_only'] ?? false) && $discovered === [] && trim((string)($config['match'] ?? '')) !== '') {
+                $config['require_tests'] = false;
+            }
             $reportRoot = Paths::resolveReportRoot($discovered);
             $moduleScope = SuiteSelection::moduleScope($discovered);
             Paths::ensureDir($reportRoot);

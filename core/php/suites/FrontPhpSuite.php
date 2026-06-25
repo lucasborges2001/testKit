@@ -28,6 +28,9 @@ final class FrontPhpSuite
             'php'
         );
         $selectedTests = TestDiscovery::discover($testsDir, ['.test.php'], $config);
+        if (!(bool)$config['list_only'] && $selectedTests === [] && trim((string)($config['match'] ?? '')) !== '') {
+            $config['require_tests'] = false;
+        }
         self::attachLegacySeedMetadataWarnings(
             $config,
             TestSeedMetadata::applySeedEnvIfLegacyEnabled($selectedTests, (int)($config['metadata_lines'] ?? 60))
@@ -44,7 +47,9 @@ final class FrontPhpSuite
 
         putenv('APP_ENV=test');
         putenv('APP_DEBUG=1');
-        ContractWorldBootstrap::prepare('front_php', $repoRoot);
+        if (!(bool)$config['list_only'] && $selectedTests !== []) {
+            ContractWorldBootstrap::prepare('front_php', $repoRoot);
+        }
 
         $prepend = $testkitRoot . '/utils/php/auto_prepend.php';
         $phpBinary = self::phpBinary();

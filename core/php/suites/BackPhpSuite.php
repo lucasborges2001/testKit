@@ -104,6 +104,9 @@ final class BackPhpSuite
 
         try {
             $selectedTests = SuiteOrchestrator::discoverTests($config, ['.test.php']);
+            if (!(bool)$config['list_only'] && $selectedTests === [] && trim((string)($config['match'] ?? '')) !== '') {
+                $config['require_tests'] = false;
+            }
             $reportRoot = Paths::resolveReportRoot($selectedTests);
             Paths::ensureDir($reportRoot);
             Paths::recordSuiteReportRoot($reportRoot, 'back_php');

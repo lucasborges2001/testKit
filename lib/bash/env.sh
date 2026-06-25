@@ -7,7 +7,13 @@ testkit_env_init() {
 
   PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-}"
   if [[ -z "${PROJECT_ROOT}" ]]; then
-    PROJECT_ROOT="$(cd "${TESTKIT_ROOT_HOST}/.." && pwd)"
+    local cwd
+    cwd="$(pwd)"
+    if [[ -f "${cwd}/test/.env.test" || -f "${cwd}/.env.test" ]]; then
+      PROJECT_ROOT="${cwd}"
+    else
+      PROJECT_ROOT="$(cd "${TESTKIT_ROOT_HOST}/.." && pwd)"
+    fi
   fi
   PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 

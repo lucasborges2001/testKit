@@ -83,13 +83,32 @@ testkit_rewrite_run_command_args() {
   local saw_testkit=0
   local saw_container=0
   local wrapper_kind="${TESTKIT_WRAPPER_KIND:-bash}"
+  local has_build_flag=0
 
   for arg in "${args[@]}"; do
+    if [[ "${arg}" == "--build" || "${arg}" == "--no-build" ]]; then
+      has_build_flag=1
+      break
+    fi
+  done
+
+  local idx=0
+  for arg in "${args[@]}"; do
+    if [[ $idx -eq 0 && "${arg}" == "run" ]]; then
+      rewritten+=("${arg}")
+      if [[ "${TESTKIT_RUN_BUILD:-1}" != "0" && $has_build_flag -eq 0 ]]; then
+        rewritten+=("--build")
+      fi
+      idx=$((idx + 1))
+      continue
+    fi
+
     if [[ "${arg}" == "testkit" && $saw_container -eq 0 ]]; then
       rewritten+=("-e" "TESTKIT_WRAPPER_KIND=${wrapper_kind}")
       saw_testkit=1
       saw_container=1
       rewritten+=("${arg}")
+      idx=$((idx + 1))
       continue
     fi
 
@@ -107,6 +126,7 @@ testkit_rewrite_run_command_args() {
     fi
 
     rewritten+=("${arg}")
+    idx=$((idx + 1))
   done
 
   printf '%s\0' "${rewritten[@]}"

@@ -6,6 +6,7 @@ namespace Testkit\Core\Suites;
 use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
+use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ProcessRunner;
 
 final class BackPythonSuite
@@ -23,7 +24,13 @@ final class BackPythonSuite
             Paths::legacyCoverageDirForSuite('back_python'),
             'python'
         );
-        ContractWorldBootstrap::prepare('back_python', $repoRoot);
+        $selectedTests = TestDiscovery::discover((string)$config['tests_dir'], ['_unittest.py', '.test.py'], $config);
+        if (!(bool)$config['list_only'] && $selectedTests === [] && trim((string)($config['match'] ?? '')) !== '') {
+            $config['require_tests'] = false;
+        }
+        if (!(bool)$config['list_only'] && $selectedTests !== []) {
+            ContractWorldBootstrap::prepare('back_python', $repoRoot);
+        }
 
         $python = (string)$config['python_binary'];
 
