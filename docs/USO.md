@@ -9,6 +9,8 @@
 - Warnings por env inválido deben quedar visibles en consola y en los reportes persistidos.
 - `inspect config-schema --json` incluye la matriz honesta de soporte por motor/servicio.
 - Coverage ahora se centraliza por defecto en `.testkit/coverage/<suite_id>` y su filtro de cálculo usa una política única.
+- `TEST_MATCH_FILE` y `TEST_MATCH_LIST` permiten seleccionar múltiples archivos en una sola suite.
+- `TEST_RERUN_FAILED_ISOLATED=1` permite reejecutar solo fallidos, uno por uno, para distinguir fallo real de interferencia probable.
 
 ## Matriz corta de soporte
 
@@ -36,6 +38,7 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 - `TEST_DB_STRATEGY=clean` no está implementado; no lo uses como fallback.
 - Para proyectos sin store runtime usá `TEST_STORE_DRIVER=none` y `TEST_STORE_PROVISION=external`; no agregues credenciales MySQL falsas.
 - No uses `TEST_STORE_DRIVER=redis` ni `TEST_STORE_DRIVER=influx`: son servicios auxiliares, no stores estructurales.
+- No lances varios runners top-level en paralelo sobre el mismo store. Usá una sola suite con `TEST_MATCH_FILE`/`TEST_MATCH_LIST` y, si corresponde, `TEST_JOBS`.
 
 ## Comandos de referencia
 
@@ -46,6 +49,113 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 ./bin/testkit run --rm testkit php runTest.php back-php --list
 ./bin/testkit run --rm testkit php runTest.php reference-contract
 ```
+
+## Selección múltiple de tests
+
+Precedencia:
+
+1. `TEST_MATCH_FILE`
+2. `TEST_MATCH_LIST`
+3. `TEST_MATCH`
+4. sin filtro explícito
+
+`TEST_MATCH` mantiene el comportamiento legacy por substring. `TEST_MATCH_FILE` y `TEST_MATCH_LIST` hacen match exacto por defecto contra paths repo-relative. Para substring explícito:
+
+```bash
+-e TEST_MATCH_LIST_MODE=substring
+```
+
+`TEST_SELECTION_MATCH_MODE` se conserva como alias compatible, pero la configuración nueva debería usar `TEST_MATCH_LIST_MODE`.
+
+Archivo de selección:
+
+```bash
+mkdir -p .testkit
+cat > .testkit/selection.front_php.txt <<'EOF'
+test/front/cliente/unit/cliente_api_wiring.test.php
+test/front/cliente/integration/cliente_mi_cargador_tarifa_domestica_seeded_integration.test.php
+test/front/cliente/unit/cliente_domestic_asset_endpoint_contract.test.php
+test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php
+EOF
+
+./bin/testkit run --rm   -e TEST_MATCH_FILE='.testkit/selection.front_php.txt'   testkit php runTest.php front-php
+```
+
+Reglas de `TEST_MATCH_FILE`:
+
+- una ruta repo-relative por línea;
+- líneas vacías y comentarios `#` se ignoran;
+- `\` se normaliza a `/`;
+- `..` y rutas absolutas se rechazan;
+- archivo inexistente o ilegible falla explícitamente;
+- entradas válidas sin match quedan en `selection_unmatched_entries`.
+
+Lista por coma:
+
+```bash
+./bin/testkit run --rm   -e TEST_MATCH_LIST='test/front/cliente/unit/cliente_api_wiring.test.php,test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php'   testkit php runTest.php front-php
+```
+
+PowerShell:
+
+```powershell
+$env:TEST_MATCH_FILE = '.testkit/selection.front_php.txt'
+.in	estkit.ps1 run --rm testkit php runTest.php front-php
+Remove-Item Env:\TEST_MATCH_FILE
+```
+
+Metadata relevante del reporte:
+
+- `selection_source`
+- `selection_match_mode`
+- `selection_entries_count`
+- `selection_entries`
+- `selection_unmatched_entries`
+- `selection_invalid_entries`
+- `selection_errors`
+- `selection_file`
+- `selection_file_exists`
+- `selected_test_files`
+
+## Rerun aislado de fallidos
+
+```bash
+./bin/testkit run --rm \
+  -e TEST_MATCH_FILE='.testkit/selection.front_php.txt' \
+  -e TEST_RERUN_FAILED_ISOLATED=1 \
+  -e TEST_COVERAGE=0 \
+  testkit php runTest.php front-php
+```
+
+Si la corrida batch pasa, no hay rerun. Si falla, `testkit` reejecuta solo los archivos fallidos, uno por uno, con `TEST_JOBS=1`, define `TEST_ISOLATED_RERUN_ACTIVE=1` para impedir recursión y agrega `isolated_rerun` al reporte.
+
+- `confirmed_failure`: el fallo también ocurre aislado.
+- `interference_suspected`: el batch falló, pero el archivo pasó aislado.
+- `inconclusive`: el rerun aislado no produjo evidencia suficiente, por ejemplo `skip` o `no_tests`.
+
+`isolated_rerun` no cambia el exit code:
+
+```json
+{
+  "isolated_rerun": {
+    "affects_exit_code": false
+  }
+}
+```
+
+Aunque todos los fallidos pasen aislados, el exit code del batch fallido sigue siendo `1` por defecto. La evidencia se usa para triage, no para ocultar flakiness o interferencia.
+
+Coverage durante el rerun aislado:
+
+```json
+{
+  "isolated_rerun": {
+    "coverage_policy": "disabled_for_isolated_rerun"
+  }
+}
+```
+
+El rerun aislado fuerza `TEST_COVERAGE=0` para no mezclar artefactos de coverage con la corrida principal.
 
 ## Coverage operativo
 

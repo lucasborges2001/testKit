@@ -44,6 +44,9 @@ final class TestTagger
             'critical' => ['critical', 'critico', 'critica'],
             'contract' => ['contract', 'contrato'],
             'fragile' => ['fragile', 'flaky', 'inestable'],
+            'memory-isolated' => ['memory-isolated', 'memory_isolated', 'memoryisolated'],
+            'db-isolated' => ['db-isolated', 'db_isolated', 'dbisolated'],
+            'serial' => ['serial', 'sequential'],
         ];
 
         // Extender el mapa vía config: "tag:token1,token2;tag2:token3"
@@ -51,7 +54,7 @@ final class TestTagger
             foreach (explode(';', $tagMap) as $pair) {
                 if (!str_contains($pair, ':')) continue;
                 [$tag, $tokens] = explode(':', $pair, 2);
-                $tag = trim($tag);
+                $tag = self::normalizeTag(trim($tag));
                 if (!isset($tokenMap[$tag])) $tokenMap[$tag] = [];
                 $tokenMap[$tag] = array_merge($tokenMap[$tag], array_map('trim', explode(',', $tokens)));
             }
@@ -136,6 +139,11 @@ final class TestTagger
             'critica' => 'critical',
             'flaky' => 'fragile',
             'inestable' => 'fragile',
+            'memory_isolated' => 'memory-isolated',
+            'memoryisolated' => 'memory-isolated',
+            'db_isolated' => 'db-isolated',
+            'dbisolated' => 'db-isolated',
+            'sequential' => 'serial',
         ];
 
         return $aliasMap[$tag] ?? $tag;

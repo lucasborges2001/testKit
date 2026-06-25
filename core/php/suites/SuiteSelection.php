@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\Suites;
 
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Discovery\TestSelection;
 
 final class SuiteSelection
 {
@@ -77,21 +78,25 @@ final class SuiteSelection
      */
     public static function manifest(array $tests, array $config, string $source = 'suite_orchestrator'): array
     {
-        return [
+        $selectedFiles = array_values(array_map(
+            static fn(array $test): string => (string)($test['rel'] ?? ''),
+            $tests
+        ));
+        $selectionMetadata = TestSelection::fromConfig($config)->metadata($selectedFiles);
+
+        return array_merge([
             'suite_id' => (string)($config['suite_id'] ?? ''),
             'scope' => (string)($config['scope'] ?? 'all'),
             'category' => (string)($config['category'] ?? 'all'),
             'match' => (string)($config['match'] ?? ''),
+            'match_list' => (string)($config['match_list'] ?? ''),
+            'match_file' => (string)($config['match_file'] ?? ''),
             'list_only' => (bool)($config['list_only'] ?? false),
             'selected_test_count' => count($tests),
             'selected_module_scope' => self::moduleScope($tests),
             'selected_common_dir' => self::commonDir($tests),
-            'selected_test_files' => array_values(array_map(
-                static fn(array $test): string => (string)($test['rel'] ?? ''),
-                $tests
-            )),
             'source' => $source,
-        ];
+        ], $selectionMetadata);
     }
 
     /**
@@ -136,11 +141,18 @@ final class SuiteSelection
 
         $scope = (string)($config['scope'] ?? 'all');
         $category = (string)($config['category'] ?? 'all');
-        $match = trim((string)($config['match'] ?? ''));
+        $selection = TestSelection::fromConfig($config)->metadata([]);
+        $source = (string)($selection['selection_source'] ?? 'none');
 
-        $message = "no tests matched the current filters (scope={$scope}, category={$category}";
-        if ($match !== '') {
-            $message .= ", match={$match}";
+        $message = "no tests matched the current filters (scope={$scope}, category={$category}, selection_source={$source}";
+        if (trim((string)($config['match'] ?? '')) !== '') {
+            $message .= ', match=' . trim((string)$config['match']);
+        }
+        if (trim((string)($config['match_list'] ?? '')) !== '') {
+            $message .= ', match_list_entries=' . (int)($selection['selection_entries_count'] ?? 0);
+        }
+        if (trim((string)($config['match_file'] ?? '')) !== '') {
+            $message .= ', match_file=' . trim((string)$config['match_file']);
         }
         $message .= ')';
 

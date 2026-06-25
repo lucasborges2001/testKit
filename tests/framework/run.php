@@ -38,6 +38,9 @@ $tests = [
     'Agent mode runtime contract'           => __DIR__ . '/test_agent_mode_contract.php',
     'Agent run continuation contract'       => __DIR__ . '/test_agent_run_contract.php',
     'Agent decision actionable contract'    => __DIR__ . '/test_agent_decision_contract.php',
+    'Batch selection match file/list'       => __DIR__ . '/test_selection_match_file.php',
+    'Batch isolated rerun contract'         => __DIR__ . '/test_rerun_failed_isolated.php',
+    'Batch isolation tags contract'         => __DIR__ . '/test_isolation_tags.php',
 ];
 
 $pass   = 0;

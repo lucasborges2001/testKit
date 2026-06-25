@@ -5,13 +5,11 @@ namespace Testkit\Core\Config;
 
 final class ConfigSchema
 {
-    /**
-     * @return array<string,mixed>
-     */
+    /** @return array<string,mixed> */
     public static function inspectPayload(): array
     {
         return [
-            'schema_version' => 4,
+            'schema_version' => 5,
             'support_contract_version' => 1,
             'commands' => [
                 ['command' => 'php runTest.php --help', 'purpose' => 'mostrar ayuda del runner'],
@@ -66,8 +64,37 @@ final class ConfigSchema
                     'Una contradicción visible entre target y TEST_CATEGORY debería verse en doctor.',
                 ]),
                 self::env('TEST_MATCH', 'string', '', [], ['suite', 'meta'], [
-                    'Filtra la selección efectiva.',
-                    'Un rerun sugerido suele materializarse vía TEST_MATCH.',
+                    'Filtro legacy por substring. Se mantiene por compatibilidad hacia atrás.',
+                    'Precedencia: se usa solo si TEST_MATCH_FILE y TEST_MATCH_LIST no están definidos.',
+                ]),
+                self::env('TEST_MATCH_LIST', 'csv', '', [], ['suite'], [
+                    'Selecciona múltiples tests en una misma corrida usando rutas repo-relative separadas por coma.',
+                    'Default exact match contra rel-path descubierto. Puede usar substring con TEST_MATCH_LIST_MODE=substring.',
+                    'Precede a TEST_MATCH y queda por debajo de TEST_MATCH_FILE.',
+                ]),
+                self::env('TEST_MATCH_FILE', 'string', '', [], ['suite'], [
+                    'Archivo repo-relative con una ruta de test por línea; ignora líneas vacías y comentarios que empiezan con #.',
+                    'Rechaza path traversal con .. y entradas absolutas dentro del archivo.',
+                    'Tiene mayor precedencia que TEST_MATCH_LIST y TEST_MATCH.',
+                ]),
+                self::env('TEST_MATCH_LIST_MODE', 'string', 'exact', ['exact', 'substring'], ['suite'], [
+                    'Controla TEST_MATCH_FILE y TEST_MATCH_LIST.',
+                    'exact es la política segura por defecto; substring debe declararse explícitamente.',
+                    'Alias compatible: TEST_SELECTION_MATCH_MODE.',
+                ]),
+                self::env('TEST_SELECTION_MATCH_MODE', 'string', 'exact', ['exact', 'substring'], ['suite'], [
+                    'Alias legacy de TEST_MATCH_LIST_MODE.',
+                    'Se conserva para paquetes previos; configuración nueva debería usar TEST_MATCH_LIST_MODE.',
+                ]),
+                self::env('TEST_RERUN_FAILED_ISOLATED', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
+                    'Si la corrida batch falla, reejecuta solo los archivos fallidos uno por uno con TEST_JOBS=1.',
+                    'Clasifica confirmed_failure, interference_suspected o inconclusive dentro de isolated_rerun.',
+                    'No cambia exit code: isolated_rerun.affects_exit_code=false.',
+                    'Desactiva coverage durante el rerun aislado para no mezclar artefactos.',
+                ]),
+                self::env('TEST_ISOLATED_RERUN_ACTIVE', 'bool', false, ['1', '0'], ['internal'], [
+                    'Guard interno para impedir rerun aislado recursivo.',
+                    'No debe definirse manualmente en corridas normales.',
                 ]),
                 self::env('TEST_LIST', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
                     'runTest.php --list fuerza TEST_LIST=1 para esa corrida.',
@@ -116,11 +143,9 @@ final class ConfigSchema
                 ]),
                 self::env('TEST_COVERAGE_EXCLUDE_DIRS', 'csv', 'test,testkit,docker,vendor,logs,storage', [], ['suite'], [
                     'Política centralizada de directorios excluidos de coverage.',
-                    'Se aplica tanto en captura PHP por proceso como en diagnósticos agregados.',
                 ]),
                 self::env('TEST_COVERAGE_CRITICAL_FILES', 'csv', '', [], ['suite'], [
                     'Patrones fnmatch repo-relativos para marcar archivos críticos.',
-                    'Se evalúan después de source_dirs/exclude_dirs.',
                 ]),
                 self::env('TEST_COVERAGE_CRITICAL_THRESHOLD', 'int', 85, ['integer >= 1'], ['suite'], [
                     'Porcentaje mínimo para que un archivo crítico no figure como critical_low.',
@@ -159,6 +184,8 @@ final class ConfigSchema
             'notes' => [
                 'Valores bool inválidos y enteros no parseables deben quedar visibles vía warnings y persistirse en reportes.',
                 'Targets agregados son válidos, pero no son la primera corrida diagnóstica más nítida.',
+                'TEST_MATCH_FILE > TEST_MATCH_LIST > TEST_MATCH.',
+                'TEST_RERUN_FAILED_ISOLATED no ejecuta concurrencia top-level: reusa la suite actual y corre los fallidos uno por uno.',
                 'migration-contract exige snapshot + shared + mysql + TEST_JOBS=1.',
                 'UNKNOWN en doctor/config no es PASS implícito.',
             ],
@@ -250,9 +277,7 @@ final class ConfigSchema
         }
     }
 
-    /**
-     * @return array<string,mixed>
-     */
+    /** @return array<string,mixed> */
     private static function supportMatrix(): array
     {
         return [
@@ -269,10 +294,7 @@ final class ConfigSchema
                         'per_worker_clone' => true,
                         'migration_contract' => true,
                     ],
-                    'limits' => [
-                        'requires visible DB env.',
-                        'per_worker is intra-suite only.',
-                    ],
+                    'limits' => ['requires visible DB env.', 'per_worker is intra-suite only.'],
                 ],
                 [
                     'name' => 'pgsql',
@@ -286,11 +308,7 @@ final class ConfigSchema
                         'per_worker_clone' => false,
                         'migration_contract' => false,
                     ],
-                    'limits' => [
-                        'No closed snapshot restore contract.',
-                        'No closed clone/per_worker contract.',
-                        'Not equivalent to MySQL.',
-                    ],
+                    'limits' => ['No closed snapshot restore contract.', 'No closed clone/per_worker contract.', 'Not equivalent to MySQL.'],
                 ],
                 [
                     'name' => 'none',
@@ -304,10 +322,7 @@ final class ConfigSchema
                         'per_worker_clone' => false,
                         'migration_contract' => false,
                     ],
-                    'limits' => [
-                        'No DB credentials are required.',
-                        'No structural seed/bootstrap lifecycle runs.',
-                    ],
+                    'limits' => ['No DB credentials are required.', 'No structural seed/bootstrap lifecycle runs.'],
                 ],
             ],
             'services' => [
@@ -315,26 +330,15 @@ final class ConfigSchema
                     'name' => 'redis',
                     'status' => 'auxiliary',
                     'role' => 'optional_service',
-                    'contract' => [
-                        'structural_store_lifecycle' => false,
-                        'baseline_participant' => false,
-                    ],
-                    'limits' => [
-                        'No core PHP seed/bootstrap lifecycle.',
-                    ],
+                    'contract' => ['structural_store_lifecycle' => false, 'baseline_participant' => false],
+                    'limits' => ['No core PHP seed/bootstrap lifecycle.'],
                 ],
                 [
                     'name' => 'influx',
                     'status' => 'auxiliary_profiling',
                     'role' => 'profiling_service',
-                    'contract' => [
-                        'structural_store_lifecycle' => false,
-                        'baseline_participant' => false,
-                        'profiling' => true,
-                    ],
-                    'limits' => [
-                        'Not a primary store driver.',
-                    ],
+                    'contract' => ['structural_store_lifecycle' => false, 'baseline_participant' => false, 'profiling' => true],
+                    'limits' => ['Not a primary store driver.'],
                 ],
             ],
         ];

@@ -38,7 +38,7 @@ final class TestDiscovery
     {
         $scope = (string)($config['scope'] ?? 'all');
         $category = (string)($config['category'] ?? 'all');
-        $match = strtolower((string)($config['match'] ?? ''));
+        $selection = TestSelection::fromConfig($config);
         $scanLines = (int)($config['metadata_lines'] ?? 60);
         $tagsFromFilename = (bool)($config['tags_from_filename'] ?? true);
         $moduleLevel = max(1, (int)($config['module_level'] ?? 2));
@@ -85,7 +85,7 @@ final class TestDiscovery
                     continue;
                 }
 
-                if ($match !== '' && stripos($rel, $match) === false) {
+                if (!$selection->matches($rel)) {
                     continue;
                 }
 

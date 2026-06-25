@@ -28,6 +28,7 @@ final class ParallelGuard
         $baseDb = self::resolveBaseDatabaseName($driver);
         $suiteId = (string)($config['suite_id'] ?? 'suite');
         $declaredHazards = self::declaredHazards($config);
+        $hasSerialTests = self::hasSerialTests($tests);
 
         $dbSensitivityMode = self::dbSensitivityMode($declaredHazards);
         $hasDbSensitiveTests = match ($dbSensitivityMode) {
@@ -71,6 +72,20 @@ final class ParallelGuard
             );
         }
 
+        if ($jobs > 1 && $hasSerialTests) {
+            $errors[] = StructuredWarnings::fromText(
+                "La selección contiene tests con tag serial; no se admite TEST_JOBS={$jobs} para esta corrida.",
+                'TEST_TAG_DECLARED_SERIAL',
+                'error',
+                true,
+                [
+                    'suite_id' => $suiteId,
+                    'jobs' => $jobs,
+                    'policy' => 'serial_tag_forces_single_worker',
+                ]
+            );
+        }
+
         if ($jobs > 1 && $strategy === 'per_worker' && $hasDbSensitiveTests && $hasDbRuntime) {
             $warnings[] = StructuredWarnings::fromText(
                 'TEST_DB_STRATEGY=per_worker aísla workers dentro de una misma suite, pero NO vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto.',
@@ -98,6 +113,7 @@ final class ParallelGuard
             'jobs' => $jobs,
             'db_strategy' => $strategy,
             'has_db_sensitive_tests' => $hasDbSensitiveTests,
+            'has_serial_tests' => $hasSerialTests,
             'has_db_runtime' => $hasDbRuntime,
             'requires_db_isolation' => $requiresDbIsolation,
             'base_db_driver' => $driver,
@@ -114,9 +130,7 @@ final class ParallelGuard
         ];
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     */
+    /** @param array<string,mixed> $policy */
     public static function assertSafe(array $policy): void
     {
         $errors = StructuredWarnings::canonicalize($policy['errors'] ?? []);
@@ -127,9 +141,7 @@ final class ParallelGuard
         throw new RuntimeException(StructuredWarnings::joinSummaries($errors));
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     */
+    /** @param array<string,mixed> $policy */
     public static function acquireSuiteStoreLock(array $policy): ?LockLease
     {
         $lockKey = trim((string)($policy['suite_lock_key'] ?? ''));
@@ -201,9 +213,7 @@ final class ParallelGuard
         ];
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     */
+    /** @param array<string,mixed> $policy */
     public static function acquireRunResourceLock(array $policy): ?LockLease
     {
         $lockKey = trim((string)($policy['resource_lock_key'] ?? ''));
@@ -225,10 +235,7 @@ final class ParallelGuard
         );
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $policy @return array<string,mixed> */
     public static function admissionState(array $policy): array
     {
         return [
@@ -246,10 +253,7 @@ final class ParallelGuard
         ];
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $policy @return array<string,mixed> */
     public static function rejectedByPolicyState(array $policy): array
     {
         $state = self::admissionState($policy);
@@ -260,10 +264,7 @@ final class ParallelGuard
         return $state;
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $policy @return array<string,mixed> */
     public static function rejectedByLockState(array $policy): array
     {
         $state = self::admissionState($policy);
@@ -273,10 +274,7 @@ final class ParallelGuard
         return $state;
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $policy @return array<string,mixed> */
     public static function runResourceAdmissionState(array $policy): array
     {
         return [
@@ -294,10 +292,7 @@ final class ParallelGuard
         ];
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $policy @return array<string,mixed> */
     public static function rejectedByRunLockState(array $policy): array
     {
         $state = self::runResourceAdmissionState($policy);
@@ -307,9 +302,7 @@ final class ParallelGuard
         return $state;
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $tests
-     */
+    /** @param array<int,array<string,mixed>> $tests */
     private static function hasDbSensitiveTests(array $tests): bool
     {
         foreach ($tests as $test) {
@@ -325,7 +318,25 @@ final class ParallelGuard
 
             foreach ($tags as $tag) {
                 $tag = strtolower(trim((string)$tag));
-                if ($tag === 'integration' || $tag === 'e2e') {
+                if ($tag === 'integration' || $tag === 'e2e' || $tag === 'db-isolated') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<int,array<string,mixed>> $tests */
+    private static function hasSerialTests(array $tests): bool
+    {
+        foreach ($tests as $test) {
+            $tags = $test['tags'] ?? [];
+            if (!is_array($tags)) {
+                continue;
+            }
+            foreach ($tags as $tag) {
+                if (strtolower(trim((string)$tag)) === 'serial') {
                     return true;
                 }
             }
@@ -340,15 +351,7 @@ final class ParallelGuard
             return false;
         }
 
-        $candidates = [
-            'DB_NAME',
-            'TEST_MYSQL_DB',
-            'MYSQL_DATABASE',
-            'PG_DB',
-            'TEST_PG_DB',
-            'TEST_DB_DSN',
-        ];
-
+        $candidates = ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE', 'PG_DB', 'TEST_PG_DB', 'TEST_DB_DSN'];
         foreach ($candidates as $key) {
             $value = trim((string)(getenv($key) ?: ''));
             if ($value !== '') {
@@ -406,9 +409,7 @@ final class ParallelGuard
         return $value !== '' ? $value : 'default';
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     */
+    /** @param array<string,mixed> $policy */
     private static function concurrencyPolicy(array $policy): string
     {
         if ((bool)($policy['has_db_sensitive_tests'] ?? false) && (bool)($policy['has_db_runtime'] ?? false)) {
@@ -423,9 +424,7 @@ final class ParallelGuard
         return 'not_applicable';
     }
 
-    /**
-     * @param array<string,mixed> $policy
-     */
+    /** @param array<string,mixed> $policy */
     private static function resourceLabel(array $policy): string
     {
         $driver = trim((string)($policy['base_db_driver'] ?? ''));
@@ -438,9 +437,7 @@ final class ParallelGuard
         return ($driver !== '' ? $driver : 'db') . '/' . ($dbName !== '' ? $dbName : 'default');
     }
 
-    /**
-     * @param array<string,mixed> $state
-     */
+    /** @param array<string,mixed> $state */
     private static function attachLockOwner(array &$state, string $lockKey): void
     {
         $owner = $lockKey !== '' ? Lock::readOwner($lockKey) : null;
@@ -454,27 +451,20 @@ final class ParallelGuard
         $state['lock_acquired_at'] = trim((string)($owner['acquired_at'] ?? '')) ?: null;
     }
 
-    /**
-     * @param array<string,mixed> $config
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $config @return array<string,mixed> */
     private static function declaredHazards(array $config): array
     {
         return is_array($config['runner_hazards'] ?? null) ? $config['runner_hazards'] : [];
     }
 
-    /**
-     * @param array<string,mixed> $hazards
-     */
+    /** @param array<string,mixed> $hazards */
     private static function dbSensitivityMode(array $hazards): string
     {
         $mode = strtolower(trim((string)($hazards['db_sensitivity'] ?? 'discovered')));
         return in_array($mode, ['always', 'never', 'discovered'], true) ? $mode : 'discovered';
     }
 
-    /**
-     * @param array<string,mixed> $hazards
-     */
+    /** @param array<string,mixed> $hazards */
     private static function topLevelParallelPolicy(array $hazards): string
     {
         $policy = strtolower(trim((string)($hazards['top_level_parallel_policy'] ?? 'exclusive_when_db_sensitive')));
@@ -483,9 +473,7 @@ final class ParallelGuard
             : 'exclusive_when_db_sensitive';
     }
 
-    /**
-     * @param array<string,mixed> $hazards
-     */
+    /** @param array<string,mixed> $hazards */
     private static function intraSuiteParallelPolicy(array $hazards): string
     {
         $policy = strtolower(trim((string)($hazards['intra_suite_parallel_policy'] ?? 'per_worker_when_db_sensitive')));

@@ -38,6 +38,10 @@ final class RunnerConfig
         $reportKeep = max(1, Env::int('TEST_REPORT_KEEP', 5));
         $runsIndexKeep = max(1, Env::int('TEST_RUNS_INDEX_KEEP', $reportKeep));
         $contract = SuiteContractRegistry::contractForSuite($suiteId, $language);
+        $selectionMode = strtolower(Env::string('TEST_MATCH_LIST_MODE', Env::string('TEST_SELECTION_MATCH_MODE', 'exact')));
+        if (!in_array($selectionMode, ['exact', 'substring'], true)) {
+            $selectionMode = 'exact';
+        }
 
         $config = [
             'suite_id' => $suiteId,
@@ -50,6 +54,11 @@ final class RunnerConfig
             'scope' => $scope,
             'category' => $category,
             'match' => Env::string('TEST_MATCH', ''),
+            'match_list' => Env::string('TEST_MATCH_LIST', ''),
+            'match_file' => Env::string('TEST_MATCH_FILE', ''),
+            'selection_match_mode' => $selectionMode,
+            'match_list_mode' => $selectionMode,
+            'rerun_failed_isolated' => Env::bool('TEST_RERUN_FAILED_ISOLATED', false),
             'list_only' => Env::bool('TEST_LIST', false),
             'fail_fast' => Env::bool('TEST_FAIL_FAST', true),
             'jobs' => max(1, Env::int('TEST_JOBS', 1)),

@@ -10,6 +10,8 @@ use Testkit\Core\Coverage\CoverageDiagnostics;
 use Testkit\Core\Coverage\CoverageMerger;
 use Testkit\Core\Coverage\CoverageMetadata;
 use Testkit\Core\Discovery\TestDiscovery;
+use Testkit\Core\Discovery\TestSelection;
+use Testkit\Core\Execution\IsolatedRerun;
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Execution\SuiteExecutor;
 use Testkit\Core\Reporting\ConsoleReporter;
@@ -124,6 +126,10 @@ final class SuiteOrchestrator
 
             $moduleScope = SuiteSelection::moduleScope($tests);
             $selectionManifest = SuiteSelection::manifest($tests, $config);
+            $selectionMetadata = TestSelection::fromConfig($config)->metadata(array_values(array_map(
+                static fn(array $test): string => (string)($test['rel'] ?? ''),
+                $tests
+            )));
 
             $result['report_contract_version'] = (int)($config['report_contract_version'] ?? 2);
             $result['runner_contract_version'] = (int)($config['runner_contract_version'] ?? 1);
@@ -140,10 +146,24 @@ final class SuiteOrchestrator
             $result['report_root'] = $reportRoot;
             $result['report_scope_rel'] = Paths::relativeToRepo($reportRoot);
             $result['match'] = (string)($config['match'] ?? '');
+            $result['match_list'] = (string)($config['match_list'] ?? '');
+            $result['match_file'] = (string)($config['match_file'] ?? '');
+            $result['selection_match_mode'] = (string)($selectionMetadata['selection_match_mode'] ?? 'exact');
+            $result['selection_source'] = (string)($selectionMetadata['selection_source'] ?? 'none');
+            $result['selection_entries_count'] = (int)($selectionMetadata['selection_entries_count'] ?? 0);
+            $result['selection_entries'] = is_array($selectionMetadata['selection_entries'] ?? null) ? $selectionMetadata['selection_entries'] : [];
+            $result['selection_unmatched_entries'] = is_array($selectionMetadata['selection_unmatched_entries'] ?? null) ? $selectionMetadata['selection_unmatched_entries'] : [];
+            $result['selection_invalid_entries'] = is_array($selectionMetadata['selection_invalid_entries'] ?? null) ? $selectionMetadata['selection_invalid_entries'] : [];
+            $result['selection_errors'] = is_array($selectionMetadata['selection_errors'] ?? null) ? $selectionMetadata['selection_errors'] : [];
+            $result['selection_file'] = (string)($selectionMetadata['selection_file'] ?? '');
+            $result['selection_file_exists'] = (bool)($selectionMetadata['selection_file_exists'] ?? false);
+            $result['selection_match_file'] = (string)($selectionMetadata['selection_match_file'] ?? '');
             $result['selected_common_dir'] = SuiteSelection::commonDir($tests);
             $result['selected_module_scope'] = $moduleScope;
             $result['selected_test_count'] = count($tests);
-            $result['selected_test_files'] = array_map(static fn(array $test): string => (string)($test['rel'] ?? ''), $tests);
+            $result['selected_test_files'] = is_array($selectionMetadata['selected_test_files'] ?? null)
+                ? $selectionMetadata['selected_test_files']
+                : array_map(static fn(array $test): string => (string)($test['rel'] ?? ''), $tests);
             $result['selection_manifest'] = $selectionManifest;
             $result['suite_status'] = SuiteSelection::suiteStatus($result, $tests, $config);
             $result['no_tests_reason'] = SuiteSelection::noTestsReason($result, $config);
@@ -157,6 +177,9 @@ final class SuiteOrchestrator
                 'scope' => (string)($config['scope'] ?? 'all'),
                 'category' => (string)($config['category'] ?? 'all'),
                 'match' => (string)($config['match'] ?? ''),
+                'match_list' => (string)($config['match_list'] ?? ''),
+                'match_file' => (string)($config['match_file'] ?? ''),
+                'selection_match_mode' => (string)($config['match_list_mode'] ?? $config['selection_match_mode'] ?? 'exact'),
             ];
             $result['summary'] = [
                 'total' => (int)$result['tests_total'],
@@ -171,6 +194,7 @@ final class SuiteOrchestrator
                 'jobs' => (int)($policy['jobs'] ?? 1),
                 'db_strategy' => (string)($policy['db_strategy'] ?? 'shared'),
                 'has_db_sensitive_tests' => (bool)($policy['has_db_sensitive_tests'] ?? false),
+                'has_serial_tests' => (bool)($policy['has_serial_tests'] ?? false),
                 'has_db_runtime' => (bool)($policy['has_db_runtime'] ?? false),
                 'requires_db_isolation' => (bool)($policy['requires_db_isolation'] ?? false),
                 'top_level_parallel_supported' => (bool)($policy['top_level_parallel_supported'] ?? true),
@@ -193,6 +217,8 @@ final class SuiteOrchestrator
                 'legacy_fallback' => 'failed_tests',
             ];
             $result['first_failure'] = ReportSummary::firstFailure($result);
+            $result['isolated_rerun'] = IsolatedRerun::run($result, $tests, $config, $buildCommand);
+            self::printIsolatedRerunSummary($result['isolated_rerun']);
 
             $history = HistoryRepository::updateAndAnalyze(
                 $result,
@@ -312,7 +338,7 @@ final class SuiteOrchestrator
     private static function envString(string $key, string $default = ''): string
     {
         $value = getenv($key);
-        if (!is_string($value) || trim($value) === '') {
+        if (!is_string($value) || trim((string)$value) === '') {
             return $default;
         }
 
@@ -418,7 +444,6 @@ final class SuiteOrchestrator
             if (!is_array($warning)) {
                 continue;
             }
-
             $code = (string)($warning['code'] ?? 'GENERIC_WARNING');
             $summary = (string)($warning['summary'] ?? 'warning');
             $key = $code . '|' . $summary;
@@ -431,6 +456,31 @@ final class SuiteOrchestrator
         }
 
         return array_values($merged);
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function printIsolatedRerunSummary(array $payload): void
+    {
+        if (!(bool)($payload['enabled'] ?? false)) {
+            return;
+        }
+
+        $summary = is_array($payload['summary'] ?? null) ? $payload['summary'] : [];
+
+        echo PHP_EOL . '[Isolated Rerun]' . PHP_EOL;
+        echo '  enabled: yes' . PHP_EOL;
+        echo '  attempted: ' . ((bool)($payload['attempted'] ?? false) ? 'yes' : 'no') . PHP_EOL;
+        echo '  failed_files: ' . (int)($payload['failed_files_count'] ?? 0) . PHP_EOL;
+        echo '  confirmed_failure: ' . (int)($summary['confirmed_failures'] ?? 0) . PHP_EOL;
+        echo '  interference_suspected: ' . (int)($summary['interference_suspected'] ?? 0) . PHP_EOL;
+        echo '  inconclusive: ' . (int)($summary['inconclusive'] ?? 0) . PHP_EOL;
+        echo '  coverage_policy: ' . (string)($payload['coverage_policy'] ?? 'unknown') . PHP_EOL;
+        echo '  affects_exit_code: ' . ((bool)($payload['affects_exit_code'] ?? false) ? 'yes' : 'no') . PHP_EOL;
+
+        $reason = trim((string)($payload['reason'] ?? ''));
+        if ($reason !== '') {
+            echo '  reason: ' . $reason . PHP_EOL;
+        }
     }
 
     private static function nowMs(): int
