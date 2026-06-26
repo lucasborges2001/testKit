@@ -122,7 +122,7 @@ final class ConsoleProgressRenderer
 
     private static function progressDetail(): string
     {
-        return strtolower(Env::string('TESTKIT_PROGRESS_DETAIL', 'compact')) === 'verbose'
+        return strtolower(Env::string('TESTKIT_PROGRESS_DETAIL', 'verbose')) === 'verbose'
             ? 'verbose'
             : 'compact';
     }

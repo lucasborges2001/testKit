@@ -153,10 +153,22 @@ final class FailureClassifier
 
     private static function truncate(string $text, int $limit): string
     {
-        if (mb_strlen($text) <= $limit) {
+        if ($limit <= 0) {
+            return '';
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (\mb_strlen($text) <= $limit) {
+                return $text;
+            }
+
+            return rtrim(\mb_substr($text, 0, $limit - 1)) . '…';
+        }
+
+        if (strlen($text) <= $limit) {
             return $text;
         }
 
-        return rtrim(mb_substr($text, 0, $limit - 1)) . '…';
+        return rtrim(substr($text, 0, $limit - 1)) . '…';
     }
 }
