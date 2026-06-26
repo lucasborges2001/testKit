@@ -1,8 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../core/php/reporting/ReportSummary.php';
-require_once __DIR__ . '/../../core/php/reporting/CommandSuggestion.php';
+require_once __DIR__ . '/../../core/php/bootstrap.php';
 
 use Testkit\Core\Reporting\ReportSummary;
 

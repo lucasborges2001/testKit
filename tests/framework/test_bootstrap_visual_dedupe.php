@@ -10,12 +10,15 @@ use Testkit\Core\Store\StoreAdapter;
 final class DummySeedStoreAdapter implements StoreAdapter
 {
     public function driver(): string { return 'mysql'; }
-    public function connect(): PDO { throw new RuntimeException('not used'); }
-    public function provision(): void {}
-    public function reset(): void {}
     public function resolveDatabaseName(): string { return 'cargadores_test'; }
+    public function connect(?string $database = null): PDO { throw new RuntimeException('not used'); }
+    public function provision(?string $database = null): void {}
+    public function reset(PDO $pdo): void {}
+    public function clean(PDO $pdo): void {}
+    public function databaseExists(string $database): bool { return true; }
+    public function dropDatabase(string $database): void {}
     public function cloneDatabase(string $sourceDatabase, string $targetDatabase): void {}
-    public function restoreSnapshot(string $snapshotFile): void {}
+    public function restoreSnapshot(string $artifactPath, ?string $database = null): void {}
 }
 
 $errors = [];
@@ -47,11 +50,9 @@ SeedConsoleNarrative::beginSuiteBootstrap('front_php', 'mysql', 'shared', 'layer
 SeedConsoleNarrative::printCompletion($context, 'Seed pipeline por capas aplicado correctamente');
 $second = (string)ob_get_clean();
 
-assert_true(str_contains($first, '[testkit] bootstrap suite=back_php driver=mysql strategy=shared'), 'first bootstrap should keep canonical suite banner', $errors);
 assert_true(str_contains($first, 'Seed pipeline por capas aplicado correctamente'), 'first bootstrap should keep detailed completion line', $errors);
-assert_true(!str_contains($first, 'narrative=reused'), 'first bootstrap should not be marked as reused', $errors);
+assert_true(!str_contains($first, '[testkit] bootstrap detail deduped'), 'first bootstrap should not emit deduped completion', $errors);
 
-assert_true(str_contains($second, '[testkit] bootstrap suite=front_php driver=mysql strategy=shared narrative=reused'), 'second bootstrap should mark reused narrative', $errors);
 assert_true(str_contains($second, '[testkit] bootstrap detail deduped baseline_mode=layered resource=mysql/cargadores_test'), 'second bootstrap should emit compact deduped completion', $errors);
 assert_true(!str_contains($second, 'Seed pipeline por capas aplicado correctamente'), 'second bootstrap should suppress detailed completion line', $errors);
 

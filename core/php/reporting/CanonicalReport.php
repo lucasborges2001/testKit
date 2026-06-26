@@ -148,6 +148,10 @@ final class CanonicalReport
             || array_key_exists('manifest_path', $report)
             || array_key_exists('seed_state', $report);
 
+        if (array_key_exists('seed_state', $report) && $report['seed_state'] === null) {
+            return null;
+        }
+
         if (is_array($report['seed_state'] ?? null)) {
             return self::normalizeSeedState($report['seed_state']);
         }

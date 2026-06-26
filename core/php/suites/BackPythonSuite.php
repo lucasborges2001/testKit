@@ -8,6 +8,7 @@ use Testkit\Core\Common\Paths;
 use Testkit\Core\Config\RunnerConfig;
 use Testkit\Core\Discovery\TestDiscovery;
 use Testkit\Core\Execution\ProcessRunner;
+use Testkit\Core\Store\StoreRegistry;
 
 final class BackPythonSuite
 {
@@ -27,6 +28,9 @@ final class BackPythonSuite
         $selectedTests = TestDiscovery::discover((string)$config['tests_dir'], ['_unittest.py', '.test.py'], $config);
         if (!(bool)$config['list_only'] && $selectedTests === [] && trim((string)($config['match'] ?? '')) !== '') {
             $config['require_tests'] = false;
+        }
+        if ((bool)$config['list_only'] && StoreRegistry::detectDriver('mysql') === 'none') {
+            ContractWorldBootstrap::prepare('back_python', $repoRoot, 'none');
         }
         if (!(bool)$config['list_only'] && $selectedTests !== []) {
             ContractWorldBootstrap::prepare('back_python', $repoRoot);

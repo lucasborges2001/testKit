@@ -80,6 +80,7 @@ $runId = '20260418T120000Z_agenttest';
 $runRoot = $projectRoot . '/.testkit/reports/runs/' . $runId;
 
 @mkdir($projectRoot . '/.testkit/reports/runs', 0777, true);
+@mkdir($runRoot, 0777, true);
 @mkdir($testkitRoot, 0777, true);
 
 try {

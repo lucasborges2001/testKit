@@ -246,6 +246,22 @@ final class DefinitionOfDoneValidator
     /** @param array<string,mixed> $report */
     private static function reportRequiresSeedState(array $report): bool
     {
+        $seedState = null;
+        $canonical = is_array($report['canonical_report'] ?? null) ? $report['canonical_report'] : null;
+        if (is_array($canonical) && array_key_exists('seed_state', $canonical)) {
+            $seedState = $canonical['seed_state'];
+        } elseif (array_key_exists('seed_state', $report)) {
+            $seedState = $report['seed_state'];
+        }
+
+        if (is_array($seedState)
+            && array_key_exists('available', $seedState)
+            && (bool)($seedState['available'] ?? false) === false
+            && (string)($seedState['reason'] ?? '') === 'not_applicable'
+        ) {
+            return false;
+        }
+
         if ((bool)($report['seed_state_required'] ?? false)) {
             return true;
         }
@@ -405,14 +421,41 @@ final class DefinitionOfDoneValidator
         ];
     }
 
+    private static function isAbsolutePath(string $path): bool
+    {
+        return str_starts_with($path, '/') || preg_match('/^[A-Za-z]:[\\/]/', $path) === 1;
+    }
+
     private static function fileExists(string $relativePath): bool
     {
-        return is_file(Paths::repoRoot() . '/' . $relativePath) || is_file(Paths::testkitRoot() . '/' . ltrim($relativePath, '/'));
+        $candidates = [
+            Paths::repoRoot() . '/' . $relativePath,
+            Paths::testkitRoot() . '/' . ltrim($relativePath, '/'),
+        ];
+        if (self::isAbsolutePath($relativePath)) {
+            array_unshift($candidates, $relativePath);
+        }
+
+        foreach (array_values(array_unique($candidates)) as $path) {
+            if (is_file($path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function fileContains(string $relativePath, string $needle): bool
     {
-        foreach ([Paths::repoRoot() . '/' . $relativePath, Paths::testkitRoot() . '/' . ltrim($relativePath, '/')] as $path) {
+        $candidates = [
+            Paths::repoRoot() . '/' . $relativePath,
+            Paths::testkitRoot() . '/' . ltrim($relativePath, '/'),
+        ];
+        if (self::isAbsolutePath($relativePath)) {
+            array_unshift($candidates, $relativePath);
+        }
+
+        foreach (array_values(array_unique($candidates)) as $path) {
             if (!is_file($path)) {
                 continue;
             }

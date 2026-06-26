@@ -72,6 +72,7 @@ require_once __DIR__ . '/reporting/MetaReportBuilder.php';
 require_once __DIR__ . '/reporting/ReportLocator.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
 require_once __DIR__ . '/reporting/CanonicalReport.php';
+require_once __DIR__ . '/reporting/DefinitionOfDoneValidator.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';
 require_once __DIR__ . '/reporting/ConsoleReporter.php';
 require_once __DIR__ . '/reporting/HistoryRepository.php';
