@@ -107,6 +107,7 @@ require_once __DIR__ . '/suites/MetaOperationalFailureBuilder.php';
 require_once __DIR__ . '/suites/BackPhpSuite.php';
 require_once __DIR__ . '/suites/FrontPhpSuite.php';
 require_once __DIR__ . '/suites/FrontJsSuite.php';
+require_once __DIR__ . '/suites/InfraPhpSuite.php';
 require_once __DIR__ . '/suites/BackPythonSuite.php';
 require_once __DIR__ . '/suites/MigrationContractSuite.php';
 require_once __DIR__ . '/suites/ReferenceContractSuite.php';

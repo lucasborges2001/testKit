@@ -42,6 +42,7 @@ final class TestTagger
             'stress' => ['stress', 'load', 'carga'],
             'slow' => ['slow'],
             'critical' => ['critical', 'critico', 'critica'],
+            'security' => ['security', 'seguridad'],
             'contract' => ['contract', 'contrato'],
             'fragile' => ['fragile', 'flaky', 'inestable'],
             'memory-isolated' => ['memory-isolated', 'memory_isolated', 'memoryisolated'],

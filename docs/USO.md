@@ -47,8 +47,37 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 ./bin/testkit inspect config-schema --json
 ./bin/testkit run --rm testkit php runTest.php --help
 ./bin/testkit run --rm testkit php runTest.php back-php --list
+./bin/testkit run --rm testkit php runTest.php infra-php --list
 ./bin/testkit run --rm testkit php runTest.php reference-contract
 ```
+
+## Suite infra PHP
+
+`infra_php` corre tests operacionales del host bajo `test/infra`.
+Usala para HTTP real, Docker, cookies/auth boundary, seguridad operacional,
+rutas reales y validaciones de infraestructura del integrador.
+
+No la uses para dominio funcional PHP puro: eso corresponde a `back_php`.
+
+```bash
+./bin/testkit run --rm testkit php runTest.php infra
+./bin/testkit run --rm testkit php runTest.php infra-php
+./bin/testkit run --rm -e TEST_CATEGORY=security testkit php runTest.php infra-php
+./bin/testkit run --rm -e TEST_MATCH=superadmin testkit php runTest.php infra-php
+```
+
+Config recomendada del host:
+
+```env
+TK_INFRA_PHP_TEST_ROOTS=test/infra
+TK_INFRA_PHP_TEST_PATTERNS=*.test.php
+TK_INFRA_PHP_TEST_EXCLUDE_ROOTS=
+TK_INFRA_PHP_TEST_EXCLUDE_PATTERNS=*/vendor/*,*/node_modules/*,*/_out/*,*/.testkit/*,*/testkit/*
+```
+
+La suite no ejecuta bootstrap estructural de store por defecto. Si un test infra
+necesita DB, servidor HTTP o Docker levantado, esa precondición debe declararse
+en el test o en la documentación del proyecto.
 
 ## Selección múltiple de tests
 

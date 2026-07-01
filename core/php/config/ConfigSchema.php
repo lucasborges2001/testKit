@@ -18,9 +18,9 @@ final class ConfigSchema
                 ['command' => 'php scripts/inspect.php config-schema --json', 'purpose' => 'serializar el esquema soportado'],
             ],
             'targets' => [
-                'all', 'back', 'front', 'public_html', 'back-php', 'back-py', 'back-python',
-                'python', 'py', 'front-php', 'front-js', 'php', 'js', 'smoke', 'perf',
-                'stress', 'contract', 'critical', 'slow', 'migration-contract', 'migration', 'migrations',
+                'all', 'back', 'front', 'infra', 'public_html', 'back-php', 'back-py', 'back-python',
+                'python', 'py', 'front-php', 'front-js', 'infra-php', 'http', 'php', 'js', 'smoke', 'perf',
+                'stress', 'contract', 'critical', 'security', 'slow', 'migration-contract', 'migration', 'migrations',
             ],
             'support_matrix' => self::supportMatrix(),
             'db_strategies' => [
@@ -59,7 +59,7 @@ final class ConfigSchema
                     'Se usa para filtrar tests por scope visible.',
                     'Si no se declara, el runner cae a all.',
                 ]),
-                self::env('TEST_CATEGORY', 'string', 'all', ['all', 'smoke', 'perf', 'stress', 'contract', 'critical', 'slow'], ['suite', 'meta'], [
+                self::env('TEST_CATEGORY', 'string', 'all', ['all', 'smoke', 'perf', 'stress', 'contract', 'critical', 'security', 'slow'], ['suite', 'meta'], [
                     'Los category targets pueden inyectarla automáticamente si no está definida.',
                     'Una contradicción visible entre target y TEST_CATEGORY debería verse en doctor.',
                 ]),
@@ -176,6 +176,20 @@ final class ConfigSchema
                     'redis es auxiliar, no lifecycle estructural core.',
                     'influx es auxiliar/perfilado, no store principal.',
                     'si TEST_STORE_DRIVER=none y TESTKIT_STACK no se declara, el stack efectivo queda vacío.',
+                ]),
+                self::env('TK_INFRA_PHP_TEST_ROOTS', 'csv', 'test/infra', [], ['infra_php'], [
+                    'Roots repo-relativos para tests operacionales PHP del host.',
+                    'No convierte infra en back funcional ni fuerza bootstrap de store.',
+                ]),
+                self::env('TK_INFRA_PHP_TEST_PATTERNS', 'csv', '*.test.php', [], ['infra_php'], [
+                    'Patrones fnmatch para discovery de infra_php.',
+                    'La convención limpia recomendada es *.test.php.',
+                ]),
+                self::env('TK_INFRA_PHP_TEST_EXCLUDE_ROOTS', 'csv', '', [], ['infra_php'], [
+                    'Roots excluidos del discovery multi-root de infra_php.',
+                ]),
+                self::env('TK_INFRA_PHP_TEST_EXCLUDE_PATTERNS', 'csv', '*/vendor/*,*/node_modules/*,*/_out/*,*/.testkit/*,*/testkit/*', [], ['infra_php'], [
+                    'Patrones repo-relativos excluidos de infra_php.',
                 ]),
                 self::env('TESTKIT_SKIP_STORE_BOOTSTRAP', 'bool', false, ['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'], ['suite'], [
                     'Útil para cortar bootstrap/store cuando la corrida necesita aislar otra cosa.',

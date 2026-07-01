@@ -13,9 +13,10 @@ final class TargetResolver
     public static function resolve(string $target): array
     {
         $map = [
-            'all' => ['back_php', 'back_python', 'front_php', 'front_js'],
+            'all' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
             'back' => ['back_php', 'back_python'],
             'front' => ['front_php', 'front_js'],
+            'infra' => ['infra_php'],
             'public_html' => ['front_php', 'front_js'],
             'back-php' => ['back_php'],
             'back-py' => ['back_python'],
@@ -24,14 +25,17 @@ final class TargetResolver
             'py' => ['back_python'],
             'front-php' => ['front_php'],
             'front-js' => ['front_js'],
-            'php' => ['back_php', 'front_php'],
+            'infra-php' => ['infra_php'],
+            'http' => ['infra_php'],
+            'php' => ['back_php', 'front_php', 'infra_php'],
             'js' => ['front_js'],
-            'smoke' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'perf' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'stress' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'contract' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'critical' => ['back_php', 'back_python', 'front_php', 'front_js'],
-            'slow' => ['back_php', 'back_python', 'front_php', 'front_js'],
+            'smoke' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'perf' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'stress' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'contract' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'critical' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'security' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
+            'slow' => ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php'],
             'migration-contract' => ['migration_contract'],
             'migration' => ['migration_contract'],
             'migrations' => ['migration_contract'],
@@ -46,7 +50,7 @@ final class TargetResolver
         if ($envVal !== '') {
             $parts = array_filter(array_map('trim', explode(',', $envVal)));
             $suites = [];
-            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'migration_contract', 'reference_contract'];
+            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php', 'migration_contract', 'reference_contract'];
 
             foreach ($parts as $suite) {
                 if (!in_array($suite, $validSuites, true)) {

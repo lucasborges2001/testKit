@@ -18,7 +18,7 @@ TESTKIT_BROWSER_TRACE=retain-on-failure
 Un wrapper PHP del host puede ejecutar:
 
 ```bash
-node /workspace/testkit/runners/runBrowserE2e.mjs test/integration/browser/mi_spec.mjs
+node /workspace/testkit/runners/runBrowserE2e.mjs test/front/browser/e2e/mi_spec.e2e.test.mjs
 ```
 
 El browser E2E es runtime/integration. No genera cobertura PHP por si mismo; si
@@ -28,7 +28,7 @@ atribuir cobertura del navegador.
 Recomendacion de ejecucion:
 
 ```bash
-./submodules/Base/testkit/bin/testkit run --rm -e TEST_MATCH=browser testkit php runTest.php all
+./submodules/Base/testkit/bin/testkit run --rm -e TEST_MATCH=browser testkit php runTest.php front-php
 ```
 
 El host puede hacer que el wrapper salte en corridas no filtradas para no volver

@@ -110,6 +110,40 @@ No forman parte de este corte:
 - rutas HTTP
 - inferencia semántica de factories, autoloaders o constantes de negocio
 
+### 2.5) Contrato de suite infra PHP
+
+`infra_php` es una suite operacional para tests propios del host integrador.
+No es equivalente a `back_php` ni debe usarse para dominio funcional PHP puro.
+
+Targets:
+
+- `php runTest.php infra`
+- `php runTest.php infra-php`
+- `php runTest.php http` como alias operacional de `infra_php`
+
+Contrato:
+
+- suite interna: `infra_php`
+- root recomendado: `test/infra`
+- patrón recomendado: `*.test.php`
+- soporta `TEST_CATEGORY`, `TEST_SCOPE`, `TEST_MATCH`, `TEST_MATCH_LIST` y `TEST_MATCH_FILE`
+- genera reportes y coverage bajo el `suite_id` propio `infra_php`
+- puede ejecutar pruebas HTTP reales, Docker, seguridad operacional, cookies y límites de autenticación del host
+- no ejecuta bootstrap estructural de store por defecto
+- no asume que todos los tests infra son DB-sensitive
+
+Variables:
+
+```env
+TK_INFRA_PHP_TEST_ROOTS=test/infra
+TK_INFRA_PHP_TEST_PATTERNS=*.test.php
+TK_INFRA_PHP_TEST_EXCLUDE_ROOTS=
+TK_INFRA_PHP_TEST_EXCLUDE_PATTERNS=*/vendor/*,*/node_modules/*,*/_out/*,*/.testkit/*,*/testkit/*
+```
+
+Los tests infra pueden requerir servidor HTTP, Docker o credenciales de entorno.
+Esa dependencia debe estar declarada por el test, la configuración del host o la documentación del proyecto.
+
 ## 3) Qué controla testkit
 
 `testkit` es dueño de la plataforma de ejecución. Controla:
@@ -162,6 +196,7 @@ Esta tabla es el contrato vigente. No debe leerse como roadmap.
 | Redis | auxiliar | servicio disponible si el stack lo levanta | sin lifecycle estructural en core PHP; no participa en baseline/snapshot/clone |
 | Influx | auxiliar / perfilado | profiling/reporting si está habilitado | no es store driver principal; no participa en seed/bootstrap estructural |
 | `reference-contract` | técnico / estático | scanner PHP de includes resolubles | no analiza JS/CSS/HTML/HTTP ni expresiones dinámicas de negocio |
+| `infra_php` | operacional / host | discovery PHP bajo `test/infra`; HTTP/Docker/security del host; reportes propios | no reemplaza `back_php`; no bootstrap de store por defecto; puede requerir servicios externos levantados |
 
 Semántica operativa:
 

@@ -27,14 +27,14 @@ final class MetaRunner
             $target = 'all';
         }
 
-        $categoryTargets = ['smoke', 'perf', 'stress', 'contract', 'critical', 'slow'];
+        $categoryTargets = ['smoke', 'perf', 'stress', 'contract', 'critical', 'security', 'slow'];
         if (in_array($target, $categoryTargets, true) && Env::string('TEST_CATEGORY', '') === '') {
             putenv('TEST_CATEGORY=' . $target);
         }
 
         $selected = TargetResolver::resolve($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|back-php|back-py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract\n");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|infra|back-php|back-py|front-php|front-js|infra-php|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract\n");
             return 3;
         }
 
@@ -244,6 +244,7 @@ final class MetaRunner
             'back_python' => BackPythonSuite::run(),
             'front_php' => FrontPhpSuite::run(),
             'front_js' => FrontJsSuite::run(),
+            'infra_php' => InfraPhpSuite::run(),
             'migration_contract' => MigrationContractSuite::run(),
             'reference_contract' => ReferenceContractSuite::run(),
             default => 3,

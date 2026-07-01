@@ -18,6 +18,7 @@ Do not infer support from Docker service names, optional compose overlays or par
 | PostgreSQL / `pgsql` | `partial_experimental` / parcial experimental | secondary partial store | basic runtime/provision/reset only where explicitly implemented | no closed snapshot restore; no closed per-worker clone; no closed `migration-contract`; not equivalent to MySQL |
 | Redis | `auxiliary` / auxiliar | optional service | service may be available when the stack starts it | no core PHP structural store lifecycle; no baseline/snapshot/clone participation |
 | Influx | `auxiliary_profiling` / auxiliar/perfilado | profiling/reporting service | profiling/reporting infrastructure where enabled | not a primary store driver; no seed/bootstrap structural lifecycle |
+| `infra_php` | `operational_host_suite` / suite operacional host | PHP tests for host infrastructure | discovers `*.test.php` under `test/infra`, supports category/scope/match filters and suite reports | not equivalent to `back_php`; no structural store bootstrap by default; may require HTTP/Docker runtime |
 
 ## Engine contract
 
@@ -82,6 +83,27 @@ Current contract:
 - may be used for profiling/reporting where explicitly enabled
 - does not participate in structural seed/bootstrap lifecycle
 - is not a primary store driver
+
+## Test suites
+
+### `infra_php`
+
+`infra_php` is a first-class suite for host-owned infrastructure tests.
+
+Current contract:
+
+- targets: `infra`, `infra-php`
+- alias: `http`
+- default root: `test/infra`
+- default pattern: `*.test.php`
+- supported filters: `TEST_CATEGORY`, `TEST_SCOPE`, `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`
+- report and coverage suite id: `infra_php`
+
+Limits:
+
+- It is not a replacement for `back_php` domain or integration tests.
+- It does not run structural store bootstrap by default.
+- Tests may still depend on a running HTTP server, Docker container or explicit credentials; that dependency belongs to the host test contract.
 
 ## DB strategy contract
 

@@ -77,6 +77,19 @@ final class SuiteContractRegistry
             return $base;
         }
 
+        if ($suiteId === 'infra_php') {
+            $base['bootstrap_only'] = false;
+            $base['executes_domain_tests'] = true;
+            $base['operational_host_suite'] = true;
+            $base['supports_http_checks'] = true;
+            $base['supports_docker_checks'] = true;
+            $base['supports_security_boundary_checks'] = true;
+            $base['supports_snapshot_baseline'] = false;
+            $base['supports_layered_baseline'] = false;
+            $base['canonical_seed_state'] = false;
+            return $base;
+        }
+
         $base['bootstrap_only'] = false;
         $base['executes_domain_tests'] = true;
         $base['supports_snapshot_baseline'] = true;
@@ -129,6 +142,22 @@ final class SuiteContractRegistry
                 'supports_per_worker_parallel' => false,
                 'top_level_parallel_safe' => true,
                 'static_scan_only' => true,
+            ];
+        }
+
+        if ($suiteId === 'infra_php') {
+            return [
+                'store_bootstrap' => 'none',
+                'db_sensitivity' => 'discovered',
+                'top_level_parallel_policy' => 'allowed_unless_test_declares_db_sensitive',
+                'intra_suite_parallel_policy' => 'allowed_unless_test_declares_serial_or_db_sensitive',
+                'seed_state_contract' => 'not_applicable',
+                'bootstrap_mutates_store' => false,
+                'supports_per_worker_parallel' => true,
+                'top_level_parallel_safe' => true,
+                'operational_host_suite' => true,
+                'may_require_external_http_server' => true,
+                'may_require_docker_runtime' => true,
             ];
         }
 

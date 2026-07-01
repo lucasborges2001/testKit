@@ -105,6 +105,7 @@ final class Paths
         $legacyName = match (self::sanitizeSuiteId($suiteId)) {
             'back_php' => 'php_back',
             'front_php' => 'php_front',
+            'infra_php' => 'php_infra',
             'back_python' => 'python_back',
             default => self::sanitizeSuiteId($suiteId),
         };
