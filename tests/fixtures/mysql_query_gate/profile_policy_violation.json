@@ -1,0 +1,82 @@
+{
+  "report_version": 2,
+  "schema_version": "mysql-query-profile-report-v2",
+  "instrumentation_version": "1.0",
+  "engine": "mysql",
+  "profile_enabled": true,
+  "run_id": "gate-policy-run",
+  "suite_id": "back_php",
+  "started_at": "2026-07-11T20:00:00Z",
+  "finished_at": "2026-07-11T20:00:10Z",
+  "comparison_context": {
+    "repository": "lucasborges2001/Pruebas",
+    "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "branch": "main",
+    "engine": "mysql",
+    "engine_version": "8.4.0",
+    "dataset_id": "fixture-dataset",
+    "dataset_version": "1",
+    "dataset_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "environment_id": "ci-mysql84",
+    "suite_id": "back_php"
+  },
+  "summary": {
+    "total_queries": 1,
+    "unique_fingerprints": 1,
+    "total_db_time_ms": 100.0
+  },
+  "instrumentation": {
+    "status": "ok",
+    "findings": []
+  },
+  "policy_evaluation": {
+    "enabled": true,
+    "schema_version": "mysql-query-policy-report-v1",
+    "policy_file_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "results": [
+      {
+        "status": "violation",
+        "policy_id": "catalog.max-calls",
+        "effective_policy_id": "catalog.max-calls",
+        "source_policy_id": "catalog.max-calls",
+        "budget_key": "max_calls",
+        "severity": "error",
+        "query_id": "catalog.product_search",
+        "fingerprint": "select * from products where id = ?",
+        "actual": 50,
+        "expected": 10,
+        "operator": "<=",
+        "delta": 40,
+        "unit": "calls",
+        "message": "Call budget exceeded.",
+        "evidence_path": "$.queries[0].calls"
+      }
+    ],
+    "violated_budgets": 1
+  },
+  "baseline_comparison": {
+    "enabled": false
+  },
+  "queries": [
+    {
+      "fingerprint": "select * from products where id = ?",
+      "query_ids": [
+        "catalog.product_search"
+      ],
+      "calls": 50,
+      "sample_count": 50,
+      "tests": [
+        "test/back/catalog.php"
+      ],
+      "modules": [
+        "catalog"
+      ],
+      "scenarios": [
+        "search"
+      ]
+    }
+  ],
+  "explain": {
+    "enabled": false
+  }
+}

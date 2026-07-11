@@ -1,0 +1,9 @@
+{
+  "schema_version": "mysql-query-gate-evidence-v1",
+  "artifacts": [
+    {
+      "path": "comparison_corrupt.json",
+      "sha256": "5715ea11351f96c1faee52d83ceb8edf41612427a452f7acc780b6bc05072500"
+    }
+  ]
+}

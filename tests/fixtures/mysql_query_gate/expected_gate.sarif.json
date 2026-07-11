@@ -1,0 +1,54 @@
+{
+    "version": "2.1.0",
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    "runs": [
+        {
+            "tool": {
+                "driver": {
+                    "name": "testkit-mysql-query-gate",
+                    "informationUri": "https://github.com/lucasborges2001/testKit",
+                    "semanticVersion": "1.0.0",
+                    "rules": [
+                        {
+                            "id": "TKSQL2001",
+                            "name": "TKSQL2001",
+                            "shortDescription": {
+                                "text": "SQL policy violation"
+                            },
+                            "defaultConfiguration": {
+                                "level": "error"
+                            },
+                            "properties": {
+                                "category": "policy.violation",
+                                "source": "testkit-mysql-query-gate"
+                            }
+                        }
+                    ]
+                }
+            },
+            "automationDetails": {
+                "id": "pruebas.sql.ci"
+            },
+            "results": [
+                {
+                    "ruleId": "TKSQL2001",
+                    "level": "error",
+                    "message": {
+                        "text": "Policy catalog.max-calls violated max_calls."
+                    },
+                    "partialFingerprints": {
+                        "primaryLocationLineHash": "sqlgate_ecca8c3d8da7900c6791f2a9"
+                    },
+                    "properties": {
+                        "finding_id": "sqlgate_ecca8c3d8da7900c6791f2a9",
+                        "query_identity": "fingerprint:13083d1fd05a2bdaf4c2b80c2652b847ea2ff068f3f667b94c58d57d154ed138",
+                        "severity": "error",
+                        "confidence": "high",
+                        "stability_status": "not_required",
+                        "suppressed": false
+                    }
+                }
+            ]
+        }
+    ]
+}

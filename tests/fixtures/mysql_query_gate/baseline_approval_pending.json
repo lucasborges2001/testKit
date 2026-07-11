@@ -1,0 +1,182 @@
+{
+    "schema_version": "mysql-query-baseline-approval-report-v1",
+    "generated_at": "2026-07-11T18:00:00Z",
+    "gate_id": "pruebas.sql.ci",
+    "status": "pending_stability",
+    "reason": "more_stable_evidence_required",
+    "eligible": false,
+    "checks": [
+        {
+            "id": "gate_not_blocked",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "decision": "pending_stability"
+            }
+        },
+        {
+            "id": "gate_contract_valid",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "decision": "pending_stability"
+            }
+        },
+        {
+            "id": "no_blocking_suppressions",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "suppressed": 0
+            }
+        },
+        {
+            "id": "no_expired_allowlist",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "expired": []
+            }
+        },
+        {
+            "id": "comparison_compatible_full",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "status": "compatible",
+                "comparison_scope": "full",
+                "timing_comparable": true,
+                "warnings": [],
+                "reasons": [],
+                "checks": {
+                    "engine": {
+                        "baseline": "mysql",
+                        "current": "mysql",
+                        "match": true
+                    },
+                    "suite_id": {
+                        "baseline": "back_php",
+                        "current": "back_php",
+                        "match": true
+                    },
+                    "dataset_id": {
+                        "baseline": "test-dataset",
+                        "current": "test-dataset",
+                        "match": true
+                    },
+                    "dataset_version": {
+                        "baseline": "1",
+                        "current": "1",
+                        "match": true
+                    },
+                    "dataset_hash": {
+                        "baseline": "976e1ae9ca82fa94ba3c1194b1774a65d60b69474b94b086b2d9cf194764c4f1",
+                        "current": "976e1ae9ca82fa94ba3c1194b1774a65d60b69474b94b086b2d9cf194764c4f1",
+                        "match": true
+                    },
+                    "engine_version": {
+                        "baseline": "8.4.0",
+                        "current": "8.4.0",
+                        "match": true
+                    },
+                    "environment_id": {
+                        "baseline": "local-test",
+                        "current": "local-test",
+                        "match": true
+                    }
+                }
+            }
+        },
+        {
+            "id": "stability_satisfied",
+            "status": "pending_stability",
+            "reason": "gate_findings_pending_stability",
+            "evidence": {
+                "confirmed": 0,
+                "pending_stability": 8,
+                "unstable": 0,
+                "insufficient_runs": 7,
+                "insufficient_samples": 1,
+                "incompatible_evidence": 0,
+                "not_required": 0,
+                "evidence_runs": 1
+            }
+        },
+        {
+            "id": "minimum_successful_runs",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "actual": 1,
+                "required": 1
+            }
+        },
+        {
+            "id": "minimum_sample_count",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "actual": 30,
+                "required": 20
+            }
+        },
+        {
+            "id": "instrumentation_integrity",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "policy_acceptance",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "source_commit_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "dataset_identity_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "environment_identity_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        }
+    ],
+    "summary": {
+        "checks": 13,
+        "passed": 12,
+        "failed": 0,
+        "pending_stability": 1,
+        "insufficient_evidence": 0,
+        "incompatible": 0
+    },
+    "inputs": {
+        "gate_report_hash": "546a545bfeaf52da4922292965bebbc300db136d5ebef38f4d29ca5fd594b3f6",
+        "comparison_hash": "0cc5697b0ad0e7827f3edaa7ba8635c641e0997aa027b13a208d7720c4ed6463",
+        "profile_hash": "6c80731d7ab04201ca0e45a8f141a3bf7383176a96e98b64c8f9db9b98ace863"
+    },
+    "criteria": {
+        "minimum_successful_runs": 1,
+        "minimum_sample_count": 20,
+        "maximum_policy_severity": "warning",
+        "require_full_comparison": true,
+        "require_source_commit": true,
+        "require_dataset_identity": true,
+        "require_environment_identity": true,
+        "require_no_suppressions": true,
+        "require_stability": true
+    },
+    "limitations": [
+        "This report does not create, replace, promote, or commit a baseline.",
+        "Baseline approval remains an explicit human-controlled operation."
+    ]
+}

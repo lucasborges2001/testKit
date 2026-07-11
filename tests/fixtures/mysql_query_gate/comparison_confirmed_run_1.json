@@ -1,0 +1,790 @@
+{
+  "schema_version": "mysql-query-comparison-report-v1",
+  "mode": "report_only",
+  "comparison_id": "cmp_bf5c617f94caec2c11b0432c",
+  "generated_at": "2026-07-11T18:00:00Z",
+  "baseline": {
+    "id": "catalog.main",
+    "hash": "ccd142128aa669f6cfddd98e4232bfbee596570ff6ad07fcd942948c6f6d1b7b",
+    "source_commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_profile_hash": "c66d65cfba9b941612a543fa72bfe31522ff3dc1c4224a486ba23e6ef6796e11",
+    "policy_hash": "72993b6cb83904d39a8c73bd0651aa6251288ede5dbc2c7bcbdc54cc5bbf5d77"
+  },
+  "current": {
+    "run_id": "confirm-1",
+    "commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "profile_hash": "50135a426adc9d099a1a73d202e668afc2c43cf4adb651a15c7f210e68a8de07",
+    "policy_hash": "72993b6cb83904d39a8c73bd0651aa6251288ede5dbc2c7bcbdc54cc5bbf5d77"
+  },
+  "compatibility": {
+    "status": "compatible",
+    "comparison_scope": "full",
+    "timing_comparable": true,
+    "warnings": [],
+    "reasons": [],
+    "checks": {
+      "engine": {
+        "baseline": "mysql",
+        "current": "mysql",
+        "match": true
+      },
+      "suite_id": {
+        "baseline": "back_php",
+        "current": "back_php",
+        "match": true
+      },
+      "dataset_id": {
+        "baseline": "test-dataset",
+        "current": "test-dataset",
+        "match": true
+      },
+      "dataset_version": {
+        "baseline": "1",
+        "current": "1",
+        "match": true
+      },
+      "dataset_hash": {
+        "baseline": "976e1ae9ca82fa94ba3c1194b1774a65d60b69474b94b086b2d9cf194764c4f1",
+        "current": "976e1ae9ca82fa94ba3c1194b1774a65d60b69474b94b086b2d9cf194764c4f1",
+        "match": true
+      },
+      "engine_version": {
+        "baseline": "8.4.0",
+        "current": "8.4.0",
+        "match": true
+      },
+      "environment_id": {
+        "baseline": "local-test",
+        "current": "local-test",
+        "match": true
+      }
+    }
+  },
+  "summary": {
+    "matched": 2,
+    "new": 0,
+    "removed": 0,
+    "regressed": 1,
+    "improved": 0,
+    "unchanged": 1,
+    "plan_changed": 0,
+    "insufficient_data": 0,
+    "incompatible_context": 0,
+    "structural_only": 0,
+    "ambiguous": 0,
+    "visible_results": 2,
+    "truncated_results": 0
+  },
+  "global_metrics": [
+    {
+      "metric": "total_queries",
+      "baseline": 5,
+      "current": 5,
+      "delta": 0,
+      "delta_pct": 0,
+      "direction": "unchanged",
+      "status": "unchanged",
+      "confidence": "measured",
+      "reason": "within_tolerance",
+      "thresholds": {
+        "absolute": 1,
+        "percent": 10,
+        "minimum_time_ms_for_pct": 0
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    },
+    {
+      "metric": "unique_fingerprints",
+      "baseline": 2,
+      "current": 2,
+      "delta": 0,
+      "delta_pct": 0,
+      "direction": "unchanged",
+      "status": "unchanged",
+      "confidence": "measured",
+      "reason": "within_tolerance",
+      "thresholds": {
+        "absolute": 1,
+        "percent": 10,
+        "minimum_time_ms_for_pct": 0
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    },
+    {
+      "metric": "instrumentation_findings",
+      "baseline": 0,
+      "current": 0,
+      "delta": 0,
+      "delta_pct": null,
+      "direction": "unchanged",
+      "status": "unchanged",
+      "confidence": "measured",
+      "reason": "baseline_zero",
+      "thresholds": {
+        "absolute": 1,
+        "percent": 10,
+        "minimum_time_ms_for_pct": 0
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    },
+    {
+      "metric": "uninstrumented_findings",
+      "baseline": 0,
+      "current": 0,
+      "delta": 0,
+      "delta_pct": null,
+      "direction": "unchanged",
+      "status": "unchanged",
+      "confidence": "measured",
+      "reason": "baseline_zero",
+      "thresholds": {
+        "absolute": 1,
+        "percent": 10,
+        "minimum_time_ms_for_pct": 0
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    },
+    {
+      "metric": "connections_observed",
+      "baseline": 1,
+      "current": 1,
+      "delta": 0,
+      "delta_pct": 0,
+      "direction": "unchanged",
+      "status": "unchanged",
+      "confidence": "measured",
+      "reason": "within_tolerance",
+      "thresholds": {
+        "absolute": 1,
+        "percent": 10,
+        "minimum_time_ms_for_pct": 0
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    },
+    {
+      "metric": "total_sql_time_ms",
+      "baseline": 140,
+      "current": 215,
+      "delta": 75,
+      "delta_pct": 53.571,
+      "direction": "increased",
+      "status": "regressed",
+      "confidence": "measured",
+      "reason": "threshold_exceeded",
+      "thresholds": {
+        "absolute": 5,
+        "percent": 20,
+        "minimum_time_ms_for_pct": 5
+      },
+      "baseline_approximate": false,
+      "current_approximate": false
+    }
+  ],
+  "queries": [
+    {
+      "identity": "query_id:catalog.product_search",
+      "query_id": "catalog.product_search",
+      "query_ids": [
+        "catalog.product_search"
+      ],
+      "fingerprint": "select * from products where category_id = ? order by created_at desc",
+      "sample_sql": "select * from products where category_id = ? order by created_at desc",
+      "overall_status": "regressed",
+      "metric_results": [
+        {
+          "metric": "calls",
+          "baseline": 3,
+          "current": 3,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 1,
+            "percent": 10,
+            "minimum_time_ms_for_pct": 0
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "sample_count",
+          "baseline": 30,
+          "current": 30,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 1,
+            "percent": 10,
+            "minimum_time_ms_for_pct": 0
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "min_ms",
+          "baseline": 20,
+          "current": 20,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "avg_ms",
+          "baseline": 30,
+          "current": 55,
+          "delta": 25,
+          "delta_pct": 83.333,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "max_ms",
+          "baseline": 45,
+          "current": 90,
+          "delta": 45,
+          "delta_pct": 100,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "total_ms",
+          "baseline": 90,
+          "current": 165,
+          "delta": 75,
+          "delta_pct": 83.333,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p50_ms",
+          "baseline": 30,
+          "current": 50,
+          "delta": 20,
+          "delta_pct": 66.667,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p95_ms",
+          "baseline": 42,
+          "current": 80,
+          "delta": 38,
+          "delta_pct": 90.476,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p99_ms",
+          "baseline": 44,
+          "current": 88,
+          "delta": 44,
+          "delta_pct": 100,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "standard_deviation_ms",
+          "baseline": 8,
+          "current": 15,
+          "delta": 7,
+          "delta_pct": 87.5,
+          "direction": "increased",
+          "status": "regressed",
+          "confidence": "measured",
+          "reason": "threshold_exceeded",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        }
+      ],
+      "plan_result": {
+        "status": "unchanged",
+        "baseline_signature": "same",
+        "current_signature": "same",
+        "added_flags": [],
+        "removed_flags": [],
+        "added_keys": [],
+        "removed_keys": [],
+        "access_type_changes": [],
+        "estimated_rows": {
+          "baseline": 100,
+          "current": 100,
+          "delta": 0,
+          "delta_pct": 0,
+          "reason": ""
+        },
+        "baseline_policy_violations": [],
+        "current_policy_violations": []
+      },
+      "classification": {
+        "baseline": "ok",
+        "current": "ok",
+        "changed": false
+      },
+      "capture_methods": {
+        "baseline": {
+          "profiled_pdo.statement_execute": 3
+        },
+        "current": {
+          "profiled_pdo.statement_execute": 3
+        },
+        "changed": false
+      },
+      "contexts": {
+        "modules": {
+          "baseline": [
+            "catalog"
+          ],
+          "current": [
+            "catalog"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "scenarios": {
+          "baseline": [
+            "product_search"
+          ],
+          "current": [
+            "product_search"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "suites": {
+          "baseline": [
+            "back_php"
+          ],
+          "current": [
+            "back_php"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "tests": {
+          "baseline": [
+            "test/back/catalog/search.test.php"
+          ],
+          "current": [
+            "test/back/catalog/search.test.php"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        }
+      },
+      "policy": {
+        "baseline_status": "pass",
+        "current_status": "pass",
+        "baseline_violations_count": 0,
+        "current_violations_count": 0
+      },
+      "tolerances": {
+        "time_regression_pct": 20,
+        "time_regression_abs_ms": 5,
+        "calls_regression_pct": 10,
+        "calls_regression_abs": 1,
+        "rows_regression_pct": 25,
+        "rows_regression_abs": 100,
+        "minimum_time_ms_for_pct": 5,
+        "ignore_metrics": []
+      }
+    },
+    {
+      "identity": "fingerprint:87c9209a1b6c496d8f1e8ddb79df5b4db098f9bb2f1f467f95f23b2c029fce9a",
+      "query_id": "",
+      "query_ids": [],
+      "fingerprint": "select * from ledger where account_id = ? and created_at between ? and ?",
+      "sample_sql": "select * from ledger where account_id = ? and created_at between ? and ?",
+      "overall_status": "unchanged",
+      "metric_results": [
+        {
+          "metric": "calls",
+          "baseline": 2,
+          "current": 2,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 1,
+            "percent": 10,
+            "minimum_time_ms_for_pct": 0
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "sample_count",
+          "baseline": 30,
+          "current": 30,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 1,
+            "percent": 10,
+            "minimum_time_ms_for_pct": 0
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "min_ms",
+          "baseline": 15,
+          "current": 15,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "avg_ms",
+          "baseline": 25,
+          "current": 25,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "max_ms",
+          "baseline": 35,
+          "current": 35,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "total_ms",
+          "baseline": 50,
+          "current": 50,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p50_ms",
+          "baseline": 25,
+          "current": 25,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p95_ms",
+          "baseline": 34,
+          "current": 34,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "p99_ms",
+          "baseline": 34.8,
+          "current": 34.8,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        },
+        {
+          "metric": "standard_deviation_ms",
+          "baseline": 7,
+          "current": 7,
+          "delta": 0,
+          "delta_pct": 0,
+          "direction": "unchanged",
+          "status": "unchanged",
+          "confidence": "measured",
+          "reason": "within_tolerance",
+          "thresholds": {
+            "absolute": 5,
+            "percent": 20,
+            "minimum_time_ms_for_pct": 5
+          },
+          "baseline_approximate": false,
+          "current_approximate": false
+        }
+      ],
+      "plan_result": {
+        "status": "unchanged",
+        "baseline_signature": "same",
+        "current_signature": "same",
+        "added_flags": [],
+        "removed_flags": [],
+        "added_keys": [],
+        "removed_keys": [],
+        "access_type_changes": [],
+        "estimated_rows": {
+          "baseline": 100,
+          "current": 100,
+          "delta": 0,
+          "delta_pct": 0,
+          "reason": ""
+        },
+        "baseline_policy_violations": [],
+        "current_policy_violations": []
+      },
+      "classification": {
+        "baseline": "ok",
+        "current": "ok",
+        "changed": false
+      },
+      "capture_methods": {
+        "baseline": {
+          "profiled_pdo.statement_execute": 2
+        },
+        "current": {
+          "profiled_pdo.statement_execute": 2
+        },
+        "changed": false
+      },
+      "contexts": {
+        "modules": {
+          "baseline": [
+            "accounting"
+          ],
+          "current": [
+            "accounting"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "scenarios": {
+          "baseline": [
+            "ledger_range"
+          ],
+          "current": [
+            "ledger_range"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "suites": {
+          "baseline": [
+            "back_php"
+          ],
+          "current": [
+            "back_php"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        },
+        "tests": {
+          "baseline": [
+            "test/back/accounting/ledger.test.php"
+          ],
+          "current": [
+            "test/back/accounting/ledger.test.php"
+          ],
+          "added": [],
+          "removed": [],
+          "changed": false
+        }
+      },
+      "policy": {
+        "baseline_status": "pass",
+        "current_status": "pass",
+        "baseline_violations_count": 0,
+        "current_violations_count": 0
+      },
+      "tolerances": {
+        "time_regression_pct": 20,
+        "time_regression_abs_ms": 5,
+        "calls_regression_pct": 10,
+        "calls_regression_abs": 1,
+        "rows_regression_pct": 25,
+        "rows_regression_abs": 100,
+        "minimum_time_ms_for_pct": 5,
+        "ignore_metrics": []
+      }
+    }
+  ],
+  "new_queries": [],
+  "removed_queries": [],
+  "ambiguous_queries": [],
+  "recommendations": [
+    {
+      "code": "review_regressed_query",
+      "message": "Review metrics and normalized plan evidence for query_id:catalog.product_search."
+    }
+  ],
+  "limitations": [
+    "Comparison is report-only and cannot fail a suite in phase 4.",
+    "Removed queries may indicate missing test coverage rather than an improvement.",
+    "Latency conclusions require compatible engine, dataset, environment, and suite metadata.",
+    "EXPLAIN plan comparison uses normalized structural evidence, not raw JSON plan text."
+  ],
+  "warnings": [],
+  "_query_summaries": {
+    "fingerprint:87c9209a1b6c496d8f1e8ddb79df5b4db098f9bb2f1f467f95f23b2c029fce9a": {
+      "baseline_status": "unchanged",
+      "baseline_metric_regressions": 0,
+      "baseline_plan_status": "unchanged"
+    },
+    "query_id:catalog.product_search": {
+      "baseline_status": "regressed",
+      "baseline_metric_regressions": 7,
+      "baseline_plan_status": "regressed"
+    }
+  }
+}

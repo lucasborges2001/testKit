@@ -1,0 +1,17 @@
+{
+  "schema_version": "mysql-query-gate-evidence-v1",
+  "artifacts": [
+    {
+      "path": "comparison_confirmed_run_1.json",
+      "sha256": "f6b4570e86fa7dc1176f7739db5b484d1e6aaecc03dc1d17a749c20d14a27e4e"
+    },
+    {
+      "path": "comparison_confirmed_run_2.json",
+      "sha256": "fa3e3ae3d2f838a757e0f4047e89c2ca27339e6f921a470e6e7ce241553daa05"
+    },
+    {
+      "path": "comparison_confirmed_run_3.json",
+      "sha256": "670559240f74fe45e44f4e8cab0a68c82b4c7be87ceecb1c7b92ef3726ccbc99"
+    }
+  ]
+}

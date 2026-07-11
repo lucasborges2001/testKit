@@ -1,0 +1,69 @@
+{
+  "report_version": 2,
+  "schema_version": "mysql-query-profile-report-v2",
+  "instrumentation_version": "1.0",
+  "engine": "mysql",
+  "profile_enabled": true,
+  "run_id": "gate-instrumentation-run",
+  "suite_id": "back_php",
+  "started_at": "2026-07-11T20:00:00Z",
+  "finished_at": "2026-07-11T20:00:10Z",
+  "comparison_context": {
+    "repository": "lucasborges2001/Pruebas",
+    "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "branch": "main",
+    "engine": "mysql",
+    "engine_version": "8.4.0",
+    "dataset_id": "fixture-dataset",
+    "dataset_version": "1",
+    "dataset_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "environment_id": "ci-mysql84",
+    "suite_id": "back_php"
+  },
+  "summary": {
+    "total_queries": 1,
+    "unique_fingerprints": 1,
+    "total_db_time_ms": 100.0
+  },
+  "instrumentation": {
+    "status": "warn",
+    "findings": [
+      {
+        "code": "uninstrumented_direct_query",
+        "severity": "warn",
+        "message": "Direct query bypassed canonical instrumentation.",
+        "context": {
+          "source": "back/catalog/repo.php:42"
+        }
+      }
+    ]
+  },
+  "policy_evaluation": {
+    "enabled": false
+  },
+  "baseline_comparison": {
+    "enabled": false
+  },
+  "queries": [
+    {
+      "fingerprint": "select * from products where id = ?",
+      "query_ids": [
+        "catalog.product_search"
+      ],
+      "calls": 50,
+      "sample_count": 50,
+      "tests": [
+        "test/back/catalog.php"
+      ],
+      "modules": [
+        "catalog"
+      ],
+      "scenarios": [
+        "search"
+      ]
+    }
+  ],
+  "explain": {
+    "enabled": false
+  }
+}

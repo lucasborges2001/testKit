@@ -221,3 +221,52 @@ baseline_plan_status
 ```
 
 Los lectores v2 anteriores deben ignorar estos campos. `policy_evaluation` y `baseline_comparison` permanecen independientes. La identidad del reporte sigue siendo `report_version=2` y `mysql-query-profile-report-v2`.
+
+## Extensión compatible: `mysql_gate` / `quality_gate`
+
+Fase 5 mantiene `report_version=2` y `schema_version=mysql-query-profile-report-v2`.
+
+Sin gate configurado:
+
+```json
+{
+  "mysql_gate": {
+    "enabled": false,
+    "schema_version": "mysql-query-gate-report-v1",
+    "mode": "off",
+    "decision": {"status": "disabled", "exit_code": 0}
+  }
+}
+```
+
+Con gate habilitado, el perfil conserva únicamente un attachment acotado con:
+
+```text
+enabled, schema_version, gate_id, mode, decision, summary,
+stability, allowlist counts, outputs, baseline_approval, limitations
+```
+
+El artifact completo se publica como `mysql_gate_latest.json` y usa el contrato `mysql-query-gate-report-v1`.
+
+Cada query puede agregar:
+
+```text
+gate_status
+gate_findings_count
+gate_blocking_count
+```
+
+`quality_gate` es el mismo attachment canónico expuesto para consumers genéricos. No modifica `classification`, `policy_status` ni `baseline_status`.
+
+La suite puede agregar:
+
+```text
+mysql_gate
+quality_gate
+blocking_findings
+gate_mode
+gate_exit_code
+quality_gate_status
+```
+
+Un exit code existente no se reemplaza. El gate solo transforma una suite exitosa cuando su decisión requiere `2`, `3`, `4` o `5`.

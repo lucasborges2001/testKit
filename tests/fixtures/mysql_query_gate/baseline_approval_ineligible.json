@@ -1,0 +1,143 @@
+{
+    "schema_version": "mysql-query-baseline-approval-report-v1",
+    "generated_at": "2026-07-11T20:00:10Z",
+    "gate_id": "pruebas.sql.ci",
+    "status": "incompatible",
+    "reason": "comparison_context_incompatible",
+    "eligible": false,
+    "checks": [
+        {
+            "id": "gate_not_blocked",
+            "status": "fail",
+            "reason": "gate_has_blocking_findings",
+            "evidence": {
+                "decision": "blocked"
+            }
+        },
+        {
+            "id": "gate_contract_valid",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "decision": "blocked"
+            }
+        },
+        {
+            "id": "no_blocking_suppressions",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "suppressed": 0
+            }
+        },
+        {
+            "id": "no_expired_allowlist",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "expired": []
+            }
+        },
+        {
+            "id": "comparison_compatible_full",
+            "status": "incompatible",
+            "reason": "comparison_not_full_and_compatible",
+            "evidence": {
+                "status": "insufficient_metadata",
+                "comparison_scope": "none",
+                "timing_comparable": false
+            }
+        },
+        {
+            "id": "stability_satisfied",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "confirmed": 0,
+                "pending_stability": 0,
+                "unstable": 0,
+                "insufficient_runs": 0,
+                "insufficient_samples": 0,
+                "incompatible_evidence": 0,
+                "not_required": 1,
+                "evidence_runs": 1
+            }
+        },
+        {
+            "id": "minimum_successful_runs",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "actual": 1,
+                "required": 1
+            }
+        },
+        {
+            "id": "minimum_sample_count",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": {
+                "actual": 50,
+                "required": 20
+            }
+        },
+        {
+            "id": "instrumentation_integrity",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "policy_acceptance",
+            "status": "fail",
+            "reason": "policy_violations_exceed_approval_severity",
+            "evidence": []
+        },
+        {
+            "id": "source_commit_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "dataset_identity_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        },
+        {
+            "id": "environment_identity_present",
+            "status": "pass",
+            "reason": "criterion_satisfied",
+            "evidence": []
+        }
+    ],
+    "summary": {
+        "checks": 13,
+        "passed": 10,
+        "failed": 2,
+        "pending_stability": 0,
+        "insufficient_evidence": 0,
+        "incompatible": 1
+    },
+    "inputs": {
+        "gate_report_hash": "6df0ef4c22be5f32966757871163cb5ed61381fc68b77ae7ac66198b2cb1f4c6",
+        "comparison_hash": "",
+        "profile_hash": "c0ebf9479f01044dfe0ab577727cbe7e2310ea4a22ec88e91d16b0dd0941c055"
+    },
+    "criteria": {
+        "minimum_successful_runs": 1,
+        "minimum_sample_count": 20,
+        "maximum_policy_severity": "warning",
+        "require_full_comparison": true,
+        "require_source_commit": true,
+        "require_dataset_identity": true,
+        "require_environment_identity": true,
+        "require_no_suppressions": true,
+        "require_stability": true
+    },
+    "limitations": [
+        "This report does not create, replace, promote, or commit a baseline.",
+        "Baseline approval remains an explicit human-controlled operation."
+    ]
+}

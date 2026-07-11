@@ -10,6 +10,9 @@ use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyReporter;
 use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineConfig;
 use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineException;
 use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineReporter;
+use Testkit\Core\DbProfiling\Gate\MysqlQueryGateConfig;
+use Testkit\Core\DbProfiling\Gate\MysqlQueryGateException;
+use Testkit\Core\DbProfiling\Gate\MysqlQueryGateReporter;
 
 final class MysqlProfileReporter
 {
@@ -205,6 +208,7 @@ final class MysqlProfileReporter
                 'summary' => (array)($profile['baseline_comparison']['summary'] ?? []),
                 'report_path' => (string)(MysqlQueryBaselineConfig::publicConfig(MysqlQueryBaselineConfig::fromEnv())['output']['report_path'] ?? ''),
             ],
+            'mysql_gate' => MysqlQueryGateReporter::suiteAttachment($profile),
             'top_findings' => [
                 'by_max_ms' => array_slice((array)($profile['rankings']['by_max_ms'] ?? []), 0, 5),
                 'by_total_ms' => array_slice((array)($profile['rankings']['by_total_ms'] ?? []), 0, 5),
@@ -591,7 +595,7 @@ final class MysqlProfileReporter
                 'PHP userland cannot transparently intercept every existing new PDO(...) call.',
                 'Overall application-query capture coverage is unknown without an independent denominator.',
                 'EXPLAIN is optional and does not execute unsafe or parameterized samples.',
-                'No schema changes, CREATE INDEX automation, baseline auto-accept, or performance gates are implemented in phase 4.',
+                'No schema changes, CREATE INDEX automation, baseline auto-accept, hidden reruns, or host workflow changes are implemented by the SQL gate.',
             ],
         ];
 
@@ -641,6 +645,48 @@ final class MysqlProfileReporter
         } else {
             $report = MysqlQueryBaselineReporter::attachDisabled($report);
         }
+
+        $gateConfig = is_array($config['gate'] ?? null)
+            ? $config['gate']
+            : MysqlQueryGateConfig::fromEnv();
+        if (!empty($gateConfig['enabled'])) {
+            try {
+                $gate = MysqlQueryGateReporter::evaluate($report, $gateConfig);
+            } catch (MysqlQueryGateException $e) {
+                $gate = MysqlQueryGateReporter::invalidReport(
+                    $e,
+                    '',
+                    (string)($gateConfig['mode_override'] ?? MysqlQueryGateConfig::MODE_OFF)
+                );
+            }
+            $report = MysqlQueryGateReporter::attachToProfile($report, $gate);
+            try {
+                MysqlQueryGateReporter::writeArtifacts($gate, $gateConfig);
+                $report = MysqlQueryGateReporter::attachToProfile($report, $gate);
+            } catch (MysqlQueryGateException $e) {
+                $gate = MysqlQueryGateReporter::invalidReport(
+                    $e,
+                    (string)($gate['gate_id'] ?? ''),
+                    (string)($gate['mode'] ?? MysqlQueryGateConfig::MODE_OFF)
+                );
+                $report = MysqlQueryGateReporter::attachToProfile($report, $gate);
+            } catch (\Throwable $e) {
+                $gate = MysqlQueryGateReporter::invalidReport(
+                    new MysqlQueryGateException(
+                        'Gate artifact publication failed: ' . InstrumentationContext::sanitizeText($e->getMessage(), 160),
+                        '$.outputs',
+                        'gate_artifact_write_failed',
+                        MysqlQueryGateConfig::EXIT_OPERATIONAL
+                    ),
+                    (string)($gate['gate_id'] ?? ''),
+                    (string)($gate['mode'] ?? MysqlQueryGateConfig::MODE_OFF)
+                );
+                $report = MysqlQueryGateReporter::attachToProfile($report, $gate);
+            }
+        } else {
+            $report['mysql_gate'] = MysqlQueryGateReporter::profileAttachment(MysqlQueryGateConfig::disabledResult());
+            $report['quality_gate'] = $report['mysql_gate'];
+        }
         return $report;
     }
 
@@ -687,6 +733,8 @@ final class MysqlProfileReporter
             'explain' => MysqlExplainAnalyzer::emptyResult((bool)($config['explain']['enabled'] ?? false)),
             'policy_evaluation' => MysqlQueryPolicyConfig::disabledResult(),
             'baseline_comparison' => MysqlQueryBaselineConfig::disabledResult(),
+            'mysql_gate' => MysqlQueryGateReporter::profileAttachment(MysqlQueryGateConfig::disabledResult()),
+            'quality_gate' => MysqlQueryGateReporter::profileAttachment(MysqlQueryGateConfig::disabledResult()),
             'profiler_metrics' => [
                 'collector_record_calls' => 0,
                 'collector_total_overhead_ms' => 0.0,

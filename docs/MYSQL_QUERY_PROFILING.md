@@ -383,3 +383,89 @@ Contratos completos:
 
 - `docs/contracts/mysql-query-baseline-v1.md`;
 - `docs/contracts/mysql-query-comparison-report-v1.md`.
+
+## Quality gate gradual y outputs CI — Fase 5
+
+La Fase 5 convierte evidencia ya calculada en decisiones auditables. No recalcula policies ni comparaciones.
+
+Activación integrada:
+
+```bash
+TESTKIT_DB_PROFILE=1 \
+TESTKIT_DB_PROFILE_POLICY_FILE=test/sql/mysql-profile-policies.json \
+TESTKIT_DB_PROFILE_BASELINE_FILE=test/sql/baselines/back-php.v1.json \
+TESTKIT_DB_PROFILE_GATE_FILE=test/sql/mysql-query-gate.json \
+TESTKIT_DB_PROFILE_GATE_MODE=fail \
+php runTest.php back-php
+```
+
+Variables:
+
+```text
+TESTKIT_DB_PROFILE_GATE_FILE
+TESTKIT_DB_PROFILE_GATE_MODE
+TESTKIT_DB_PROFILE_GATE_ALLOWLIST_FILE
+TESTKIT_DB_PROFILE_GATE_REPORT_PATH
+TESTKIT_DB_PROFILE_GATE_HISTORY_PATH
+TESTKIT_DB_PROFILE_GATE_JUNIT_PATH
+TESTKIT_DB_PROFILE_GATE_SARIF_PATH
+TESTKIT_DB_PROFILE_GATE_SUMMARY_PATH
+TESTKIT_DB_PROFILE_GATE_EVIDENCE_FILE
+TESTKIT_DB_PROFILE_GATE_GITHUB_ANNOTATIONS
+TESTKIT_DB_PROFILE_GATE_MAX_FINDINGS
+TESTKIT_DB_PROFILE_GATE_MAX_ANNOTATIONS
+TESTKIT_DB_PROFILE_BASELINE_APPROVAL_REPORT_PATH
+```
+
+Defaults:
+
+```text
+sin gate file: disabled/off
+JSON: .testkit/reports/mysql_gate_latest.json
+history: .testkit/history/mysql_gate/
+JUnit: .testkit/reports/mysql_gate.junit.xml
+SARIF: .testkit/reports/mysql_gate.sarif
+summary: .testkit/reports/mysql_gate_summary.md
+approval: .testkit/reports/mysql_baseline_approval_latest.json
+```
+
+CLI:
+
+```bash
+php scripts/query_gate.php \
+  --profile .testkit/reports/mysql_profile_latest.json \
+  --gate test/sql/mysql-query-gate.json
+
+php scripts/query_baseline_approval.php \
+  --gate-report .testkit/reports/mysql_gate_latest.json \
+  --comparison .testkit/reports/mysql_comparison_latest.json
+```
+
+Exit codes del gate:
+
+```text
+0 evaluación sin bloqueo, off/report/warn
+2 error operacional
+3 contrato inválido
+4 input incompatible no recuperable
+5 bloqueado en fail
+```
+
+Un exit previo no cero de la suite siempre se conserva.
+
+Evidencia temporal puede bloquear solo después de alcanzar corridas, confirmaciones, samples, edad y contexto compatibles. La integración normal no repite suites de forma oculta.
+
+Contratos:
+
+- `docs/contracts/mysql-query-gate-v1.md`;
+- `docs/contracts/mysql-query-gate-report-v1.md`;
+- `docs/contracts/mysql-query-gate-allowlist-v1.md`;
+- `docs/contracts/mysql-query-gate-evidence-v1.md`;
+- `docs/contracts/mysql-query-baseline-approval-report-v1.md`.
+
+Limitaciones:
+
+- workflows host y corridas repetidas quedan para Fase 6;
+- no hay comentarios automáticos en PR;
+- no hay auto-promote ni actualización de baseline;
+- no se crean índices ni se reescribe SQL.

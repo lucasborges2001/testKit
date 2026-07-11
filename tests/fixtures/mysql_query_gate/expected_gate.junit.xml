@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="testkit.mysql.query-gate" tests="1" failures="1" errors="0" skipped="0" time="0">
+    <properties>
+      <property name="gate.mode" value="fail" />
+      <property name="gate.decision" value="blocked" />
+    </properties>
+    <testcase classname="testkit.mysql.query-gate.policy.violation" name="policy.violation:fingerprint:13083d1fd05a2bdaf4c2b80c2652b847ea2ff068f3f667b94c58d57d154ed138" time="0">
+      <failure type="mysql-query-gate" message="Policy catalog.max-calls violated max_calls.">finding_id=sqlgate_ecca8c3d8da7900c6791f2a9
+category=policy.violation
+decision=block
+severity=error
+confidence=high
+stability=not_required
+query_identity=fingerprint:13083d1fd05a2bdaf4c2b80c2652b847ea2ff068f3f667b94c58d57d154ed138
+message=Policy catalog.max-calls violated max_calls.</failure>
+    </testcase>
+</testsuite>

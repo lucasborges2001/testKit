@@ -6,6 +6,7 @@ namespace Testkit\Core\DbProfiling;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyConfig;
 use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineConfig;
+use Testkit\Core\DbProfiling\Gate\MysqlQueryGateConfig;
 
 final class MysqlProfileConfig
 {
@@ -73,6 +74,7 @@ final class MysqlProfileConfig
             ],
             'policy' => MysqlQueryPolicyConfig::fromEnv(),
             'baseline' => MysqlQueryBaselineConfig::fromEnv(),
+            'gate' => MysqlQueryGateConfig::fromEnv(),
             'explain' => [
                 'enabled_env' => self::EXPLAIN_ENABLED_ENV,
                 'enabled' => self::isExplainEnabled(),
@@ -112,6 +114,9 @@ final class MysqlProfileConfig
             ),
             'baseline' => MysqlQueryBaselineConfig::publicConfig(
                 is_array($config['baseline'] ?? null) ? $config['baseline'] : []
+            ),
+            'gate' => MysqlQueryGateConfig::publicConfig(
+                is_array($config['gate'] ?? null) ? $config['gate'] : []
             ),
             'explain' => self::publicExplainConfig(
                 is_array($config['explain'] ?? null) ? $config['explain'] : []

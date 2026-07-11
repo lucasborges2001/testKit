@@ -9,6 +9,7 @@ use Testkit\Core\Common\Env;
 use Testkit\Core\Common\Paths;
 use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\RunnerConfig;
+use Testkit\Core\DbProfiling\Gate\MysqlQueryGateReporter;
 use Testkit\Core\DbProfiling\MysqlProfileConfig;
 use Testkit\Core\DbProfiling\MysqlProfileReporter;
 use Testkit\Core\Discovery\PhpDiscoveryConfig;
@@ -206,6 +207,10 @@ final class BackPhpSuite
                         'suite_id' => (string)($config['suite_id'] ?? 'back_php'),
                     ]);
                     $result['mysql_profile'] = MysqlProfileReporter::suiteAttachment($profile);
+                    MysqlQueryGateReporter::applyToSuiteResult(
+                        $result,
+                        MysqlQueryGateReporter::suiteAttachment($profile)
+                    );
                 }
 
                 if ($influxProfileEnabled) {

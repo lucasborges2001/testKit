@@ -1,0 +1,66 @@
+{
+  "schema_version": "mysql-query-gate-v1",
+  "gate": {
+    "id": "pruebas.sql.ci",
+    "description": "SQL gate test fixture",
+    "mode": "report",
+    "defaults": {
+      "minimum_severity": "info",
+      "on_incompatible_context": "report",
+      "on_insufficient_data": "report",
+      "on_invalid_embedded_evidence": "error"
+    },
+    "stability": {
+      "temporal": {
+        "required_runs": 3,
+        "required_confirmations": 2,
+        "minimum_sample_count": 20,
+        "maximum_age_hours": 720
+      },
+      "structural": {
+        "required_runs": 1,
+        "required_confirmations": 1,
+        "minimum_sample_count": 0,
+        "maximum_age_hours": 720
+      }
+    },
+    "rules": [
+      {
+        "id": "conflict-a",
+        "selectors": {
+          "category": [
+            "policy.violation"
+          ]
+        },
+        "decision": "warn"
+      },
+      {
+        "id": "conflict-b",
+        "selectors": {
+          "category": [
+            "policy.violation"
+          ]
+        },
+        "decision": "block"
+      }
+    ],
+    "outputs": {
+      "json": true,
+      "junit": true,
+      "sarif": true,
+      "summary": true,
+      "github_annotations": false,
+      "github_step_summary": false
+    },
+    "baseline_approval": {
+      "enabled": true,
+      "minimum_policy_severity": "error",
+      "minimum_sample_count": 20,
+      "minimum_successful_runs": 1,
+      "require_full_compatibility": true,
+      "require_source_commit": true,
+      "require_dataset_identity": true,
+      "require_environment_identity": true
+    }
+  }
+}

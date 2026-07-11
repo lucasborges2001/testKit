@@ -1,0 +1,27 @@
+{
+  "schema_version": "mysql-query-gate-allowlist-v1",
+  "allowlist": {
+    "id": "pruebas.sql.temporary",
+    "description": "Temporary test allowlist",
+    "maximum_duration_days": 90,
+    "entries": [
+      {
+        "id": "catalog-p95-temporary",
+        "selectors": {
+          "category": [
+            "baseline.temporal_regression"
+          ],
+          "query_identity": [
+            "query_id:catalog.product_search"
+          ]
+        },
+        "reason": "Investigation in progress",
+        "owner": "backend",
+        "ticket": "PERF-123",
+        "notes": "Fixture only",
+        "created_at": "2026-07-11T00:00:00Z",
+        "expires_at": "2026-07-25T00:00:00Z"
+      }
+    ]
+  }
+}
