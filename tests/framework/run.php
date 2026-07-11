@@ -44,6 +44,7 @@ $tests = [
     'MySQL query profiling contract'        => __DIR__ . '/test_mysql_query_profiling.php',
     'MySQL query instrumentation contract'  => __DIR__ . '/test_mysql_query_instrumentation.php',
     'MySQL query policy contract'           => __DIR__ . '/test_mysql_query_policy.php',
+    'MySQL query baseline contract'         => __DIR__ . '/test_mysql_query_baseline.php',
 ];
 
 $pass   = 0;

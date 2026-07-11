@@ -1,0 +1,18 @@
+{
+  "report_version": 1,
+  "engine": "mysql",
+  "run_id": "legacy",
+  "summary": {
+    "total_queries": 1
+  },
+  "queries": [
+    {
+      "fingerprint": "select * from products where category_id = ? order by created_at desc",
+      "sample_sql": "select * from products where category_id = ? order by created_at desc",
+      "calls": 1,
+      "max_ms": 10,
+      "avg_ms": 10,
+      "total_ms": 10
+    }
+  ]
+}

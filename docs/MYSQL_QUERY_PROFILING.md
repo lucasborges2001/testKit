@@ -2,7 +2,7 @@
 
 TestKit expone profiling MySQL **opt-in** para suites PHP. Esta fase conserva el diagnóstico de latencia y `EXPLAIN`, y agrega telemetría auditable sobre cómo se capturó cada consulta, qué contexto estuvo disponible, qué conexiones fueron observadas y qué limitaciones impiden afirmar cobertura total.
 
-No implementa baselines, comparación entre commits, budgets, gates, creación de índices ni cambios de schema.
+Las policies absolutas, los baselines históricos y la comparación son extensiones opcionales y separadas. No implementa gates, creación de índices ni cambios de schema.
 
 ## Activación
 
@@ -340,3 +340,46 @@ docs/contracts/mysql-query-policy-v1.md
 - no hay dashboard;
 - no hay sugerencias ni creación automática de índices;
 - no se ejecuta SQL desde policies.
+
+
+## Baselines versionados y comparación — Fase 4
+
+Un baseline es una referencia explícita; no es una policy ni se actualiza durante una corrida normal.
+
+```bash
+php scripts/query_baseline.php create \
+  --profile .testkit/reports/mysql_profile_latest.json \
+  --output test/sql/baselines/back-php.v1.json \
+  --baseline-id pruebas.back_php.v1 \
+  --dataset-id pruebas-fixtures \
+  --dataset-version 1 \
+  --environment-id github-actions-mysql84
+
+php scripts/query_comparison_report.php \
+  --current .testkit/reports/mysql_profile_latest.json \
+  --baseline test/sql/baselines/back-php.v1.json
+```
+
+Activación integrada:
+
+```bash
+TESTKIT_DB_PROFILE=1 \
+TESTKIT_DB_PROFILE_BASELINE_FILE=test/sql/baselines/back-php.v1.json \
+php runTest.php back-php
+```
+
+Artifacts default:
+
+```text
+.testkit/reports/mysql_comparison_latest.json
+.testkit/history/mysql_comparison/
+```
+
+El perfil v2 agrega `comparison_context` y `baseline_comparison`. Las queries pueden incluir `baseline_status`, `baseline_metric_regressions` y `baseline_plan_status`. Sin baseline, `enabled=false`. Las regresiones son report-only y conservan exit code `0`.
+
+Variables de contexto: `TESTKIT_DB_PROFILE_REPOSITORY`, `COMMIT_SHA`, `BRANCH`, `ENGINE_VERSION`, `DATASET_ID`, `DATASET_VERSION`, `DATASET_HASH`, `ENVIRONMENT_ID` y `RUNTIME_ID`, todas con el prefijo `TESTKIT_DB_PROFILE_`. No se infieren datasets ni entornos ficticios.
+
+Contratos completos:
+
+- `docs/contracts/mysql-query-baseline-v1.md`;
+- `docs/contracts/mysql-query-comparison-report-v1.md`.

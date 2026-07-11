@@ -1,0 +1,193 @@
+{
+  "schema_version": "mysql-query-baseline-v1",
+  "baseline": {
+    "id": "catalog.main",
+    "description": "Canonical SQL baseline",
+    "created_at": "2026-07-11T10:00:10Z",
+    "source": {
+      "repository": "lucasborges2001/Pruebas",
+      "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "branch": "main",
+      "run_id": "run_baseline",
+      "profile_schema_version": "mysql-query-profile-report-v2",
+      "profile_hash": "c66d65cfba9b941612a543fa72bfe31522ff3dc1c4224a486ba23e6ef6796e11",
+      "policy_hash": "72993b6cb83904d39a8c73bd0651aa6251288ede5dbc2c7bcbdc54cc5bbf5d77"
+    },
+    "compatibility": {
+      "engine": "mysql",
+      "engine_version": "8.4.0",
+      "engine_version_mode": "major_minor",
+      "dataset_id": "test-dataset",
+      "dataset_version": "1",
+      "dataset_hash": "976e1ae9ca82fa94ba3c1194b1774a65d60b69474b94b086b2d9cf194764c4f1",
+      "dataset_hash_mode": "exact",
+      "environment_id": "local-test",
+      "suite_id": "back_php",
+      "suite_scope": "exact"
+    },
+    "comparison_defaults": {
+      "time_regression_pct": 20,
+      "time_regression_abs_ms": 5,
+      "calls_regression_pct": 10,
+      "calls_regression_abs": 1,
+      "rows_regression_pct": 25,
+      "rows_regression_abs": 100,
+      "minimum_time_ms_for_pct": 5,
+      "ignore_metrics": []
+    },
+    "global": {
+      "total_queries": 5,
+      "unique_fingerprints": 2,
+      "total_sql_time_ms": 140,
+      "instrumentation_findings": 0,
+      "uninstrumented_findings": 0,
+      "connections_observed": 1
+    },
+    "queries": [
+      {
+        "identity": "fingerprint:87c9209a1b6c496d8f1e8ddb79df5b4db098f9bb2f1f467f95f23b2c029fce9a",
+        "identity_status": "fingerprint_fallback",
+        "query_id": "",
+        "query_ids": [],
+        "fingerprint": "select * from ledger where account_id = ? and created_at between ? and ?",
+        "sample_sql": "select * from ledger where account_id = ? and created_at between ? and ?",
+        "calls": 2,
+        "min_ms": 15,
+        "avg_ms": 25,
+        "max_ms": 35,
+        "total_ms": 50,
+        "p50_ms": 25,
+        "p95_ms": 34,
+        "p99_ms": 34.8,
+        "standard_deviation_ms": 7,
+        "sample_count": 2,
+        "percentiles_approximate": false,
+        "classification": "ok",
+        "capture_methods": {
+          "profiled_pdo.statement_execute": 2
+        },
+        "modules": [
+          "accounting"
+        ],
+        "scenarios": [
+          "ledger_range"
+        ],
+        "suites": [
+          "back_php"
+        ],
+        "tests": [
+          "test/back/accounting/ledger.test.php"
+        ],
+        "plan": {
+          "status": "available",
+          "signature": "1861bc1c18ab50d65c09cea14027d14e1bf955bba812035cf181340a5b7f079a",
+          "flags": [
+            "range_or_index_merge"
+          ],
+          "access_types": [
+            "range"
+          ],
+          "keys_used": [
+            "idx_ledger_account_created"
+          ],
+          "possible_keys": [
+            "idx_ledger_account_created"
+          ],
+          "estimated_rows": 50,
+          "tables": [
+            {
+              "table_name": "ledger",
+              "access_type": "range",
+              "key": "idx_ledger_account_created",
+              "possible_keys": [
+                "idx_ledger_account_created"
+              ],
+              "estimated_rows": 50
+            }
+          ],
+          "severity": "watch",
+          "policy_violations": []
+        },
+        "current_policy_status": "pass",
+        "violations_count": 0
+      },
+      {
+        "identity": "query_id:catalog.product_search",
+        "identity_status": "stable_query_id",
+        "query_id": "catalog.product_search",
+        "query_ids": [
+          "catalog.product_search"
+        ],
+        "fingerprint": "select * from products where category_id = ? order by created_at desc",
+        "sample_sql": "select * from products where category_id = ? order by created_at desc",
+        "calls": 3,
+        "min_ms": 20,
+        "avg_ms": 30,
+        "max_ms": 45,
+        "total_ms": 90,
+        "p50_ms": 30,
+        "p95_ms": 42,
+        "p99_ms": 44,
+        "standard_deviation_ms": 8,
+        "sample_count": 3,
+        "percentiles_approximate": false,
+        "classification": "ok",
+        "capture_methods": {
+          "profiled_pdo.statement_execute": 3
+        },
+        "modules": [
+          "catalog"
+        ],
+        "scenarios": [
+          "product_search"
+        ],
+        "suites": [
+          "back_php"
+        ],
+        "tests": [
+          "test/back/catalog/search.test.php"
+        ],
+        "plan": {
+          "status": "available",
+          "signature": "11aa475adaaa40cb1da4ccc0fded0aaa620b7979ab94168c3d34b73385f207bc",
+          "flags": [],
+          "access_types": [
+            "ref"
+          ],
+          "keys_used": [
+            "idx_products_category_created"
+          ],
+          "possible_keys": [
+            "idx_products_category_created"
+          ],
+          "estimated_rows": 100,
+          "tables": [
+            {
+              "table_name": "products",
+              "access_type": "ref",
+              "key": "idx_products_category_created",
+              "possible_keys": [
+                "idx_products_category_created"
+              ],
+              "estimated_rows": 100
+            }
+          ],
+          "severity": "info",
+          "policy_violations": []
+        },
+        "current_policy_status": "pass",
+        "violations_count": 0,
+        "comparison": {
+          "time_regression_pct": 100,
+          "time_regression_abs_ms": 100,
+          "calls_regression_pct": 100,
+          "calls_regression_abs": 100,
+          "rows_regression_pct": 1000,
+          "rows_regression_abs": 100000,
+          "minimum_time_ms_for_pct": 5,
+          "ignore_metrics": []
+        }
+      }
+    ]
+  }
+}

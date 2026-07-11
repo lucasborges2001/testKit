@@ -7,6 +7,9 @@ use Testkit\Core\Common\Paths;
 use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyConfig;
 use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyException;
 use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyReporter;
+use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineConfig;
+use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineException;
+use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineReporter;
 
 final class MysqlProfileReporter
 {
@@ -193,6 +196,14 @@ final class MysqlProfileReporter
                 'violations_count' => (int)($profile['policy_evaluation']['violated_budgets'] ?? 0),
                 'insufficient_data_count' => (int)($profile['policy_evaluation']['insufficient_data_budgets'] ?? 0),
                 'report_path' => (string)(MysqlQueryPolicyConfig::publicConfig(MysqlQueryPolicyConfig::fromEnv())['output']['report_path'] ?? ''),
+            ],
+            'baseline_comparison' => [
+                'enabled' => (bool)($profile['baseline_comparison']['enabled'] ?? false),
+                'mode' => (string)($profile['baseline_comparison']['mode'] ?? MysqlQueryBaselineConfig::MODE_REPORT_ONLY),
+                'status' => (string)($profile['baseline_comparison']['status'] ?? 'not_evaluated'),
+                'compatibility' => (array)($profile['baseline_comparison']['compatibility'] ?? []),
+                'summary' => (array)($profile['baseline_comparison']['summary'] ?? []),
+                'report_path' => (string)(MysqlQueryBaselineConfig::publicConfig(MysqlQueryBaselineConfig::fromEnv())['output']['report_path'] ?? ''),
             ],
             'top_findings' => [
                 'by_max_ms' => array_slice((array)($profile['rankings']['by_max_ms'] ?? []), 0, 5),
@@ -556,6 +567,7 @@ final class MysqlProfileReporter
                 'capture_session_id' => (string)($context['capture_session_id'] ?? ''),
                 'shards' => is_array($context['shards'] ?? null) ? $context['shards'] : [],
             ],
+            'comparison_context' => self::comparisonContext($config, $context),
             'config' => MysqlProfileConfig::publicConfig($config),
             'summary' => $summary,
             'coverage' => $coverage,
@@ -579,7 +591,7 @@ final class MysqlProfileReporter
                 'PHP userland cannot transparently intercept every existing new PDO(...) call.',
                 'Overall application-query capture coverage is unknown without an independent denominator.',
                 'EXPLAIN is optional and does not execute unsafe or parameterized samples.',
-                'No schema changes, CREATE INDEX automation, baselines, regressions, or performance gates are implemented in phase 3.',
+                'No schema changes, CREATE INDEX automation, baseline auto-accept, or performance gates are implemented in phase 4.',
             ],
         ];
 
@@ -597,6 +609,37 @@ final class MysqlProfileReporter
                 $report['policy_evaluation']['warnings'][] = 'policy_artifact_write_failed';
                 $report['policy_evaluation']['artifact_error'] = InstrumentationContext::sanitizeText($e->getMessage(), 160);
             }
+        }
+
+        $baselineConfig = is_array($config['baseline'] ?? null)
+            ? $config['baseline']
+            : MysqlQueryBaselineConfig::fromEnv();
+        if (!empty($baselineConfig['enabled'])) {
+            try {
+                $comparison = MysqlQueryBaselineReporter::evaluate($report, $baselineConfig);
+                $report = MysqlQueryBaselineReporter::attachToProfile($report, $comparison);
+                MysqlQueryBaselineReporter::writeArtifacts($comparison, $baselineConfig);
+            } catch (MysqlQueryBaselineException $e) {
+                $report['baseline_comparison'] = MysqlQueryBaselineReporter::invalidComparison($e);
+            } catch (\Throwable $e) {
+                $report['baseline_comparison'] = [
+                    'enabled' => true,
+                    'mode' => MysqlQueryBaselineConfig::MODE_REPORT_ONLY,
+                    'schema_version' => MysqlQueryBaselineConfig::COMPARISON_SCHEMA_VERSION,
+                    'status' => 'artifact_error',
+                    'error' => InstrumentationContext::sanitizeText($e->getMessage(), 160),
+                    'summary' => [],
+                    'compatibility' => [
+                        'status' => 'incompatible',
+                        'comparison_scope' => 'none',
+                        'timing_comparable' => false,
+                        'warnings' => [],
+                        'reasons' => ['comparison_artifact_error'],
+                    ],
+                ];
+            }
+        } else {
+            $report = MysqlQueryBaselineReporter::attachDisabled($report);
         }
         return $report;
     }
@@ -619,6 +662,7 @@ final class MysqlProfileReporter
             'finished_at' => $now,
             'duration_ms' => 0,
             'run_metadata' => ['run_id' => $runId, 'shards' => []],
+            'comparison_context' => self::comparisonContext($config, ['suite_id' => '']),
             'config' => MysqlProfileConfig::publicConfig($config),
             'summary' => self::summary([]),
             'coverage' => self::coverage([], []),
@@ -642,6 +686,7 @@ final class MysqlProfileReporter
             'recommendations' => [],
             'explain' => MysqlExplainAnalyzer::emptyResult((bool)($config['explain']['enabled'] ?? false)),
             'policy_evaluation' => MysqlQueryPolicyConfig::disabledResult(),
+            'baseline_comparison' => MysqlQueryBaselineConfig::disabledResult(),
             'profiler_metrics' => [
                 'collector_record_calls' => 0,
                 'collector_total_overhead_ms' => 0.0,
@@ -936,6 +981,28 @@ final class MysqlProfileReporter
             $target[] = $value;
         }
         sort($target, SORT_STRING);
+    }
+
+    /** @param array<string,mixed> $config @param array<string,mixed> $context @return array<string,string> */
+    private static function comparisonContext(array $config, array $context): array
+    {
+        $baseline = is_array($config['baseline'] ?? null)
+            ? $config['baseline']
+            : MysqlQueryBaselineConfig::fromEnv();
+        $comparison = is_array($baseline['comparison_context'] ?? null)
+            ? $baseline['comparison_context']
+            : MysqlQueryBaselineConfig::comparisonContextFromEnv();
+        $comparison['engine'] = (string)($comparison['engine'] ?? 'mysql');
+        $comparison['suite_id'] = (string)(
+            $comparison['suite_id']
+            ?? $context['suite_id']
+            ?? $config['suite_id']
+            ?? ''
+        );
+        if ((string)$comparison['suite_id'] === '') {
+            $comparison['suite_id'] = (string)($context['suite_id'] ?? '');
+        }
+        return MysqlQueryBaselineConfig::sanitizeComparisonContext($comparison);
     }
 
     private static function percentage(int $numerator, int $denominator): ?float

@@ -5,6 +5,7 @@ namespace Testkit\Core\DbProfiling;
 
 use Testkit\Core\Common\Paths;
 use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyConfig;
+use Testkit\Core\DbProfiling\Baseline\MysqlQueryBaselineConfig;
 
 final class MysqlProfileConfig
 {
@@ -71,6 +72,7 @@ final class MysqlProfileConfig
                 'pass' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_PASS', self::envString('TEST_DB_PASS', '')),
             ],
             'policy' => MysqlQueryPolicyConfig::fromEnv(),
+            'baseline' => MysqlQueryBaselineConfig::fromEnv(),
             'explain' => [
                 'enabled_env' => self::EXPLAIN_ENABLED_ENV,
                 'enabled' => self::isExplainEnabled(),
@@ -107,6 +109,9 @@ final class MysqlProfileConfig
             ],
             'policy' => MysqlQueryPolicyConfig::publicConfig(
                 is_array($config['policy'] ?? null) ? $config['policy'] : []
+            ),
+            'baseline' => MysqlQueryBaselineConfig::publicConfig(
+                is_array($config['baseline'] ?? null) ? $config['baseline'] : []
             ),
             'explain' => self::publicExplainConfig(
                 is_array($config['explain'] ?? null) ? $config['explain'] : []

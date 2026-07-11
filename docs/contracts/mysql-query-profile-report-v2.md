@@ -183,3 +183,41 @@ violations_count
 ```
 
 Los lectores v2 existentes deben ignorar campos desconocidos. Los productores no cambian la identidad del reporte ni la semántica de rankings, coverage, instrumentation o explain.
+
+
+## Extensión compatible: `comparison_context`
+
+Fase 4 agrega metadata opcional y pública para decidir comparabilidad:
+
+```text
+repository, commit_sha, branch, engine, engine_version, dataset_id,
+dataset_version, dataset_hash, environment_id, suite_id, runtime_id
+```
+
+No incluye DSN, username, hostname privado ni paths absolutos. Ausencia de metadata produce `insufficient_metadata`, no compatibilidad implícita.
+
+## Extensión compatible: `baseline_comparison`
+
+Sin baseline:
+
+```json
+{
+  "baseline_comparison": {
+    "enabled": false,
+    "mode": "report_only",
+    "schema_version": "mysql-query-comparison-report-v1"
+  }
+}
+```
+
+Con baseline, el reporte contiene identificación, compatibilidad, summary, ruta pública normalizada, top findings acotados, warnings y limitaciones. El artifact completo se publica aparte.
+
+Cada fila de `queries[]` puede agregar:
+
+```text
+baseline_status
+baseline_metric_regressions
+baseline_plan_status
+```
+
+Los lectores v2 anteriores deben ignorar estos campos. `policy_evaluation` y `baseline_comparison` permanecen independientes. La identidad del reporte sigue siendo `report_version=2` y `mysql-query-profile-report-v2`.
