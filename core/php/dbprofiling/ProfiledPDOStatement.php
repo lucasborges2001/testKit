@@ -5,8 +5,15 @@ namespace Testkit\Core\DbProfiling;
 
 final class ProfiledPDOStatement extends \PDOStatement
 {
-    protected function __construct()
-    {
+    private string $profileConnectionId = '';
+    private string $profileCaptureMethod = MysqlCaptureMethod::PROFILED_PDO_STATEMENT_EXECUTE;
+
+    protected function __construct(
+        string $connectionId = '',
+        string $captureMethod = MysqlCaptureMethod::PROFILED_PDO_STATEMENT_EXECUTE
+    ) {
+        $this->profileConnectionId = InstrumentationContext::sanitizeIdentifier($connectionId, 80);
+        $this->profileCaptureMethod = MysqlCaptureMethod::normalize($captureMethod);
     }
 
     public function execute(?array $params = null): bool
@@ -23,7 +30,11 @@ final class ProfiledPDOStatement extends \PDOStatement
                 (string)$this->queryString,
                 (microtime(true) - $started) * 1000,
                 QueryProfileCollector::inferSource(),
-                QueryProfileCollector::inferCaller()
+                QueryProfileCollector::inferCaller(),
+                [
+                    'capture_method' => $this->profileCaptureMethod,
+                    'connection_id' => $this->profileConnectionId,
+                ]
             );
         }
     }

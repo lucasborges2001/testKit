@@ -5,13 +5,46 @@ namespace Testkit\Core\DbProfiling;
 
 final class ProfiledPDO extends \PDO
 {
+    private string $profileConnectionId = '';
+
     /**
      * @param array<mixed,mixed> $options
+     * @param array<string,mixed> $profileContext
      */
-    public function __construct(string $dsn, ?string $username = null, ?string $password = null, array $options = [])
-    {
+    public function __construct(
+        string $dsn,
+        ?string $username = null,
+        ?string $password = null,
+        array $options = [],
+        array $profileContext = []
+    ) {
         parent::__construct($dsn, $username, $password, $options);
-        $this->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [ProfiledPDOStatement::class, []]);
+        $engine = strtolower((string)strtok($dsn, ':'));
+        $this->profileConnectionId = ConnectionRegistry::register(
+            $this,
+            'profiled_pdo',
+            $engine !== '' ? $engine : 'mysql',
+            [
+                'query' => true,
+                'exec' => true,
+                'prepare_execute' => true,
+                'transactions' => true,
+            ],
+            true
+        );
+        $this->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [
+            ProfiledPDOStatement::class,
+            [$this->profileConnectionId, MysqlCaptureMethod::PROFILED_PDO_STATEMENT_EXECUTE],
+        ]);
+
+        if ($profileContext !== []) {
+            QueryProfileCollector::addFinding(
+                'connection_context_registered',
+                'info',
+                'Se registró contexto opcional para una conexión PDO instrumentada.',
+                $profileContext
+            );
+        }
     }
 
     public function exec(string $statement): int|false
@@ -28,14 +61,22 @@ final class ProfiledPDO extends \PDO
                 $statement,
                 (microtime(true) - $started) * 1000,
                 QueryProfileCollector::inferSource(),
-                QueryProfileCollector::inferCaller()
+                QueryProfileCollector::inferCaller(),
+                [
+                    'capture_method' => MysqlCaptureMethod::PROFILED_PDO_EXEC,
+                    'connection_id' => $this->profileConnectionId,
+                ]
             );
         }
     }
 
     public function prepare(string $query, array $options = []): \PDOStatement|false
     {
-        return parent::prepare($query, $options);
+        $statement = parent::prepare($query, $options);
+        if ($statement instanceof \PDOStatement) {
+            ConnectionRegistry::prepared($this->profileConnectionId);
+        }
+        return $statement;
     }
 
     #[\ReturnTypeWillChange]
@@ -57,8 +98,39 @@ final class ProfiledPDO extends \PDO
                 $query,
                 (microtime(true) - $started) * 1000,
                 QueryProfileCollector::inferSource(),
-                QueryProfileCollector::inferCaller()
+                QueryProfileCollector::inferCaller(),
+                [
+                    'capture_method' => MysqlCaptureMethod::PROFILED_PDO_QUERY,
+                    'connection_id' => $this->profileConnectionId,
+                ]
             );
         }
+    }
+
+    public function beginTransaction(): bool
+    {
+        $result = parent::beginTransaction();
+        if ($result) {
+            ConnectionRegistry::transaction($this->profileConnectionId);
+        }
+        return $result;
+    }
+
+    public function commit(): bool
+    {
+        $result = parent::commit();
+        if ($result) {
+            ConnectionRegistry::transaction($this->profileConnectionId);
+        }
+        return $result;
+    }
+
+    public function rollBack(): bool
+    {
+        $result = parent::rollBack();
+        if ($result) {
+            ConnectionRegistry::transaction($this->profileConnectionId);
+        }
+        return $result;
     }
 }
