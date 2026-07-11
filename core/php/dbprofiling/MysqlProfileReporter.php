@@ -4,6 +4,9 @@ declare(strict_types=1);
 namespace Testkit\Core\DbProfiling;
 
 use Testkit\Core\Common\Paths;
+use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyConfig;
+use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyException;
+use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyReporter;
 
 final class MysqlProfileReporter
 {
@@ -181,6 +184,15 @@ final class MysqlProfileReporter
                 'analyzed' => (int)($profile['explain']['analyzed'] ?? 0),
                 'skipped' => (int)($profile['explain']['skipped'] ?? 0),
                 'failed' => (int)($profile['explain']['failed'] ?? 0),
+            ],
+            'policy_evaluation' => [
+                'enabled' => (bool)($profile['policy_evaluation']['enabled'] ?? false),
+                'mode' => (string)($profile['policy_evaluation']['mode'] ?? MysqlQueryPolicyConfig::MODE_REPORT_ONLY),
+                'policy_set_id' => (string)($profile['policy_evaluation']['policy_set_id'] ?? ''),
+                'status_counts' => (array)($profile['policy_evaluation']['status_counts'] ?? []),
+                'violations_count' => (int)($profile['policy_evaluation']['violated_budgets'] ?? 0),
+                'insufficient_data_count' => (int)($profile['policy_evaluation']['insufficient_data_budgets'] ?? 0),
+                'report_path' => (string)(MysqlQueryPolicyConfig::publicConfig(MysqlQueryPolicyConfig::fromEnv())['output']['report_path'] ?? ''),
             ],
             'top_findings' => [
                 'by_max_ms' => array_slice((array)($profile['rankings']['by_max_ms'] ?? []), 0, 5),
@@ -524,7 +536,7 @@ final class MysqlProfileReporter
         $collectorMetrics['explain_analysis_ms'] = $explainMs;
         $collectorMetrics['shard_write_ms'] = self::roundMs((float)($collectorMetrics['shard_write_ms'] ?? 0.0));
 
-        return [
+        $report = [
             'report_version' => MysqlProfileConfig::REPORT_VERSION,
             'schema_version' => MysqlProfileConfig::SCHEMA_VERSION,
             'instrumentation_version' => MysqlProfileConfig::INSTRUMENTATION_VERSION,
@@ -567,9 +579,26 @@ final class MysqlProfileReporter
                 'PHP userland cannot transparently intercept every existing new PDO(...) call.',
                 'Overall application-query capture coverage is unknown without an independent denominator.',
                 'EXPLAIN is optional and does not execute unsafe or parameterized samples.',
-                'No schema changes, CREATE INDEX automation, baselines, regressions, budgets, or performance gates are implemented in phase 1.',
+                'No schema changes, CREATE INDEX automation, baselines, regressions, or performance gates are implemented in phase 3.',
             ],
         ];
+
+        $policyConfig = is_array($config['policy'] ?? null) ? $config['policy'] : MysqlQueryPolicyConfig::fromEnv();
+        try {
+            $evaluation = MysqlQueryPolicyReporter::evaluate($report, $policyConfig);
+        } catch (MysqlQueryPolicyException $e) {
+            $evaluation = MysqlQueryPolicyReporter::invalidEvaluation($e);
+        }
+        $report = MysqlQueryPolicyReporter::attachToProfile($report, $evaluation);
+        if (!empty($evaluation['enabled'])) {
+            try {
+                MysqlQueryPolicyReporter::writeArtifacts($evaluation, $policyConfig);
+            } catch (\Throwable $e) {
+                $report['policy_evaluation']['warnings'][] = 'policy_artifact_write_failed';
+                $report['policy_evaluation']['artifact_error'] = InstrumentationContext::sanitizeText($e->getMessage(), 160);
+            }
+        }
+        return $report;
     }
 
     /** @param array<string,mixed> $config @param array<string,mixed> $context @return array<string,mixed> */
@@ -612,6 +641,7 @@ final class MysqlProfileReporter
             'queries' => [],
             'recommendations' => [],
             'explain' => MysqlExplainAnalyzer::emptyResult((bool)($config['explain']['enabled'] ?? false)),
+            'policy_evaluation' => MysqlQueryPolicyConfig::disabledResult(),
             'profiler_metrics' => [
                 'collector_record_calls' => 0,
                 'collector_total_overhead_ms' => 0.0,

@@ -1,0 +1,44 @@
+{
+  "report_version": 2,
+  "schema_version": "mysql-query-profile-report-v2",
+  "instrumentation_version": "1.0",
+  "engine": "mysql",
+  "summary": {"total_queries": 8, "unique_fingerprints": 1, "total_db_time_ms": 720},
+  "instrumentation": {"findings": [{"code": "query_without_connection"}]},
+  "queries": [
+    {
+      "fingerprint": "select * from products where category_id = ? order by created_at desc",
+      "sample_sql": "select * from products where category_id = ? order by created_at desc",
+      "calls": 8,
+      "max_ms": 140,
+      "avg_ms": 90,
+      "total_ms": 720,
+      "p50_ms": 85,
+      "p95_ms": 135,
+      "p99_ms": 139,
+      "standard_deviation_ms": 35,
+      "modules": ["catalogo"],
+      "scenarios": ["product_search"],
+      "suites": ["back_php"],
+      "tests": ["test/back/catalog/search.test.php"],
+      "capture_methods": {"profiled_pdo.statement_execute": 8},
+      "classification": "hotspot"
+    }
+  ],
+  "explain": {
+    "enabled": true,
+    "findings": [
+      {
+        "query_id": "catalog.product_search",
+        "fingerprint": "select * from products where category_id = ? order by created_at desc",
+        "explain_status": "analyzed",
+        "flags": ["full_table_scan", "temporary_table"],
+        "plan_summary": {
+          "keys_used": [],
+          "access_types": ["ALL"],
+          "estimated_rows": 25000
+        }
+      }
+    ]
+  }
+}

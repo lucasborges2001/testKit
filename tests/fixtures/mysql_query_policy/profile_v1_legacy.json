@@ -1,0 +1,20 @@
+{
+  "report_version": 1,
+  "engine": "mysql",
+  "summary": {"total_queries": 2, "unique_fingerprints": 1, "total_db_time_ms": 60},
+  "instrumentation": {"findings": []},
+  "queries": [
+    {
+      "fingerprint": "select * from products where category_id = ? order by created_at desc",
+      "calls": 2,
+      "max_ms": 35,
+      "avg_ms": 30,
+      "total_ms": 60,
+      "modules": ["catalogo"],
+      "scenarios": ["product_search"],
+      "capture_methods": {"manual_record": 2},
+      "classification": "ok"
+    }
+  ],
+  "explain": {"enabled": false, "findings": []}
+}

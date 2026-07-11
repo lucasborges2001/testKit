@@ -249,3 +249,94 @@ php scripts/query_instrumentation_audit.php --path /tmp/mysql_profile.json
 ## Integración futura
 
 La Fase 2 debe adaptar el consumo desde Base, auditar sus factories PDO/mysqli, centralizar el bootstrap y definir el contrato host/Base para `module_id` y `scenario_id`. La secuencia Git definitiva es `testKit -> gitlink testkit en Base -> gitlink Base en Pruebas`.
+
+## Políticas declarativas y budgets — Fase 3
+
+La clasificación del profiler y las policies son conceptos distintos:
+
+```text
+classification      = heurística general del profiler
+policy_evaluation   = expectativa declarada por el consumidor
+```
+
+Una query puede ser `classification=ok` y violar `max_calls`; también puede ser `classification=slow` y cumplir una policy explícita.
+
+### Activación
+
+```bash
+TESTKIT_DB_PROFILE=1 \
+TESTKIT_DB_PROFILE_POLICY_FILE=test/sql/mysql-profile-policies.json \
+php runTest.php back-php
+```
+
+Luego:
+
+```bash
+php scripts/query_policy_report.php
+```
+
+Evaluación explícita:
+
+```bash
+php scripts/query_policy_report.php \
+  --profile .testkit/reports/mysql_profile_latest.json \
+  --policy test/sql/mysql-profile-policies.json
+```
+
+Variables:
+
+```text
+TESTKIT_DB_PROFILE_POLICY_FILE
+TESTKIT_DB_PROFILE_POLICY_MODE=report_only
+TESTKIT_DB_PROFILE_POLICY_REPORT_PATH
+TESTKIT_DB_PROFILE_POLICY_HISTORY_PATH
+TESTKIT_DB_PROFILE_POLICY_MAX_RESULTS
+```
+
+Sin `TESTKIT_DB_PROFILE_POLICY_FILE`, la evaluación permanece desactivada. `report_only` es el único modo admitido en esta fase; `fail` y `enforce` se rechazan.
+
+### CLI
+
+```text
+--profile
+--policy
+--format=human|json
+--json=<path>
+--show-passed
+--show-unused
+--top=<n>
+--help
+```
+
+Exit codes:
+
+```text
+0 evaluación ejecutada, incluso con violations
+2 error operacional
+3 policy/contrato inválido
+4 profile incompatible no recuperable
+```
+
+### Precedencia y merge
+
+Las policies se ordenan por especificidad calculada, no por orden del JSON. Los budgets generales se heredan y una policy más específica reemplaza solo las claves que declara. El resultado registra el origen de cada budget efectivo.
+
+### Evidencia insuficiente
+
+La ausencia de percentiles, contexto o EXPLAIN no es un pass. Se informa `insufficient_data` o `not_evaluated` si la policy configuró `on_insufficient_data=ignore`.
+
+### Contrato
+
+Ver:
+
+```text
+docs/contracts/mysql-query-policy-v1.md
+```
+
+### Limitaciones de Fase 3
+
+- no hay baseline ni comparación entre commits;
+- no hay gates obligatorios;
+- no hay dashboard;
+- no hay sugerencias ni creación automática de índices;
+- no se ejecuta SQL desde policies.

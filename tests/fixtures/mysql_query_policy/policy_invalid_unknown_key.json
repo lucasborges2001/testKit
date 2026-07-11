@@ -1,0 +1,15 @@
+{
+  "schema_version": "mysql-query-policy-v1",
+  "policy_set": {
+    "id": "invalid.unknown",
+    "mode": "report_only",
+    "policies": [
+      {
+        "id": "bad",
+        "selector": {"module_id": "catalogo"},
+        "budgets": {"max_calls": 1},
+        "unexpected": true
+      }
+    ]
+  }
+}

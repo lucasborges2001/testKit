@@ -1,0 +1,11 @@
+{
+  "schema_version": "mysql-query-policy-v1",
+  "policy_set": {
+    "id": "conflict",
+    "mode": "report_only",
+    "policies": [
+      {"id": "a", "selector": {"module_id": "catalogo"}, "budgets": {"max_calls": 2}},
+      {"id": "b", "selector": {"module_id": "catalogo"}, "budgets": {"max_calls": 5}}
+    ]
+  }
+}

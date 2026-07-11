@@ -1,0 +1,55 @@
+{
+  "schema_version": "mysql-query-policy-v1",
+  "policy_set": {
+    "id": "test.sql",
+    "description": "Deterministic policy fixture",
+    "mode": "report_only",
+    "defaults": {
+      "severity": "warning",
+      "on_missing": "report",
+      "on_insufficient_data": "report"
+    },
+    "policies": [
+      {
+        "id": "global.sql",
+        "scope": "global",
+        "budgets": {
+          "max_total_queries": 10,
+          "max_unique_fingerprints": 3,
+          "max_total_sql_time_ms": 500
+        }
+      },
+      {
+        "id": "catalog.default",
+        "selector": {"module_id": "catalogo"},
+        "budgets": {"max_calls": 20, "max_p95_ms": 200}
+      },
+      {
+        "id": "catalog.search",
+        "selector": {"module_id": "catalogo", "scenario_id": "product_search"},
+        "budgets": {"max_calls": 3, "max_p95_ms": 80}
+      },
+      {
+        "id": "catalog.search.query",
+        "selector": {
+          "fingerprint": "SELECT * FROM products WHERE category_id = 9 ORDER BY created_at DESC",
+          "module_id": "catalogo",
+          "scenario_id": "product_search"
+        },
+        "budgets": {"max_total_ms": 180, "max_p99_ms": 100, "max_standard_deviation_ms": 30},
+        "plan": {
+          "forbid_flags": ["full_table_scan", "temporary_table"],
+          "require_any_key": true,
+          "require_keys": ["idx_products_category_created"],
+          "forbid_access_types": ["all"],
+          "max_estimated_rows": 5000
+        }
+      },
+      {
+        "id": "unused.module",
+        "selector": {"module_id": "never_seen"},
+        "budgets": {"max_calls": 1}
+      }
+    ]
+  }
+}

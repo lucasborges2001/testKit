@@ -154,3 +154,32 @@ Cada shard v2 incluye identidad de contrato, `run_id`, `capture_session_id`, `co
 - normalizar rutas absolutas;
 - sanitizar errores y `EXPLAIN`;
 - escribir JSON de forma atómica.
+
+## Extensión compatible: `policy_evaluation`
+
+Fase 3 mantiene `report_version: 2` y agrega una sección opcional `policy_evaluation`.
+
+Cuando no hay archivo de policies:
+
+```json
+{
+  "policy_evaluation": {
+    "enabled": false,
+    "mode": "report_only",
+    "schema_version": "mysql-query-policy-v1",
+    "results": []
+  }
+}
+```
+
+Cuando está habilitada, la sección contiene el resultado definido en `docs/contracts/mysql-query-policy-v1.md`. Los campos `classification` y `policy_status` no son equivalentes ni se reemplazan mutuamente.
+
+Cada fila `queries[]` puede agregar:
+
+```text
+policy_status
+applied_policy_ids
+violations_count
+```
+
+Los lectores v2 existentes deben ignorar campos desconocidos. Los productores no cambian la identidad del reporte ni la semántica de rankings, coverage, instrumentation o explain.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\DbProfiling;
 
 use Testkit\Core\Common\Paths;
+use Testkit\Core\DbProfiling\Policy\MysqlQueryPolicyConfig;
 
 final class MysqlProfileConfig
 {
@@ -69,6 +70,7 @@ final class MysqlProfileConfig
                 'user' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_USER', self::envString('TEST_DB_USER', '')),
                 'pass' => self::envString('TESTKIT_DB_PROFILE_EXPLAIN_PASS', self::envString('TEST_DB_PASS', '')),
             ],
+            'policy' => MysqlQueryPolicyConfig::fromEnv(),
             'explain' => [
                 'enabled_env' => self::EXPLAIN_ENABLED_ENV,
                 'enabled' => self::isExplainEnabled(),
@@ -103,6 +105,9 @@ final class MysqlProfileConfig
                 'history_path' => InstrumentationContext::normalizePath((string)($config['output']['history_path'] ?? '')),
                 'shard_dir' => InstrumentationContext::normalizePath((string)($config['output']['shard_dir'] ?? '')),
             ],
+            'policy' => MysqlQueryPolicyConfig::publicConfig(
+                is_array($config['policy'] ?? null) ? $config['policy'] : []
+            ),
             'explain' => self::publicExplainConfig(
                 is_array($config['explain'] ?? null) ? $config['explain'] : []
             ),
