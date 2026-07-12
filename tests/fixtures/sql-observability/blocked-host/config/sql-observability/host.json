@@ -1,0 +1,36 @@
+{
+  "schema_version": "testkit-sql-observability-host-v1",
+  "project": {"repository": "testkit/blocked-host-fixture"},
+  "defaults": {
+    "repetitions": 1,
+    "required_confirmations": 1,
+    "timeout_minutes": 5,
+    "artifact_retention_days": 1,
+    "environment_id": "testkit-blocked-host",
+    "engine": "mysql",
+    "engine_version": "8.0"
+  },
+  "events": {
+    "pull_request": {"gate_mode": "fail"},
+    "push_main": {"gate_mode": "fail"},
+    "schedule": {"gate_mode": "fail"},
+    "workflow_dispatch": {"gate_mode": "fail"}
+  },
+  "scenarios": [{
+    "id": "blocked-gate",
+    "enabled": true,
+    "label": "Deterministic blocked SQL gate",
+    "module_id": "fixture.sql",
+    "scenario_id": "blocked_gate",
+    "test_file": "test/blocked_gate.test.php",
+    "dataset": "test/dataset/manifest.json",
+    "policy_file": "config/sql-observability/policy.json",
+    "baseline_file": "test/baseline.json",
+    "baseline_status": "ready",
+    "gate_file": "config/sql-observability/gate.json",
+    "allowlist_file": "config/sql-observability/allowlist.json",
+    "repetitions": 1,
+    "required_confirmations": 1,
+    "timeout_minutes": 5
+  }]
+}

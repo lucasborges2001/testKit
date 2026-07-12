@@ -21,6 +21,7 @@ final class SqlObservabilitySuite
         $runId = self::env('TEST_RUN_ID', gmdate('Ymd\THis\Z') . '_' . substr(sha1((string)microtime(true)), 0, 6));
         $reportRoot = Paths::repoRoot() . '/.testkit/reports/sql-observability/' . $runId;
         Paths::ensureDir($reportRoot);
+        Paths::recordSuiteReportRoot($reportRoot, 'sql_observability');
 
         $cmd = ['bash', $script];
         if ($listOnly) {

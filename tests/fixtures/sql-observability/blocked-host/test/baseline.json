@@ -1,0 +1,86 @@
+{
+  "schema_version": "mysql-query-baseline-v1",
+  "baseline": {
+    "id": "testkit.blocked-host.v1",
+    "description": "Deterministic baseline for the public exit-code-5 fixture.",
+    "created_at": "2026-07-12T12:44:03Z",
+    "source": {
+      "repository": "testkit/blocked-host-fixture",
+      "commit_sha": "3a211ec64b4507528037291870ab6fa7eb07c7b1",
+      "branch": "main",
+      "run_id": "sqlobs-blocked_gate-20260712124352-local-115196-1",
+      "profile_schema_version": "mysql-query-profile-report-v2",
+      "profile_hash": "da6f85785bf1aa5f1bb97649859f0e41a69d22d68f8a1f2aeefc748e64779709",
+      "policy_hash": "58ed2a91b86f0702236fa6bc2dc54cfc791e985a7ad3c35d903f22dc464d2e71"
+    },
+    "compatibility": {
+      "engine": "mysql",
+      "engine_version": "8.0.46",
+      "engine_version_mode": "major_minor",
+      "dataset_id": "blocked-gate-fixture",
+      "dataset_version": "1",
+      "dataset_hash": "1cdb76c95ac049b9d8dda8042992601d5ed6f848f2bd00bfd6c22ab971885247",
+      "dataset_hash_mode": "exact",
+      "environment_id": "testkit-blocked-host",
+      "suite_id": "sql_observability",
+      "suite_scope": "exact"
+    },
+    "comparison_defaults": {
+      "time_regression_pct": 20,
+      "time_regression_abs_ms": 5,
+      "calls_regression_pct": 10,
+      "calls_regression_abs": 1,
+      "rows_regression_pct": 25,
+      "rows_regression_abs": 100,
+      "minimum_time_ms_for_pct": 5,
+      "ignore_metrics": []
+    },
+    "global": {
+      "total_queries": 1,
+      "unique_fingerprints": 1,
+      "total_sql_time_ms": 0.23,
+      "instrumentation_findings": 1,
+      "uninstrumented_findings": 0,
+      "connections_observed": 1
+    },
+    "queries": [{
+      "identity": "fingerprint:5c7ebfd2323189d50dd301dbe3927a7dcfa803f0169ccd32d9a7cb854f668c31",
+      "identity_status": "fingerprint_fallback",
+      "query_id": "",
+      "query_ids": [],
+      "fingerprint": "select value_text from fixture_items where id = ?",
+      "sample_sql": "SELECT value_text FROM fixture_items WHERE id = ?",
+      "calls": 1,
+      "min_ms": 0.23,
+      "avg_ms": 0.23,
+      "max_ms": 0.23,
+      "total_ms": 0.23,
+      "p50_ms": 0.23,
+      "p95_ms": 0.23,
+      "p99_ms": 0.23,
+      "standard_deviation_ms": 0,
+      "sample_count": 1,
+      "percentiles_approximate": false,
+      "classification": "ok",
+      "capture_methods": {"profiled_pdo.query": 1},
+      "modules": ["fixture.sql"],
+      "scenarios": ["blocked_gate"],
+      "suites": ["back_php"],
+      "tests": ["test/blocked_gate.test.php"],
+      "plan": {
+        "status": "unavailable",
+        "signature": "",
+        "flags": [],
+        "access_types": [],
+        "keys_used": [],
+        "possible_keys": [],
+        "estimated_rows": null,
+        "tables": [],
+        "severity": "",
+        "policy_violations": []
+      },
+      "current_policy_status": "not_applicable",
+      "violations_count": 0
+    }]
+  }
+}

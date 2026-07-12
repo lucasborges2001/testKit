@@ -360,6 +360,14 @@ ENV
   local consolidate_exit=0
   if [[ "$suite_exit" -eq 0 ]]; then
     local consolidate_raw="$output/consolidate.raw.log"
+    local baseline_env=()
+    if [[ -n "$container_baseline" ]]; then
+      baseline_env=(
+        -e TESTKIT_DB_PROFILE_BASELINE_FILE="$container_baseline"
+        -e TESTKIT_DB_PROFILE_BASELINE_REPORT_PATH="$container_output/mysql_comparison.json"
+        -e TESTKIT_DB_PROFILE_BASELINE_HISTORY_PATH="$container_output/history/mysql_comparison"
+      )
+    fi
     set +e
     TESTKIT_ENV_FILE="$env_file" \
     TESTKIT_STACK=mysql \
@@ -397,6 +405,7 @@ ENV
       -e TESTKIT_DB_PROFILE_DATASET_VERSION="$dataset_version" \
       -e TESTKIT_DB_PROFILE_DATASET_HASH="$dataset_hash" \
       -e TESTKIT_DB_PROFILE_ENVIRONMENT_ID="$env_id" \
+      "${baseline_env[@]}" \
       testkit php /workspace/testkit/scripts/sql-observability/consolidate.php >"$consolidate_raw" 2>&1
     consolidate_exit=$?
     set -e
@@ -780,6 +789,7 @@ verify_operation() {
   local output=".testkit/reports/sql-observability"
   local event_name="${GITHUB_EVENT_NAME:-workflow_dispatch}"
   local mode=""
+  local effective_mode=""
   local repetitions_override=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -802,6 +812,14 @@ verify_operation() {
   echo "$config_exit" >"$output/preflight/host-config-exit-code.txt"
   if [[ "$config_exit" -ne 0 ]]; then
     return "$config_exit"
+  fi
+  effective_mode="$mode"
+  if [[ -z "$effective_mode" ]]; then
+    local mode_json
+    mode_json="$(mktemp)"
+    resolve_gate_mode "$event_name" "" "$mode_json"
+    effective_mode="$(json_get "$mode_json" effective_gate_mode)"
+    rm -f "$mode_json"
   fi
   command -v docker >/dev/null 2>&1 || {
     echo "Docker is required for disposable MySQL." >"$output/preflight/docker-unavailable.txt"
@@ -881,7 +899,7 @@ verify_operation() {
       --runs "$scenario_root" \
       --evidence "$scenario_root/evidence.json" \
       --output "$scenario_root/gate" \
-      --mode "${mode:-report}"
+      --mode "$effective_mode"
     local gate_exit=$?
     set -e
     if [[ "$gate_exit" -ne 0 && "$overall" -eq 0 ]]; then

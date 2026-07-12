@@ -1,0 +1,15 @@
+{
+  "schema_version": "testkit-sql-observability-report-config-v1",
+  "reporting": {
+    "id": "testkit.blocked-host",
+    "project_label": "Testkit blocked host fixture",
+    "required_scenarios": ["blocked-gate"],
+    "required_repetitions": 1,
+    "near_expiration_days": 1,
+    "baseline_maximum_age_days": 3650,
+    "top_limits": {"hotspots": 5, "regressions": 5, "new_queries": 5, "plan_changes": 5, "findings": 10, "recommendations": 5},
+    "history": {"maximum_bundles": 2, "maximum_age_days": 1},
+    "retention": {"short_days": 1, "standard_days": 1, "baseline_evidence_days": 1},
+    "outputs": {"json": true, "technical_markdown": true, "executive_markdown": true, "trends_json": true, "trends_markdown": true, "artifact_index": true}
+  }
+}

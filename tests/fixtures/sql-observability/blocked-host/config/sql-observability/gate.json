@@ -1,0 +1,36 @@
+{
+  "schema_version": "mysql-query-gate-v1",
+  "gate": {
+    "id": "testkit.blocked-host",
+    "description": "Blocks the fixture policy violation.",
+    "mode": "fail",
+    "defaults": {
+      "minimum_severity": "info",
+      "on_incompatible_context": "report",
+      "on_insufficient_data": "report",
+      "on_invalid_embedded_evidence": "error"
+    },
+    "stability": {
+      "temporal": {"required_runs": 1, "required_confirmations": 1, "minimum_sample_count": 1, "maximum_age_hours": 1},
+      "structural": {"required_runs": 1, "required_confirmations": 1, "minimum_sample_count": 0, "maximum_age_hours": 1}
+    },
+    "rules": [{
+      "id": "block-policy-error",
+      "selectors": {"category": ["policy.violation"], "severity": ["error"]},
+      "decision": "block",
+      "stability_type": "none"
+    }],
+    "outputs": {"json": true, "junit": true, "sarif": true, "summary": true, "github_annotations": false, "github_step_summary": false},
+    "baseline_approval": {
+      "enabled": true,
+      "minimum_policy_severity": "error",
+      "minimum_sample_count": 1,
+      "minimum_successful_runs": 1,
+      "require_full_compatibility": true,
+      "require_source_commit": true,
+      "require_dataset_identity": true,
+      "require_environment_identity": true
+    }
+  }
+}
+

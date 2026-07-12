@@ -148,19 +148,9 @@ testkit_dispatch_sql_observability() {
   fi
 
   if [[ "${list_only}" -eq 1 ]]; then
-    bash "${TESTKIT_ROOT_HOST}/scripts/sql-observability/run.sh" list
-    return $?
+    export TEST_LIST=1
   fi
-
-  local scenario="${TESTKIT_SQL_OBSERVABILITY_SCENARIO:-all}"
-  local repetitions="${TESTKIT_SQL_OBSERVABILITY_REPETITIONS:-}"
-  local run_id="${TEST_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)_sqlobs}"
-  local output="${TESTKIT_SQL_OBSERVABILITY_OUTPUT:-.testkit/reports/sql-observability/${run_id}}"
-  local cmd=(verify --scenario "${scenario}" --output "${output}")
-  if [[ -n "${repetitions}" ]]; then
-    cmd+=(--repetitions "${repetitions}")
-  fi
-  bash "${TESTKIT_ROOT_HOST}/scripts/sql-observability/run.sh" "${cmd[@]}"
+  php "${TESTKIT_ROOT_HOST}/runTest.php" sql-observability
 }
 
 testkit_is_sql_observability_command() {

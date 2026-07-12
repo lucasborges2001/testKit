@@ -1,0 +1,19 @@
+{
+  "schema_version": "testkit-sql-observability-dataset-v1",
+  "dataset_id": "blocked-gate-fixture",
+  "dataset_version": "1",
+  "description": "Single-row disposable dataset for the blocked gate fixture.",
+  "engine": "mysql",
+  "engine_version": "8.0",
+  "schema_file": "schema.sql",
+  "seed_file": "seed.sql",
+  "schema_sha256": "b3ad2ce30512f5f8ce07f53f10f01c73630c76e24b1be59e818f606b62130748",
+  "seed_sha256": "f13da87e062caa08753d635e6a6fdf4bcaea80d8fe2631a64bf51b62b6dd8416",
+  "expected_tables": ["fixture_items"],
+  "safety": {
+    "database_name_prefix": "tk_sqlobs_blocked_",
+    "allowed_hosts": ["mysql_test"],
+    "requires_app_env": "test"
+  },
+  "dataset_hash": "1cdb76c95ac049b9d8dda8042992601d5ed6f848f2bd00bfd6c22ab971885247"
+}

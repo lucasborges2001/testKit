@@ -1,0 +1,6 @@
+CREATE TABLE fixture_items (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  value_text VARCHAR(32) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB;
+

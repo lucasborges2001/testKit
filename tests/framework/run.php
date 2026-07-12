@@ -47,6 +47,7 @@ $tests = [
     'MySQL query baseline contract'         => __DIR__ . '/test_mysql_query_baseline.php',
     'MySQL query gate contract'             => __DIR__ . '/test_mysql_query_gate.php',
     'SQL observability native contract'     => __DIR__ . '/test_sql_observability_native.php',
+    'SQL observability public exit code 5'  => __DIR__ . '/test_sql_observability_exit_code_5.php',
 ];
 
 $pass   = 0;

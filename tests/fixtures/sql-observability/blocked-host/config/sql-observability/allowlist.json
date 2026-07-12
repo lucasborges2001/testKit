@@ -1,0 +1,5 @@
+{
+  "schema_version": "mysql-query-gate-allowlist-v1",
+  "allowlist": {"id": "testkit.blocked-host", "description": "No exceptions.", "entries": []}
+}
+

@@ -1,17 +1,87 @@
+# ==============================================================================
+# testKit — archivos locales y artifacts generados
+# ==============================================================================
+#
+# Este archivo ignora únicamente:
+# - artifacts generados durante la ejecución de tests;
+# - reportes, historial, cobertura y logs locales;
+# - configuración local potencialmente sensible;
+# - archivos temporales de herramientas;
+# - paquetes generados manualmente.
+#
+# Los fixtures necesarios para ejecutar tests reproducibles deben incluirse
+# mediante excepciones explícitas y acotadas.
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# Runtime y artifacts canónicos de testKit
+# ------------------------------------------------------------------------------
+#
+# testKit utiliza este directorio para reportes, historial, perfiles,
+# comparaciones, manifests, evidencias y demás resultados de ejecución.
+#
+# Esta única regla cubre, entre otros:
+#   /.testkit/history/
+#   /.testkit/reports/
+#   /.testkit/reports/sql-observability/
+#
 /.testkit/
-test/reports/
-test/history/
-test/**/report/
-test/coverage/
-test/querylog.jsonl
-test/_out/
+
+
+# ------------------------------------------------------------------------------
+# Artifacts legacy o específicos de proyectos host
+# ------------------------------------------------------------------------------
+#
+# Algunos proyectos o fixtures todavía pueden escribir resultados bajo test/.
+# Se mantienen estas reglas para evitar versionar salidas de ejecución.
+#
+/test/reports/
+/test/history/
+/test/**/report/
+/test/coverage/
+/test/querylog.jsonl
+/test/_out/
+
+
+# ------------------------------------------------------------------------------
+# Configuración local de tests
+# ------------------------------------------------------------------------------
+#
+# Los archivos .env.test pueden contener credenciales, puertos, rutas o
+# configuración específica de cada máquina, por lo que se ignoran globalmente.
+#
 .env.test
 
-.testkit/
-.testkit
-.testkit/history/
-.testkit/reports/
+# Fixture sintético y determinista de SQL Observability.
+# No contiene secretos reales y debe versionarse para reproducir la prueba
+# end-to-end del exit code 5.
+!tests/fixtures/sql-observability/blocked-host/test/.env.test
+
+
+# ------------------------------------------------------------------------------
+# Archivos comprimidos generados
+# ------------------------------------------------------------------------------
+#
+# Evita versionar ZIPs de entregas, artifacts o paquetes temporales,
+# independientemente del directorio en el que se hayan creado.
+#
 *.zip
 
-.claude/
-_out/
+
+# ------------------------------------------------------------------------------
+# Configuración local de asistentes y herramientas
+# ------------------------------------------------------------------------------
+#
+# Estado y configuración local de Claude Code.
+#
+/.claude/
+
+
+# ------------------------------------------------------------------------------
+# Salidas temporales genéricas
+# ------------------------------------------------------------------------------
+#
+# Directorio temporal utilizado por scripts y pruebas ejecutadas desde la raíz.
+#
+/_out/

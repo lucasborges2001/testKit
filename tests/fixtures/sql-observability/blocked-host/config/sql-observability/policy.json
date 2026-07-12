@@ -1,0 +1,15 @@
+{
+  "schema_version": "mysql-query-policy-v1",
+  "policy_set": {
+    "id": "testkit.blocked-host",
+    "description": "The fixture executes a real query while this deterministic budget permits none.",
+    "mode": "report_only",
+    "defaults": {"severity": "error", "on_missing": "report", "on_insufficient_data": "report"},
+    "policies": [{
+      "id": "block-any-query",
+      "scope": "global",
+      "budgets": {"max_total_queries": 0}
+    }]
+  }
+}
+
