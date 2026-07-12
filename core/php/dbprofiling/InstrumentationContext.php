@@ -122,6 +122,10 @@ final class InstrumentationContext
         if ($value === '') {
             return '';
         }
+        if (str_starts_with($value, 'sqlobs-')) {
+            $value = preg_replace('/[\x00-\x1F\x7F]+/u', '', $value) ?? '';
+            return substr($value, 0, max(1, $maxLength));
+        }
         $value = self::redactSecrets($value);
         $value = preg_replace('/[\x00-\x1F\x7F]+/u', '', $value) ?? '';
         return substr($value, 0, max(1, $maxLength));
@@ -215,7 +219,7 @@ final class InstrumentationContext
             '[redacted-dsn]',
             $value
         ) ?? $value;
-        $value = preg_replace('/\b(?:bearer\s+)?[A-Za-z0-9_-]{24,}\b/i', '[redacted-token]', $value) ?? $value;
+        $value = preg_replace('/\b(?:bearer\s+)?[A-Za-z0-9_-]{40,}\b/i', '[redacted-token]', $value) ?? $value;
         $value = preg_replace('/([?&](?:pass(?:word)?|token|secret|api[_-]?key)=)[^&\s]+/i', '$1[redacted]', $value) ?? $value;
         $value = preg_replace('/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i', '[redacted-email]', $value) ?? $value;
         return $value;

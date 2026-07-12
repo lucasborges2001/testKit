@@ -7,7 +7,7 @@ require_once __DIR__ . '/lib/reporting.php';
 function sqlobsReportUsage(): void
 {
     echo <<<'TXT'
-Pruebas SQL observability reporting
+Testkit SQL observability reporting
 
 Usage:
   php scripts/sql-observability/report.php validate --root <dir> [--config <file>] [--manifest <file> ...] [--history-manifest <file> ...]

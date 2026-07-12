@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Disposable MySQL lifecycle for Pruebas SQL observability.
+# Disposable MySQL lifecycle for Testkit SQL observability.
 # Operations: prepare, reset, verify, cleanup.
 
 operation="${1:-}"

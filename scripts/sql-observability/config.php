@@ -543,7 +543,7 @@ function sqlobs_args(array $argv): array
 function sqlobs_usage(): void
 {
     echo <<<TXT
-Pruebas SQL observability host config
+Testkit SQL observability host config
 
 Usage:
   php scripts/sql-observability/config.php verify [--config path]

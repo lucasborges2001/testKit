@@ -51,14 +51,15 @@ final class BackPhpSuite
         $mysqlProfileEnabled = MysqlProfileConfig::isEnabled();
         $mysqlProfileEnv = [];
         if ($mysqlProfileEnabled) {
-            putenv('TESTKIT_DB_PROFILE_RUN_ID=' . $runId);
-            $_ENV['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
-            $_SERVER['TESTKIT_DB_PROFILE_RUN_ID'] = $runId;
+            $profileRunId = Env::string('TESTKIT_DB_PROFILE_RUN_ID', $runId);
+            putenv('TESTKIT_DB_PROFILE_RUN_ID=' . $profileRunId);
+            $_ENV['TESTKIT_DB_PROFILE_RUN_ID'] = $profileRunId;
+            $_SERVER['TESTKIT_DB_PROFILE_RUN_ID'] = $profileRunId;
 
             $mysqlProfileConfig = MysqlProfileConfig::fromEnv();
             $mysqlProfileEnv = [
                 'TESTKIT_DB_PROFILE' => '1',
-                'TESTKIT_DB_PROFILE_RUN_ID' => $runId,
+                'TESTKIT_DB_PROFILE_RUN_ID' => $profileRunId,
                 'TESTKIT_DB_PROFILE_REPORT_PATH' => (string)($mysqlProfileConfig['output']['report_path'] ?? ''),
                 'TESTKIT_DB_PROFILE_HISTORY_PATH' => (string)($mysqlProfileConfig['output']['history_path'] ?? ''),
                 'TESTKIT_DB_PROFILE_SHARD_DIR' => (string)($mysqlProfileConfig['output']['shard_dir'] ?? ''),
@@ -72,7 +73,7 @@ final class BackPhpSuite
                     $mysqlProfileEnv['TESTKIT_DB_PROFILE_EXPLAIN_QUERIES_FILE'] = $queriesFile;
                 }
             }
-            MysqlProfileReporter::prepareRun($runId);
+            MysqlProfileReporter::prepareRun($profileRunId);
         }
 
         $influxProfileEnabled = InfluxProfileConfig::isEnabled();

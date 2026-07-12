@@ -229,6 +229,12 @@ $sanitized = InstrumentationContext::sanitizeMap([
     'safe' => 'value',
 ]);
 instrumentation_same(['safe' => 'value'], $sanitized, 'sensitive context keys removed', $errors);
+instrumentation_same(
+    'sqlobs-base_database-20260712122454-local-70538-1',
+    InstrumentationContext::sanitizeIdentifier('sqlobs-base_database-20260712122454-local-70538-1'),
+    'sql observability run ids are identifiers, not secrets',
+    $errors
+);
 
 if ($errors !== []) {
     foreach ($errors as $error) {
