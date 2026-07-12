@@ -69,7 +69,7 @@ function testkit_print_run_help(): void
     echo "Targets comunes:\n";
     echo "  all | back | front | back-php | back-py | front-php | front-js | php | js\n";
     echo "  smoke | perf | stress | contract | critical | slow | migration-contract\n";
-    echo "  reference-contract | references | php-references\n\n";
+    echo "  reference-contract | references | php-references | sql-observability\n\n";
     echo "Opciones soportadas:\n";
     echo "  --list     lista la selección efectiva y fuerza TEST_LIST=1 para esta corrida\n";
     echo "  --help     muestra esta ayuda\n\n";

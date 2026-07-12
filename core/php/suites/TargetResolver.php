@@ -42,6 +42,7 @@ final class TargetResolver
             'reference-contract' => ['reference_contract'],
             'references' => ['reference_contract'],
             'php-references' => ['reference_contract'],
+            'sql-observability' => ['sql_observability'],
         ];
 
         $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
@@ -50,7 +51,7 @@ final class TargetResolver
         if ($envVal !== '') {
             $parts = array_filter(array_map('trim', explode(',', $envVal)));
             $suites = [];
-            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php', 'migration_contract', 'reference_contract'];
+            $validSuites = ['back_php', 'back_python', 'front_php', 'front_js', 'infra_php', 'migration_contract', 'reference_contract', 'sql_observability'];
 
             foreach ($parts as $suite) {
                 if (!in_array($suite, $validSuites, true)) {

@@ -118,6 +118,56 @@ testkit_dispatch_runtime() {
   "${compose_cmd[@]}"
 }
 
+testkit_dispatch_sql_observability() {
+  local list_only=0
+  local -a args=("$@")
+  local i
+
+  for ((i = 0; i < ${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      -e)
+        if [[ $((i + 1)) -lt ${#args[@]} ]]; then
+          export "${args[$((i + 1))]}"
+          i=$((i + 1))
+        fi
+        ;;
+      -e=*)
+        export "${args[$i]#-e=}"
+        ;;
+      --list)
+        list_only=1
+        ;;
+    esac
+  done
+
+  export TESTKIT_PROJECT_ROOT="${PROJECT_ROOT}"
+  export TK_REPO_ROOT="${PROJECT_ROOT}"
+  export TESTKIT_ROOT="${TESTKIT_ROOT_HOST}"
+  if [[ -n "${TESTKIT_SQL_OBSERVABILITY_CONFIG:-}" ]]; then
+    export SQLOBS_HOST_CONFIG="${TESTKIT_SQL_OBSERVABILITY_CONFIG}"
+  fi
+
+  if [[ "${list_only}" -eq 1 ]]; then
+    bash "${TESTKIT_ROOT_HOST}/scripts/sql-observability/run.sh" list
+    return $?
+  fi
+
+  local scenario="${TESTKIT_SQL_OBSERVABILITY_SCENARIO:-all}"
+  local repetitions="${TESTKIT_SQL_OBSERVABILITY_REPETITIONS:-}"
+  local run_id="${TEST_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)_sqlobs}"
+  local output="${TESTKIT_SQL_OBSERVABILITY_OUTPUT:-.testkit/reports/sql-observability/${run_id}}"
+  local cmd=(verify --scenario "${scenario}" --output "${output}")
+  if [[ -n "${repetitions}" ]]; then
+    cmd+=(--repetitions "${repetitions}")
+  fi
+  bash "${TESTKIT_ROOT_HOST}/scripts/sql-observability/run.sh" "${cmd[@]}"
+}
+
+testkit_is_sql_observability_command() {
+  local joined=" $* "
+  [[ "${joined}" == *" runTest.php sql-observability "* || "${joined}" == *" /workspace/testkit/runTest.php sql-observability "* ]]
+}
+
 main() {
   local cmd="${1:-}"
   case "${cmd}" in
@@ -142,6 +192,11 @@ main() {
   fi
 
   testkit_load_env_kv_safe "${env_file}" || true
+
+  if testkit_is_sql_observability_command "$@"; then
+    testkit_dispatch_sql_observability "$@"
+    return $?
+  fi
 
   case "${cmd}" in
     inspect)

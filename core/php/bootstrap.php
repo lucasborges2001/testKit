@@ -111,6 +111,7 @@ require_once __DIR__ . '/suites/InfraPhpSuite.php';
 require_once __DIR__ . '/suites/BackPythonSuite.php';
 require_once __DIR__ . '/suites/MigrationContractSuite.php';
 require_once __DIR__ . '/suites/ReferenceContractSuite.php';
+require_once __DIR__ . '/suites/SqlObservabilitySuite.php';
 require_once __DIR__ . '/suites/MetaRunner.php';
 
 \Testkit\Core\Common\Bootstrap::init();

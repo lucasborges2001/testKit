@@ -34,7 +34,7 @@ final class MetaRunner
 
         $selected = TargetResolver::resolve($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|infra|back-php|back-py|front-php|front-js|infra-php|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract\n");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|infra|back-php|back-py|front-php|front-js|infra-php|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract|sql-observability\n");
             return 3;
         }
 
@@ -90,6 +90,10 @@ final class MetaRunner
                     $suiteRow['exit_code'] = $suiteEffectiveCode;
                     $suiteReport = self::synthesizeMissingSuiteReport($suiteId, $code, $duration, $runId);
                     $overallFail = true;
+                }
+                if (isset($suiteReport['process_exit_code']) && is_int($suiteReport['process_exit_code'])) {
+                    $suiteEffectiveCode = (int)$suiteReport['process_exit_code'];
+                    $suiteRow['exit_code'] = $suiteEffectiveCode;
                 }
 
                 $suiteReports[] = $suiteReport;
@@ -167,6 +171,14 @@ final class MetaRunner
 
             if ($overallFail) {
                 self::safePrintActionRequired($meta);
+            }
+
+            if ($target === 'sql-observability') {
+                foreach ($suiteRows as $row) {
+                    if (($row['suite_id'] ?? '') === 'sql_observability') {
+                        return (int)($row['exit_code'] ?? ($overallFail ? 1 : 0));
+                    }
+                }
             }
 
             return $overallFail ? 1 : 0;
@@ -247,6 +259,7 @@ final class MetaRunner
             'infra_php' => InfraPhpSuite::run(),
             'migration_contract' => MigrationContractSuite::run(),
             'reference_contract' => ReferenceContractSuite::run(),
+            'sql_observability' => SqlObservabilitySuite::run(),
             default => 3,
         };
     }
