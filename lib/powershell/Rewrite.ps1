@@ -43,23 +43,27 @@ function Convert-TestkitRunArgs([string[]]$InputArgs) {
   $sawTestkit = $false
   $wrapperKind = if ($env:TESTKIT_WRAPPER_KIND) { $env:TESTKIT_WRAPPER_KIND } else { 'powershell' }
 
-  foreach ($arg in $InputArgs) {
+  :inputArgs foreach ($arg in $InputArgs) {
     if ($arg -eq 'testkit' -and -not $sawTestkit) {
       $sawTestkit = $true
       $rewritten.Add('-e') | Out-Null
       $rewritten.Add(("TESTKIT_WRAPPER_KIND={0}" -f $wrapperKind)) | Out-Null
       $rewritten.Add($arg) | Out-Null
-      continue
+      continue inputArgs
     }
 
     if ($sawTestkit) {
+      # NOTE: `continue` alone targets the switch itself (PowerShell treats
+      # switch as a loop for break/continue), not the enclosing foreach, so it
+      # would fall through to the unconditional Add below and duplicate the
+      # arg. The label makes it target the foreach explicitly.
       switch ($arg) {
-        'runTest.php' { $rewritten.Add('/workspace/testkit/runTest.php') | Out-Null; continue }
-        './runTest.php' { $rewritten.Add('/workspace/testkit/runTest.php') | Out-Null; continue }
-        'scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue }
-        './scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue }
-        'scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue }
-        './scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue }
+        'runTest.php' { $rewritten.Add('/workspace/testkit/runTest.php') | Out-Null; continue inputArgs }
+        './runTest.php' { $rewritten.Add('/workspace/testkit/runTest.php') | Out-Null; continue inputArgs }
+        'scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue inputArgs }
+        './scripts/report.php' { $rewritten.Add('/workspace/testkit/scripts/report.php') | Out-Null; continue inputArgs }
+        'scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue inputArgs }
+        './scripts/inspect.php' { $rewritten.Add('/workspace/testkit/scripts/inspect.php') | Out-Null; continue inputArgs }
       }
     }
 

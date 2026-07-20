@@ -148,6 +148,23 @@ Closed requirements in this phase:
 
 PostgreSQL, Redis and Influx are outside the closed `migration-contract` path.
 
+## OS / shell / Docker
+
+| Component | Status | Notes |
+|---|---|---|
+| Linux/macOS + Bash + Docker Engine/Desktop | `closed_primary` | Reference platform. CI (`ci.yml`) runs here (`ubuntu-24.04`). |
+| Windows 11 + PowerShell 7 + Docker Desktop (WSL2 backend, Linux containers) | `closed_primary` | Wrapper: `bin/testkit.ps1`. See [`docs/WINDOWS.md`](docs/WINDOWS.md). |
+| Checkout inside a WSL2 distro, operated via Bash | `supported_alternate` | Uses `bin/testkit`, not the PowerShell wrapper. |
+| Windows containers | `unsupported` | Not a target; the runner image is Linux-only. |
+| PowerShell 5.1 | `not_covered` | May work, but `tests/powershell/` and CI only exercise PowerShell 7. |
+| UNC paths (`\\server\share\...`) | `unsupported` | Not a supported mount source. |
+
+Limits:
+
+- Windows path containment (`Test-TestkitPathUnderRoot` in `lib/powershell/Env.ps1`) requires a real directory boundary, not just a string prefix; a sibling directory that shares a name prefix (`Pruebas` vs `Pruebas-otro`) is rejected.
+- `doctor --readonly` (PowerShell wrapper) skips creating `test/` and skips the write-probe; it does not change the exit code semantics of the other checks.
+- Bash's `doctor.sh` does not have a `--readonly` flag yet; this is an open follow-up, not implied support parity.
+
 ## Reading rule
 
 A service being present in Docker Compose, a wrapper stack or an env example does not make it a closed lifecycle feature.

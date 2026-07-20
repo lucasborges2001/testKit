@@ -34,7 +34,11 @@ function Import-TestkitEnvKV([string]$Path) {
 }
 
 function Test-TestkitPathUnderRoot([string]$Root, [string]$Candidate) {
-  $rootResolved = (Resolve-Path $Root).Path
+  $rootResolved = (Resolve-Path $Root).Path.TrimEnd('\', '/')
   $candidateResolved = (Resolve-Path $Candidate).Path
-  return $candidateResolved.StartsWith($rootResolved, [System.StringComparison]::OrdinalIgnoreCase)
+  if ($candidateResolved.Equals($rootResolved, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return $true
+  }
+  $rootWithSeparator = $rootResolved + [System.IO.Path]::DirectorySeparatorChar
+  return $candidateResolved.StartsWith($rootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)
 }

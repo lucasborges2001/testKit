@@ -15,6 +15,7 @@ Read by question, not by file order:
 | How do I run it safely for the first time? Which commands are normal? | [`docs/USO.md`](docs/USO.md) |
 | How do I prune generated reports, coverage and profiling artifacts? | [`docs/CLEANUP.md`](docs/CLEANUP.md) |
 | Setup failed. Which command should I run next? | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
+| How do I run this from Windows/PowerShell? | [`docs/WINDOWS.md`](docs/WINDOWS.md) |
 | How is execution wired internally? How do bootstrap, baseline and locks fit together? | [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) |
 | Which report fields are stable? What is heuristic? How should coverage and observability be read? | [`docs/REPORTING_COVERAGE.md`](docs/REPORTING_COVERAGE.md) |
 

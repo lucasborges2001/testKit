@@ -81,6 +81,7 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
 
   $target = ''
   $dump = $false
+  $readOnly = $false
 
   foreach ($arg in $DoctorArgs) {
     switch -Regex ($arg) {
@@ -89,12 +90,13 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
       '^--full$' { $mode = 'full'; continue }
       '^--mode=compact$' { $mode = 'compact'; continue }
       '^--mode=full$' { $mode = 'full'; continue }
+      '^--readonly$' { $readOnly = $true; continue }
       '^--target=(.+)$' {
         $target = Normalize-TestkitDoctorToken $Matches[1]
         Assert-TestkitDoctorTarget $target
         continue
       }
-      '^--' { throw "doctor: opción no soportada '$arg'. Usá --full, --compact, --dump o --target=<target>." }
+      '^--' { throw "doctor: opción no soportada '$arg'. Usá --full, --compact, --dump, --readonly o --target=<target>." }
       default {
         if ([string]::IsNullOrWhiteSpace($target)) {
           $target = Normalize-TestkitDoctorToken $arg
@@ -110,6 +112,7 @@ function Parse-TestkitDoctorArgs([string[]]$DoctorArgs) {
     Mode = $mode
     Target = $target
     Dump = $dump
+    ReadOnly = $readOnly
   }
 }
 

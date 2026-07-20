@@ -47,6 +47,24 @@ TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-php
 TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-js
 ```
 
+## Windows (PowerShell)
+
+Every command above has a PowerShell equivalent via `bin/testkit.ps1`. Full
+setup, troubleshooting and the supported/unsupported path matrix live in
+[`docs/WINDOWS.md`](docs/WINDOWS.md).
+
+```powershell
+$env:TESTKIT_PROJECT_ROOT = 'D:\dev\host-project'
+
+.\bin\testkit.ps1 doctor --readonly --compact
+$env:TESTKIT_MODE = 'agent'
+.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+```
+
+`doctor --readonly` runs every base check without creating `test/` or writing
+a probe file — prefer it as the preflight step before an agent decides what
+to run.
+
 ## Agent mode contract
 
 `TESTKIT_MODE=agent` is the single canonical activation signal.

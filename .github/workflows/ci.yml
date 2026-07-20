@@ -80,6 +80,94 @@ jobs:
           find runners utils tests/fixtures/browser -type f -name '*.mjs' \
             -print0 | xargs -0 -r -n1 node --check
 
+  windows-static:
+    name: windows-static
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          tools: none
+
+      - name: Verify required PowerShell files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'bin/testkit.ps1',
+            'bin/testkit-ui.ps1',
+            'lib/powershell/Env.ps1',
+            'lib/powershell/Stack.ps1',
+            'lib/powershell/Rewrite.ps1',
+            'lib/powershell/Doctor.ps1',
+            'lib/powershell/Doctor.Shared.ps1',
+            'lib/powershell/Doctor.BaseChecks.ps1',
+            'lib/powershell/Doctor.CapabilityChecks.ps1',
+            'lib/powershell/Doctor.Render.ps1',
+            'ui/powershell/Testkit.UI.ps1',
+            'ui/powershell/lib/Testkit.UI.Console.ps1',
+            'ui/powershell/lib/Testkit.UI.Plan.ps1'
+          )
+          $missing = $required | Where-Object { -not (Test-Path $_) }
+          if ($missing) {
+            $missing | ForEach-Object { Write-Host "Missing required file: $_" }
+            exit 1
+          }
+
+      - name: Parse all PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failed = $false
+          Get-ChildItem bin,lib,ui,tests\powershell -Recurse -Include *.ps1,*.psm1 | ForEach-Object {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              Write-Host "Parse error in $($_.FullName):"
+              $parseErrors | ForEach-Object { Write-Host "  $_" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Detect CRLF in Linux-critical scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failed = $false
+          $targets = @('bin/testkit') + (Get-ChildItem -Recurse -Include *.sh | Select-Object -ExpandProperty FullName)
+          foreach ($path in $targets) {
+            if (-not (Test-Path $path)) { continue }
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+            if ($text -match "`r`n") {
+              Write-Host "CRLF found in Linux-critical file: $path"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Run PowerShell self-tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pwsh -NoProfile -NonInteractive -File tests/powershell/run.ps1
+          exit $LASTEXITCODE
+
+      - name: Run PHP framework self-tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          php tests/framework/run.php
+          exit $LASTEXITCODE
+
   framework-self-tests:
     name: framework-self-tests
     runs-on: ubuntu-24.04

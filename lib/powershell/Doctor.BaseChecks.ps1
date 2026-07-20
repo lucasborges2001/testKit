@@ -42,18 +42,22 @@ function Invoke-TestkitDoctorBaseChecks {
   }
 
   $testDir = Join-Path $script:ProjectRoot 'test'
-  if (-not (Test-Path $testDir)) {
-    New-Item -ItemType Directory -Path $testDir -Force | Out-Null
-  }
+  if ($Context.ReadOnly) {
+    Add-TestkitDoctorCheck 'base' 'UNKNOWN' 'TEST_DIR_WRITE_NOT_PROBED' "$testDir`: escritura no verificada en modo --readonly" 'Corré doctor sin --readonly para crear/verificar el directorio y confirmar que es escribible.'
+  } else {
+    if (-not (Test-Path $testDir)) {
+      New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+    }
 
-  try {
-    $probe = Join-Path $testDir '.doctor_write_probe'
-    Set-Content -Path $probe -Value 'ok' -NoNewline
-    Remove-Item $probe -Force -ErrorAction SilentlyContinue
-    Add-TestkitDoctorCheck 'base' 'PASS' 'TEST_DIR_WRITABLE' "$testDir es escribible"
-  } catch {
-    Add-TestkitDoctorCheck 'base' 'FAIL' 'TEST_DIR_NOT_WRITABLE' "$testDir no es escribible" 'Corregí permisos del repo o del volumen montado.'
-    $Ok.Value = $false
+    try {
+      $probe = Join-Path $testDir '.doctor_write_probe'
+      Set-Content -Path $probe -Value 'ok' -NoNewline
+      Remove-Item $probe -Force -ErrorAction SilentlyContinue
+      Add-TestkitDoctorCheck 'base' 'PASS' 'TEST_DIR_WRITABLE' "$testDir es escribible"
+    } catch {
+      Add-TestkitDoctorCheck 'base' 'FAIL' 'TEST_DIR_NOT_WRITABLE' "$testDir no es escribible" 'Corregí permisos del repo o del volumen montado.'
+      $Ok.Value = $false
+    }
   }
 
   if (Get-Command docker -ErrorAction SilentlyContinue) {

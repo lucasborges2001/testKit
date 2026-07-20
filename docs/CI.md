@@ -59,6 +59,31 @@ Depende de `static`.
 
 Este job no requiere Docker. Su objetivo es validar contratos internos como concurrencia, locks, reporting, selección de suites, contratos de seed state y contratos de ejecución.
 
+### `windows-static`
+
+Valida la ruta Windows/PowerShell sin Docker, en paralelo a `static` (no
+depende de él ni lo bloquea).
+
+Controles, sobre `windows-latest`:
+
+- checkout con `actions/checkout@v4`;
+- PHP 8.4 explícito, mismo setup que los jobs Ubuntu;
+- existencia de los archivos PowerShell requeridos (`bin/testkit.ps1`,
+  `bin/testkit-ui.ps1`, `lib/powershell/*.ps1`, `ui/powershell/**/*.ps1`);
+- parseo de **todos** los `.ps1`/`.psm1` del repo con
+  `[System.Management.Automation.Language.Parser]::ParseFile`;
+- detección de CRLF en `bin/testkit` y `*.sh` (además de lo que ya fija
+  `.gitattributes`, esto es un chequeo redundante deliberado);
+- `tests/powershell/run.ps1` — harness propio sin Pester (ver
+  [`docs/WINDOWS.md`](WINDOWS.md) y el propio directorio `tests/powershell/`);
+- `php tests/framework/run.php` — los mismos self-tests que corre
+  `framework-self-tests`, ahora también en Windows.
+
+Este job no levanta contenedores ni requiere Docker Desktop en el runner.
+No cubre los smokes `no-store`/MySQL sobre Windows — esos quedan pendientes
+porque los runners `windows-latest` de GitHub no garantizan soporte de Linux
+containers.
+
 ### `runtime-mysql`
 
 Valida el camino runtime principal con Docker y MySQL.
@@ -179,6 +204,28 @@ find runners utils tests/fixtures/browser -type f -name '*.mjs' \
 ```
 
 Para reproducir mejor el CI host, usar PHP 8.4 y Node 20.
+
+## Reproducción local de `windows-static`
+
+Desde PowerShell 7, en la raíz del repo `testKit`:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+
+Get-ChildItem bin,lib,ui,tests\powershell -Recurse -Include *.ps1,*.psm1 |
+  ForEach-Object {
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+      $_.FullName, [ref]$null, [ref]$parseErrors
+    ) | Out-Null
+    if ($parseErrors.Count -gt 0) {
+      throw "Parse error: $($_.FullName)"
+    }
+  }
+
+pwsh -NoProfile -NonInteractive -File tests\powershell\run.ps1
+php tests\framework\run.php
+```
 
 ## Reproducción local del runtime MySQL
 
