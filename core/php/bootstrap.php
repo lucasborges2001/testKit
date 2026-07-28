@@ -11,6 +11,7 @@ require_once __DIR__ . '/common/Lock.php';
 
 require_once __DIR__ . '/config/SuiteContractRegistry.php';
 require_once __DIR__ . '/config/RunnerConfig.php';
+require_once __DIR__ . '/tarifa/TarifaContractSupport.php';
 require_once __DIR__ . '/discovery/TestTagger.php';
 require_once __DIR__ . '/discovery/TestPatternMatcher.php';
 require_once __DIR__ . '/discovery/TestSelection.php';

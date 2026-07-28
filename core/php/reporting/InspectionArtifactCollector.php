@@ -71,6 +71,21 @@ final class InspectionArtifactCollector
         return $rows;
     }
 
+    /** @return array<int,array<string,mixed>> */
+    public static function tarifaEvidence(string $reportRoot): array
+    {
+        $rows = [];
+        foreach (glob(rtrim($reportRoot, '/\\') . '/tarifa_*.json') ?: [] as $file) {
+            $json = AgentDecisionBuilder::loadJsonFile($file);
+            if (!is_array($json)) {
+                continue;
+            }
+            $json['_source_file'] = Paths::relativeToRepo($file);
+            $rows[] = $json;
+        }
+        return $rows;
+    }
+
     /** @return array<string,mixed>|null */
     public static function agentRunArtifact(string $reportRoot): ?array
     {
