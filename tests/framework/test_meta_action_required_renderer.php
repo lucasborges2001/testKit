@@ -20,7 +20,7 @@ $meta = [
         'suite_id' => 'back_php',
         'exit_code' => 1,
         'rerun_plan' => [[
-            'command' => "./bin/testkit run --rm -e TEST_MATCH='test/back/auth/integration/auth_entry_states_integration.test.php' testkit php runTest.php back-php",
+            'command' => "./bin/testkit run --rm testkit php runTest.php --suite back-php --test 'test/back/auth/integration/auth_entry_states_integration.test.php'",
             'reason' => 'aislar el primer archivo fallido',
         ]],
     ]],
@@ -35,7 +35,7 @@ $meta = [
 ob_start();
 MetaActionRequiredRenderer::render($meta);
 $output = (string)ob_get_clean();
-assert_true(str_contains($output, './bin/testkit run --rm -e TEST_MATCH='), 'meta action required should show wrapper rerun command', $errors);
+assert_true(str_contains($output, './bin/testkit run --rm testkit php runTest.php --suite back-php --test '), 'meta action required should show typed wrapper rerun command', $errors);
 assert_true(str_contains($output, './bin/testkit run --rm testkit php scripts/report.php'), 'meta action required should show wrapper report command', $errors);
 
 if ($errors !== []) {

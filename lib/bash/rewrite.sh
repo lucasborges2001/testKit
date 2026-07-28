@@ -20,7 +20,7 @@ testkit_detect_shell_kind() {
 }
 
 testkit_suggest_rerun_command() {
-  local target="$1"
+  local suite="$1"
   local file="$2"
   local shell_kind
   shell_kind="$(testkit_detect_shell_kind)"
@@ -29,13 +29,13 @@ testkit_suggest_rerun_command() {
 
   case "${shell_kind}" in
     powershell)
-      printf "%s" ".\\bin\\testkit.ps1 run --rm -e TEST_MATCH='${qfile}' testkit php runTest.php ${target}"
+      printf "%s" ".\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite ${suite} --test '${qfile}'"
       ;;
     bash)
-      printf "%s" "./bin/testkit run --rm -e TEST_MATCH='${qfile}' testkit php runTest.php ${target}"
+      printf "%s" "./bin/testkit run --rm testkit php runTest.php --suite ${suite} --test '${qfile}'"
       ;;
     *)
-      printf "%s" "TEST_MATCH='${qfile}' php runTest.php ${target}"
+      printf "%s" "php runTest.php --suite ${suite} --test '${qfile}'"
       ;;
   esac
 }
@@ -51,24 +51,24 @@ testkit_suggest_report_command() {
 }
 
 testkit_suggest_list_command() {
-  local target="$1"
+  local suite="$1"
   local shell_kind
   shell_kind="$(testkit_detect_shell_kind)"
   case "${shell_kind}" in
-    powershell) printf "%s" ".\\bin\\testkit.ps1 run --rm testkit php runTest.php ${target} --list" ;;
-    bash) printf "%s" "./bin/testkit run --rm testkit php runTest.php ${target} --list" ;;
-    *) printf "%s" "php runTest.php ${target} --list" ;;
+    powershell) printf "%s" ".\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite ${suite} --list" ;;
+    bash) printf "%s" "./bin/testkit run --rm testkit php runTest.php --suite ${suite} --list" ;;
+    *) printf "%s" "php runTest.php --suite ${suite} --list" ;;
   esac
 }
 
 testkit_suggest_trace_command() {
-  local target="$1"
+  local suite="$1"
   local shell_kind
   shell_kind="$(testkit_detect_shell_kind)"
   case "${shell_kind}" in
-    powershell) printf "%s" ".\\bin\\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php ${target}" ;;
-    bash) printf "%s" "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php ${target}" ;;
-    *) printf "%s" "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php ${target}" ;;
+    powershell) printf "%s" ".\\bin\\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite ${suite}" ;;
+    bash) printf "%s" "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite ${suite}" ;;
+    *) printf "%s" "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php --suite ${suite}" ;;
   esac
 }
 

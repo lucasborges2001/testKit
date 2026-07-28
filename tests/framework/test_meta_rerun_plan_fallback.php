@@ -19,12 +19,12 @@ $reportWithActions = [
     'suite_id' => 'back_php',
     'recommended_actions' => [[
         'kind' => 'rerun_filtered',
-        'command' => "./bin/testkit run --rm -e TEST_MATCH='test/back/auth/integration/auth_entry_states_integration.test.php' testkit php runTest.php back-php",
+        'command' => "./bin/testkit run --rm testkit php runTest.php --suite back-php --test 'test/back/auth/integration/auth_entry_states_integration.test.php'",
         'reason' => 'aislar el primer archivo fallido',
     ]],
 ];
 $plan = MetaRunner::suiteRerunPlanFromReport($reportWithActions);
-assert_true(str_contains((string)($plan[0]['command'] ?? ''), './bin/testkit run --rm -e TEST_MATCH='), 'derived rerun plan should preserve wrapper command', $errors);
+assert_true(str_contains((string)($plan[0]['command'] ?? ''), './bin/testkit run --rm testkit php runTest.php --suite back-php --test '), 'derived rerun plan should preserve typed wrapper command', $errors);
 
 $reportWithFirstFailure = [
     'suite_id' => 'front_php',
@@ -34,7 +34,7 @@ $reportWithFirstFailure = [
     ],
 ];
 $plan = MetaRunner::suiteRerunPlanFromReport($reportWithFirstFailure);
-assert_true(str_contains((string)($plan[0]['command'] ?? ''), './bin/testkit run --rm -e TEST_MATCH='), 'first_failure fallback should build wrapper command', $errors);
+assert_true(str_contains((string)($plan[0]['command'] ?? ''), './bin/testkit run --rm testkit php runTest.php --suite front-php --test '), 'first_failure fallback should build typed wrapper command', $errors);
 
 if ($errors !== []) {
     foreach ($errors as $error) {

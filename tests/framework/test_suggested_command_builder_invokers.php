@@ -25,8 +25,14 @@ putenv('TESTKIT_INVOKER_RUN_FLAGS=--rm');
 
 assert_true(
     SuggestedCommandBuilder::rerunFiltered('back_php', 'test/back/auth/integration/example.test.php')
-        === "./bin/testkit run --rm -e TEST_MATCH='test/back/auth/integration/example.test.php' testkit php runTest.php back-php",
-    'bash invoker should render wrapper command with -e before service',
+        === './bin/testkit run --rm testkit php runTest.php --suite back-php --test test/back/auth/integration/example.test.php',
+    'bash invoker should render typed suite selector and exact --test path',
+    $errors
+);
+assert_true(
+    SuggestedCommandBuilder::listSelection('front_js')
+        === './bin/testkit run --rm testkit php runTest.php --suite front-js --list',
+    'list selection should use typed suite selector',
     $errors
 );
 
@@ -34,6 +40,12 @@ putenv('TESTKIT_INVOKER=bin_testkit_powershell');
 putenv('TESTKIT_INVOKER_BIN=.\\bin\\testkit.ps1');
 putenv('TESTKIT_INVOKER_RUN_FLAGS=--rm');
 
+assert_true(
+    SuggestedCommandBuilder::rerunSuite('back_python')
+        === '.\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite back-python',
+    'powershell invoker should render typed suite selector',
+    $errors
+);
 assert_true(
     SuggestedCommandBuilder::aggregateReport()
         === '.\\bin\\testkit.ps1 run --rm testkit php scripts/report.php',

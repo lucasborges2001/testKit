@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+use InvalidArgumentException;
 use Testkit\Core\Common\Env;
 
 final class SuggestedCommandBuilder
@@ -11,7 +12,7 @@ final class SuggestedCommandBuilder
 
     public static function rerunFiltered(string $suiteId, string $file): string
     {
-        return self::buildTestRunCommand($suiteId, ['TEST_MATCH' => $file]);
+        return self::buildTestRunCommand($suiteId, [], ['--test', $file]);
     }
 
     public static function rerunSuite(string $suiteId): string
@@ -34,27 +35,32 @@ final class SuggestedCommandBuilder
         return self::buildPhpScriptCommand('scripts/report.php');
     }
 
+    /** @param array<string,string> $env @param list<string> $extraArgs */
     private static function buildTestRunCommand(string $suiteId, array $env = [], array $extraArgs = []): string
     {
-        $target = str_replace('_', '-', trim($suiteId) !== '' ? $suiteId : 'all');
+        $suiteName = str_replace('_', '-', strtolower(trim($suiteId)));
+        if ($suiteName === '') {
+            throw new InvalidArgumentException('suiteId vacío al construir comando de test');
+        }
+
+        $argv = ['php', 'runTest.php', '--suite', $suiteName];
+        foreach ($extraArgs as $arg) {
+            $arg = trim((string)$arg);
+            if ($arg !== '') {
+                $argv[] = $arg;
+            }
+        }
 
         if (self::isWrapperInvoker()) {
-            $argv = ['php', 'runTest.php', $target];
-            foreach ($extraArgs as $arg) {
-                $argv[] = (string)$arg;
-            }
             return self::buildWrapperCommand($argv, $env);
         }
 
-        $command = self::inlineEnvAssignments($env);
-        $command .= ($command !== '' ? ' ' : '') . 'php runTest.php ' . $target;
-        if ($extraArgs !== []) {
-            $command .= ' ' . implode(' ', array_map(static fn(string $arg): string => trim($arg), $extraArgs));
-        }
-
-        return trim($command);
+        $prefix = self::inlineEnvAssignments($env);
+        $command = implode(' ', array_map(self::shellToken(...), $argv));
+        return trim(($prefix !== '' ? $prefix . ' ' : '') . $command);
     }
 
+    /** @param array<string,string> $env */
     private static function buildPhpScriptCommand(string $script, array $env = []): string
     {
         $script = trim($script);
@@ -67,14 +73,13 @@ final class SuggestedCommandBuilder
         }
 
         $prefix = self::inlineEnvAssignments($env);
-        return trim(($prefix !== '' ? $prefix . ' ' : '') . 'php ' . $script);
+        return trim(($prefix !== '' ? $prefix . ' ' : '') . 'php ' . self::shellToken($script));
     }
 
+    /** @param list<string> $argv @param array<string,string> $env */
     private static function buildWrapperCommand(array $argv, array $env = []): string
     {
-        $parts = [];
-        $parts[] = self::wrapperInvokerBin();
-        $parts[] = 'run';
+        $parts = [self::wrapperInvokerBin(), 'run'];
 
         $flags = self::wrapperRunFlags();
         if ($flags !== '') {
@@ -92,20 +97,21 @@ final class SuggestedCommandBuilder
                 continue;
             }
             $parts[] = '-e';
-            $parts[] = $key . '=' . self::quoteEnvValue((string)$value);
+            $parts[] = $key . '=' . self::quoteValue((string)$value);
         }
 
         $parts[] = 'testkit';
         foreach ($argv as $arg) {
             $arg = trim((string)$arg);
             if ($arg !== '') {
-                $parts[] = $arg;
+                $parts[] = self::shellToken($arg);
             }
         }
 
         return implode(' ', $parts);
     }
 
+    /** @param array<string,string> $env */
     private static function inlineEnvAssignments(array $env): string
     {
         $parts = [];
@@ -114,13 +120,20 @@ final class SuggestedCommandBuilder
             if ($key === '') {
                 continue;
             }
-            $parts[] = $key . '=' . self::quoteEnvValue((string)$value);
+            $parts[] = $key . '=' . self::quoteValue((string)$value);
         }
 
         return implode(' ', $parts);
     }
 
-    private static function quoteEnvValue(string $value): string
+    private static function shellToken(string $value): string
+    {
+        return preg_match('#^[A-Za-z0-9._/\\:=\-]+$#', $value) === 1
+            ? $value
+            : self::quoteValue($value);
+    }
+
+    private static function quoteValue(string $value): string
     {
         return "'" . str_replace("'", "'\\''", $value) . "'";
     }
