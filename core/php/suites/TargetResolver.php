@@ -43,13 +43,7 @@ final class TargetResolver
             'references' => ['reference_contract'],
             'php-references' => ['reference_contract'],
             'sql-observability' => ['sql_observability'],
-            'tarifa-contract' => ['back_php'],
         ];
-
-        if ($target === 'tarifa-contract') {
-            putenv('TEST_MATCH=tarifa_contract.test.php');
-            putenv('TEST_REQUIRE_TESTS=1');
-        }
 
         $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
         $envVal = Env::string($envKey, '');

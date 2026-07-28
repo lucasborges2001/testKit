@@ -25,6 +25,7 @@ $tests = [
     'Seed state canonical contract'         => __DIR__ . '/test_seed_state_contract.php',
     'Engine support contract'               => __DIR__ . '/test_engine_support_contract.php',
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
+    'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
     'BackPythonSuite trace coverage'        => __DIR__ . '/test_back_python_trace_coverage_contract.php',
     'Manifest atomic write'                 => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'             => __DIR__ . '/test_reporting_contract.php',
