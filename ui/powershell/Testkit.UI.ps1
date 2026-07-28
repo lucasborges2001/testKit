@@ -21,53 +21,47 @@ function Start-TestkitInteractiveUi {
 
     Clear-Host
     Write-UiBanner -Title 'testkit UI interactiva (PowerShell)' -Lines @(
-        'Estas en modo interactivo para humanos.',
-        'El modo canonical y no interactivo sigue siendo .\bin\testkit.ps1 y los wrappers existentes.',
-        'Esta UI no reemplaza el CLI: lo envuelve, te muestra el comando real y te pide confirmacion antes de ejecutar.'
+        'Modo interactivo para humanos.',
+        'El CLI no interactivo sigue siendo la autoridad.',
+        'La UI muestra el comando exacto y pide confirmacion antes de ejecutarlo.'
     )
 
     $selection = New-TestkitUiSelection -Catalog $catalog
     $selection.Action = Select-UiMenuOption -Title 'Accion' -Options $catalog.Actions -DefaultIndex 3
     if ($null -eq $selection.Action) {
-        Write-UiWarning -Message 'Cancelado por el usuario antes de seleccionar accion.'
+        Write-UiWarning -Message 'Cancelado antes de seleccionar accion.'
         return
     }
 
-    $needsStackPrompt = $selection.Action.Key -in @('up', 'seed', 'run-tests')
-    if ($needsStackPrompt) {
-        Write-UiInfo -Message 'Se pide stack porque forma parte del lenguaje operativo esperado, pero esta UI no inventa su traduccion tecnica si el contrato real no esta expuesto.'
+    if ($selection.Action.Key -in @('up', 'seed', 'run-tests')) {
         $selection.Stack = Select-UiMenuOption -Title 'Stack' -Options $catalog.Stacks -DefaultIndex 0 -AllowSkip -SkipLabel 'No seleccionar stack'
-        if ($selection.Action.Key -eq 'run-tests') {
-            Write-UiInfo -Message 'La seleccion de stack queda visible en el resumen, pero no se exporta como env var/flag sin contrato real comprobable.'
-        }
     }
 
     if ($selection.Action.Key -eq 'run-tests') {
-        $selection.Target = Select-UiMenuOption -Title 'Target' -Options $catalog.Targets -DefaultIndex 0
-        if ($null -eq $selection.Target) {
-            Write-UiWarning -Message 'Cancelado por el usuario antes de seleccionar target.'
+        $selection.Selector = Select-UiMenuOption -Title 'Selector tipado' -Options $catalog.Selectors -DefaultIndex 0
+        if ($null -eq $selection.Selector) {
+            Write-UiWarning -Message 'Cancelado antes de seleccionar suite, group o category.'
             return
         }
 
         $selection.Scope = Select-UiMenuOption -Title 'Scope' -Options $catalog.Scopes -DefaultIndex 0
         if ($null -eq $selection.Scope) {
-            Write-UiWarning -Message 'Cancelado por el usuario antes de seleccionar scope.'
-            return
-        }
-
-        $selection.Category = Select-UiMenuOption -Title 'Category' -Options $catalog.Categories -DefaultIndex 0
-        if ($null -eq $selection.Category) {
-            Write-UiWarning -Message 'Cancelado por el usuario antes de seleccionar category.'
+            Write-UiWarning -Message 'Cancelado antes de seleccionar scope.'
             return
         }
 
         Write-UiSection -Title 'Filtros adicionales'
-        Write-UiInfo -Message 'Selector libre -> usa TEST_MATCH. No se inventan TEST_PATH ni TEST_MODULE.'
-        $selection.Match = Read-UiText -Prompt 'TEST_MATCH (selector libre por match/path/modulo si el runner ya lo soporta)' -AllowEmpty
+        if ($selection.Selector.Kind -eq 'suite') {
+            $selection.TestPath = Read-UiText -Prompt '--test (ruta repo-relative, vacio para toda la suite)' -AllowEmpty
+        }
+        else {
+            $selection.TestPath = ''
+            Write-UiInfo -Message '--test solo esta disponible cuando el selector es --suite.'
+        }
         $selection.FailFast = Read-UiYesNo -Prompt 'Activar fail-fast (TEST_FAIL_FAST)' -Default:$false
         $selection.Jobs = Read-UiPositiveInt -Prompt 'TEST_JOBS (entero positivo, vacio para no emitir)' -AllowEmpty
         $selection.Coverage = Read-UiYesNo -Prompt 'Activar coverage (TEST_COVERAGE)' -Default:$false
-        $selection.ListOnly = Read-UiYesNo -Prompt 'List-only (TEST_LIST)' -Default:$false
+        $selection.ListOnly = Read-UiYesNo -Prompt 'List-only (--list)' -Default:$false
     }
 
     $plan = Build-TestkitExecutionPlan -Selection $selection -Paths $paths
@@ -76,7 +70,7 @@ function Start-TestkitInteractiveUi {
     Write-UiKeyValueTable -Rows $plan.SummaryRows
 
     if ($plan.Notes.Count -gt 0) {
-        Write-UiSection -Title 'Notas de honestidad del wrapper'
+        Write-UiSection -Title 'Notas de alcance'
         Write-UiIndentedBlock -Lines $plan.Notes
     }
 
@@ -86,18 +80,14 @@ function Start-TestkitInteractiveUi {
     Write-UiSection -Title 'Bloque PowerShell reproducible'
     Write-UiIndentedBlock -Lines $plan.ReproBlock
 
-    $confirm = Read-UiYesNo -Prompt 'Confirmar ejecucion' -Default:$false
-    if (-not $confirm) {
+    if (-not (Read-UiYesNo -Prompt 'Confirmar ejecucion' -Default:$false)) {
         Write-UiWarning -Message 'Cancelado. No se ejecuto ningun comando.'
         return
     }
 
     Write-UiSection -Title 'Ejecucion'
     $exitCode = Invoke-TestkitExecutionPlan -Plan $plan
-
-    if ($null -eq $exitCode) {
-        $exitCode = 0
-    }
+    if ($null -eq $exitCode) { $exitCode = 0 }
 
     if ([int]$exitCode -eq 0) {
         Write-UiSuccess -Message 'Ejecucion finalizada con exit code 0.'
