@@ -4,10 +4,6 @@ Testkit PowerShell self-test runner.
 
 Usage:  pwsh -File tests/powershell/run.ps1
 Exit:   0 if all pass, 1 if any fail.
-
-Each test file is a standalone PowerShell script that exits 0 on success,
-non-zero on failure. Mirrors the layout and behavior of
-tests/framework/run.php for the PHP self-tests.
 #>
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -18,6 +14,7 @@ $tests = [ordered]@{
   'Compose file selection (Get-TestkitComposeFiles)' = Join-Path $root 'test_compose_files.ps1'
   'Env file resolution and container path mapping'  = Join-Path $root 'test_env_resolution.ps1'
   'Run command rewrite (Convert-TestkitRunArgs)'    = Join-Path $root 'test_command_rewrite.ps1'
+  'PowerShell UI typed selectors'                   = Join-Path $root 'test_ui_typed_selectors.ps1'
   'Doctor --readonly does not write to disk'        = Join-Path $root 'test_doctor_readonly.ps1'
   'External process exit code propagation'          = Join-Path $root 'test_exit_code_propagation.ps1'
 }
@@ -34,7 +31,8 @@ foreach ($name in $tests.Keys) {
   $file = $tests[$name]
 
   if (-not (Test-Path $file)) {
-    Write-Host ("  [SKIP] {0,-$width}  (file not found: {1})" -f $name, $file)
+    Write-Host ("  [FAIL] {0,-$width}  (file not found: {1})" -f $name, $file)
+    $fail++
     continue
   }
 
@@ -44,7 +42,8 @@ foreach ($name in $tests.Keys) {
   if ($exitCode -eq 0) {
     Write-Host ("  [PASS] {0}" -f $name)
     $pass++
-  } else {
+  }
+  else {
     Write-Host ("  [FAIL] {0}" -f $name)
     foreach ($line in $output) {
       Write-Host ("         {0}" -f $line)
