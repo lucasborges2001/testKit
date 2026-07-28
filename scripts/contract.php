@@ -9,7 +9,10 @@ use Testkit\Core\Config\ContractRegistry;
 /** @param array<string,mixed> $payload */
 function testkit_contract_print_json(array $payload): void
 {
-    echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
+    echo json_encode(
+        $payload,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+    ) . PHP_EOL;
 }
 
 $args = array_values(array_slice($argv, 1));
@@ -33,50 +36,47 @@ try {
             $errors = ContractRegistry::validate();
             $payload = [
                 'ok' => $errors === [],
-                'schema' => ['name' => ContractRegistry::SCHEMA_NAME, 'version' => ContractRegistry::SCHEMA_VERSION],
+                'schema' => [
+                    'name' => ContractRegistry::SCHEMA_NAME,
+                    'version' => ContractRegistry::SCHEMA_VERSION,
+                ],
                 'digest' => ContractRegistry::digest(),
                 'errors' => $errors,
             ];
             if ($json) {
                 testkit_contract_print_json($payload);
             } else {
-                echo $errors === [] ? "contract registry: PASS\n" : "contract registry: FAIL\n- " . implode("\n- ", $errors) . "\n";
+                echo $errors === []
+                    ? "contract registry: PASS\n"
+                    : "contract registry: FAIL\n- " . implode("\n- ", $errors) . "\n";
             }
             exit($errors === [] ? 0 : 2);
 
-        case 'validate-target':
-            $name = strtolower(trim((string)($args[1] ?? '')));
-            $definition = ContractRegistry::definition($name);
+        case 'validate-selector':
+            $kind = strtolower(trim((string)($args[1] ?? '')));
+            $name = strtolower(trim((string)($args[2] ?? '')));
+            $definition = ContractRegistry::definition($kind, $name);
             $payload = [
                 'ok' => is_array($definition),
-                'requested' => $name,
-                'canonical' => ContractRegistry::canonicalName($name),
-                'kind' => ContractRegistry::targetKind($name),
+                'kind' => $kind,
+                'name' => $name,
                 'definition' => $definition,
             ];
             if ($json) {
                 testkit_contract_print_json($payload);
             } elseif (is_array($definition)) {
-                echo ContractRegistry::canonicalName($name) . PHP_EOL;
+                echo $kind . ':' . $name . PHP_EOL;
             }
             exit(is_array($definition) ? 0 : 2);
 
-        case 'target-kind':
-            $name = strtolower(trim((string)($args[1] ?? '')));
-            $kind = ContractRegistry::targetKind($name);
-            if ($kind === 'unknown') {
-                exit(2);
+        case 'list-selectors':
+            $kind = strtolower(trim((string)($args[1] ?? '')));
+            $names = ContractRegistry::selectorNames($kind);
+            if ($json) {
+                testkit_contract_print_json(['kind' => $kind, 'selectors' => $names]);
+            } else {
+                echo implode(PHP_EOL, $names) . PHP_EOL;
             }
-            echo $kind . PHP_EOL;
-            exit(0);
-
-        case 'target-canonical':
-            $name = strtolower(trim((string)($args[1] ?? '')));
-            $canonical = ContractRegistry::canonicalName($name);
-            if ($canonical === '') {
-                exit(2);
-            }
-            echo $canonical . PHP_EOL;
             exit(0);
 
         case 'render-doc':
@@ -89,7 +89,11 @@ try {
             $expected = ContractRegistry::renderMarkdown();
             $ok = is_string($actual) && $actual === $expected;
             if ($json) {
-                testkit_contract_print_json(['ok' => $ok, 'path' => $path, 'digest' => ContractRegistry::digest()]);
+                testkit_contract_print_json([
+                    'ok' => $ok,
+                    'path' => $path,
+                    'digest' => ContractRegistry::digest(),
+                ]);
             } elseif (!$ok) {
                 fwrite(STDERR, "contract registry doc drift: {$path}\n");
             }
@@ -99,7 +103,14 @@ try {
             fwrite(STDERR, "contract: comando no soportado '{$command}'\n");
             exit(2);
     }
-} catch (Throwable $e) {
+} catch (\InvalidArgumentException $e) {
+    if ($json) {
+        testkit_contract_print_json(['ok' => false, 'error' => $e->getMessage()]);
+    } else {
+        fwrite(STDERR, 'contract invalid request: ' . $e->getMessage() . PHP_EOL);
+    }
+    exit(2);
+} catch (\Throwable $e) {
     if ($json) {
         testkit_contract_print_json(['ok' => false, 'error' => $e->getMessage()]);
     } else {

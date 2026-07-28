@@ -27,6 +27,7 @@ $tests = [
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
     'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
     'Contract registry parity'              => __DIR__ . '/test_contract_registry.php',
+    'Strict run request'                    => __DIR__ . '/test_strict_run_request.php',
     'BackPythonSuite trace coverage'        => __DIR__ . '/test_back_python_trace_coverage_contract.php',
     'Manifest atomic write'                 => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'             => __DIR__ . '/test_reporting_contract.php',

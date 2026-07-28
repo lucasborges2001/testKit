@@ -8,37 +8,31 @@ use Testkit\Core\Config\ContractRegistry;
 
 final class TargetResolver
 {
-    /** @return array<int,string> */
-    public static function resolve(string $target): array
+    /** @return list<string> */
+    public static function resolve(string $selectorName): array
     {
-        $target = strtolower(trim($target));
-        $category = ContractRegistry::categoryFor($target);
-        if ($category !== '' && Env::string('TEST_CATEGORY', '') === '') {
+        $kind = strtolower(Env::string('TESTKIT_SELECTOR_KIND', ''));
+        if ($kind === '') {
+            return [];
+        }
+        return self::resolveTyped($kind, $selectorName);
+    }
+
+    /** @return list<string> */
+    public static function resolveTyped(string $kind, string $name): array
+    {
+        $definition = ContractRegistry::definition($kind, $name);
+        if (!is_array($definition)) {
+            return [];
+        }
+
+        if ($kind === 'category') {
+            $category = (string)($definition['category'] ?? $name);
             putenv('TEST_CATEGORY=' . $category);
             $_ENV['TEST_CATEGORY'] = $category;
             $_SERVER['TEST_CATEGORY'] = $category;
         }
 
-        // Fase 2 conserva la redefinición heredada, pero la valida contra el
-        // mismo registro. Fase 3 elimina TESTKIT_TARGET_* por completo.
-        $envKey = 'TESTKIT_TARGET_' . strtoupper(str_replace('-', '_', $target));
-        $envVal = Env::string($envKey, '');
-        if ($envVal !== '') {
-            $parts = array_values(array_filter(array_map('trim', explode(',', $envVal))));
-            $validSuites = ContractRegistry::suiteIds();
-            foreach ($parts as $suiteId) {
-                if (!in_array($suiteId, $validSuites, true)) {
-                    fwrite(
-                        STDERR,
-                        "Error en {$envKey}: suite '{$suiteId}' no reconocida. Valores validos: "
-                        . implode('|', $validSuites) . "\n"
-                    );
-                    return [];
-                }
-            }
-            return array_values(array_unique($parts));
-        }
-
-        return ContractRegistry::resolve($target);
+        return array_values((array)($definition['suites'] ?? []));
     }
 }

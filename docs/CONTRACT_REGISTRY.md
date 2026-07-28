@@ -2,8 +2,13 @@
 
 > Generado desde `Testkit\Core\Config\ContractRegistry`. No editar listas manualmente.
 
-Schema: `testkit.contract_registry@1`  
-Digest: `900feb8987848ff42e89a61855a92f23a3bc2361fc05639e54cb2684d892baac`
+Schema: `testkit.contract_registry@2`  
+Digest: `27b61b7a8c807d75088c2fe8e60e63b2cf067a82a1b492fba9077683ead1f9d9`
+
+## Selector público
+
+Toda corrida declara exactamente uno de `--suite`, `--group` o `--category`.
+No existen targets posicionales, aliases ni extensiones `TESTKIT_TARGET_*`.
 
 ## Suites
 
@@ -24,7 +29,6 @@ Digest: `900feb8987848ff42e89a61855a92f23a3bc2361fc05639e54cb2684d892baac`
 - `back`: `back_php`, `back_python`
 - `front`: `front_php`, `front_js`
 - `infra`: `infra_php`
-- `public_html`: `front_php`, `front_js`
 - `php`: `back_php`, `front_php`, `infra_php`
 - `js`: `front_js`
 
@@ -38,26 +42,21 @@ Digest: `900feb8987848ff42e89a61855a92f23a3bc2361fc05639e54cb2684d892baac`
 - `security`: `back_php`, `back_python`, `front_php`, `front_js`, `infra_php`
 - `slow`: `back_php`, `back_python`, `front_php`, `front_js`, `infra_php`
 
-## Aliases heredados
+## Ejemplos
 
-Se eliminan en Fase 3; no son nombres canónicos.
-
-- `back-py` → `back-python`
-- `python` → `back-python`
-- `py` → `back-python`
-- `http` → `infra-php`
-- `migration` → `migration-contract`
-- `migrations` → `migration-contract`
-- `references` → `reference-contract`
-- `php-references` → `reference-contract`
+```bash
+php runTest.php --suite back-php
+php runTest.php --group all --list
+php runTest.php --category smoke
+php runTest.php --suite back-php --test test/back/auth/login.test.php
+```
 
 ## Contrato completo
-
-Capacidades, restricciones, target definitions y support matrix se serializan con:
 
 ```bash
 php scripts/contract.php --json
 php scripts/contract.php validate --json
+php scripts/contract.php validate-selector suite back-php --json
 php scripts/contract.php check-doc docs/CONTRACT_REGISTRY.md
 php tests/framework/test_contract_registry.php
 ```
