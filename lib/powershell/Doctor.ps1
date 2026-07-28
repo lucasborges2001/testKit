@@ -1,11 +1,13 @@
 $doctorShared = Join-Path $PSScriptRoot 'Doctor.Shared.ps1'
 $doctorBase = Join-Path $PSScriptRoot 'Doctor.BaseChecks.ps1'
 $doctorCapability = Join-Path $PSScriptRoot 'Doctor.CapabilityChecks.ps1'
+$doctorContractRegistry = Join-Path $PSScriptRoot 'Doctor.ContractRegistry.ps1'
 $doctorRender = Join-Path $PSScriptRoot 'Doctor.Render.ps1'
 
 . $doctorShared
 . $doctorBase
 . $doctorCapability
+. $doctorContractRegistry
 . $doctorRender
 
 function Invoke-TestkitDoctor([string[]]$DoctorArgs) {

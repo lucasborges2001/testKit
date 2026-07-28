@@ -9,6 +9,7 @@ require_once __DIR__ . '/common/ProjectEnv.php';
 require_once __DIR__ . '/common/Trace.php';
 require_once __DIR__ . '/common/Lock.php';
 
+require_once __DIR__ . '/config/ContractRegistry.php';
 require_once __DIR__ . '/config/SuiteContractRegistry.php';
 require_once __DIR__ . '/config/RunnerConfig.php';
 require_once __DIR__ . '/discovery/TestTagger.php';

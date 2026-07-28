@@ -5,10 +5,12 @@ require_once __DIR__ . '/../core/php/bootstrap.php';
 require_once __DIR__ . '/../core/php/config/ConfigSchema.php';
 require_once __DIR__ . '/../core/php/reporting/SeedStateInspector.php';
 
+use Testkit\Core\Config\ConfigSchema;
+use Testkit\Core\Config\ContractRegistry;
+
 if (($argv[1] ?? '') === 'config-schema') {
-    $json = in_array('--json', $argv, true);
-    if ($json) {
-        $payload = \Testkit\Core\Config\ConfigSchema::inspectPayload();
+    $payload = ContractRegistry::configSchemaPayload(ConfigSchema::inspectPayload());
+    if (in_array('--json', $argv, true)) {
         $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (!is_string($encoded) || $encoded === '') {
             fwrite(STDERR, "inspect error: no se pudo serializar config-schema\n");
@@ -18,7 +20,7 @@ if (($argv[1] ?? '') === 'config-schema') {
         exit(0);
     }
 
-    \Testkit\Core\Config\ConfigSchema::printText();
+    echo ContractRegistry::renderConfigSchemaText($payload);
     exit(0);
 }
 

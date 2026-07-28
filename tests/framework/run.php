@@ -26,6 +26,7 @@ $tests = [
     'Engine support contract'               => __DIR__ . '/test_engine_support_contract.php',
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
     'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
+    'Contract registry parity'              => __DIR__ . '/test_contract_registry.php',
     'BackPythonSuite trace coverage'        => __DIR__ . '/test_back_python_trace_coverage_contract.php',
     'Manifest atomic write'                 => __DIR__ . '/test_manifest_write.php',
     'Reporting contract stable'             => __DIR__ . '/test_reporting_contract.php',
@@ -51,9 +52,9 @@ $tests = [
     'SQL observability public exit code 5'  => __DIR__ . '/test_sql_observability_exit_code_5.php',
 ];
 
-$pass   = 0;
-$fail   = 0;
-$width  = max(array_map('strlen', array_keys($tests)));
+$pass = 0;
+$fail = 0;
+$width = max(array_map('strlen', array_keys($tests)));
 
 echo str_repeat('-', $width + 12) . "\n";
 echo " Testkit self-tests\n";
@@ -61,14 +62,14 @@ echo str_repeat('-', $width + 12) . "\n";
 
 foreach ($tests as $name => $file) {
     if (!is_file($file)) {
-        printf("  [SKIP] %-{$width}s  (file not found: %s)\n", $name, $file);
+        printf("  [FAIL] %-{$width}s  (registered file not found: %s)\n", $name, $file);
+        $fail++;
         continue;
     }
 
-    $output   = [];
+    $output = [];
     $exitCode = 0;
     exec('php ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
-
     if ($exitCode === 0) {
         printf("  [PASS] %s\n", $name);
         $pass++;
