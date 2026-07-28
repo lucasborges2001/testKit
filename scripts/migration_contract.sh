@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 # /testkit/scripts/migration_contract.sh
-# Ejecuta el target migration-contract dentro del contenedor TestKit.
+# Ejecuta la suite canónica migration-contract dentro del contenedor TestKit.
 # Valida baseline snapshot + bootstrap estructural + manifest.
 # =============================================================================
 
@@ -20,4 +20,4 @@ find_testkit() {
 
 TK="$(find_testkit)"
 
-"$TK" run --rm testkit php /workspace/testkit/runTest.php migration-contract
+"$TK" run --rm testkit php /workspace/testkit/runTest.php --suite migration-contract
