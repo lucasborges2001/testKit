@@ -284,7 +284,7 @@ final class ContractRegistry
     {
         $lines = ['# Registro contractual de testKit','',
             '> Generado desde `Testkit\\Core\\Config\\ContractRegistry`. No editar listas manualmente.','',
-            'Schema: `'.self::SCHEMA_NAME.'@'.self::SCHEMA_VERSION.'`  ','Digest: `'.self::digest().'`','',
+            'Schema: `'.self::SCHEMA_NAME.'@'.self::SCHEMA_VERSION.'`','Digest: `'.self::digest().'`','',
             '## Selector público','',
             'Toda corrida declara exactamente uno de `--suite`, `--group` o `--category`.',
             'No existen targets posicionales, aliases ni extensiones `TESTKIT_TARGET_*`.','',

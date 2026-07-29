@@ -13,7 +13,7 @@ $assert = static function (bool $ok, string $message) use (&$errors): void {
     }
 };
 
-$assert(TargetResolver::resolve('sql-observability') === ['sql_observability'], 'target must resolve to native suite');
+$assert(TargetResolver::resolveTyped('suite', 'sql-observability') === ['sql_observability'], 'target must resolve to native suite');
 
 $config = (string)file_get_contents($root . '/scripts/sql-observability/config.php');
 $runner = (string)file_get_contents($root . '/scripts/sql-observability/run.sh');

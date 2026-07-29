@@ -129,8 +129,16 @@ try {
     nostore_assert(!str_contains($doctorOutput, 'ENGINE_NOT_CLOSED'), 'doctor should not emit ENGINE_NOT_CLOSED for no-store env.', $errors);
     nostore_assert(!str_contains($doctorOutput, 'NON_MYSQL_BASE_CHECKS_PARTIAL'), 'doctor should not warn partial base checks for no-store env.', $errors);
 
-    foreach (['back-python', 'back-php', 'contract'] as $target) {
-        $run = nostore_run([PHP_BINARY, $repoRoot . '/runTest.php', $target, '--list'], $repoRoot, $baseEnv);
+    foreach ([
+        'back-python' => ['--suite', 'back-python'],
+        'back-php' => ['--suite', 'back-php'],
+        'contract' => ['--category', 'contract'],
+    ] as $target => $selector) {
+        $run = nostore_run(
+            array_merge([PHP_BINARY, $repoRoot . '/runTest.php'], $selector, ['--list']),
+            $repoRoot,
+            $baseEnv
+        );
         $output = $run['stdout'] . "\n" . $run['stderr'];
         nostore_assert($run['code'] === 0, "{$target} --list should not fail without DB.", $errors);
         nostore_assert(!str_contains($output, 'driver=mysql'), "{$target} --list should not bootstrap mysql.", $errors);

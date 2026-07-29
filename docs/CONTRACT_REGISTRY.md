@@ -2,7 +2,7 @@
 
 > Generado desde `Testkit\Core\Config\ContractRegistry`. No editar listas manualmente.
 
-Schema: `testkit.contract_registry@2`  
+Schema: `testkit.contract_registry@2`
 Digest: `27b61b7a8c807d75088c2fe8e60e63b2cf067a82a1b492fba9077683ead1f9d9`
 
 ## Selector público
