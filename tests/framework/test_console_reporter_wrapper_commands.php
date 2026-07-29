@@ -35,7 +35,11 @@ $result = ReportSummary::enrichReport($result);
 ob_start();
 ConsoleReporter::printSuiteResult($result);
 $output = (string)ob_get_clean();
-assert_true(str_contains($output, './bin/testkit run --rm -e TEST_MATCH='), 'Next Step should use wrapper rerun command', $errors);
+assert_true(
+    str_contains($output, './bin/testkit run --rm testkit php runTest.php --suite back-php --test '),
+    'Next Step should use typed wrapper rerun command',
+    $errors
+);
 assert_true(str_contains($output, './bin/testkit run --rm testkit php scripts/report.php'), 'Next Step should use wrapper report command', $errors);
 
 if ($errors !== []) {

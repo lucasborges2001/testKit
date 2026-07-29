@@ -10,6 +10,8 @@ source "${_testkit_doctor_dir}/base_checks.sh"
 # shellcheck source=/dev/null
 source "${_testkit_doctor_dir}/capability_checks.sh"
 # shellcheck source=/dev/null
+source "${_testkit_doctor_dir}/contract_registry.sh"
+# shellcheck source=/dev/null
 source "${_testkit_doctor_dir}/render.sh"
 
 testkit_doctor_run() {

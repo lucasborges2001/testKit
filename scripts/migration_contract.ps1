@@ -1,6 +1,6 @@
 # =============================================================================
 # /testkit/scripts/migration_contract.ps1
-# Ejecuta el target migration-contract dentro del contenedor TestKit.
+# Ejecuta la suite canónica migration-contract dentro del contenedor TestKit.
 # =============================================================================
 
 Set-StrictMode -Version Latest
@@ -16,4 +16,5 @@ function Find-TestKit {
 }
 
 $tk = Find-TestKit
-& $tk run --rm testkit php /workspace/testkit/runTest.php migration-contract
+& $tk run --rm testkit php /workspace/testkit/runTest.php --suite migration-contract
+exit $LASTEXITCODE

@@ -23,7 +23,7 @@ SOURCE_PATH="${2:-}"
 
 if [[ -z "$SOURCE_PATH" ]]; then
   echo "Uso: $0 <report|metadata> <ruta-json>" >&2
-  exit 1
+  exit 2
 fi
 
 ENV_ARGS=(-e TEST_BASELINE_MODE=snapshot -e TEST_BASELINE_REQUIRE_BACKUPKIT_SUCCESS=1)
@@ -36,8 +36,8 @@ case "$KIND" in
     ;;
   *)
     echo "Tipo inválido: $KIND (usa report o metadata)" >&2
-    exit 1
+    exit 2
     ;;
 esac
 
-"$TK" run --rm "${ENV_ARGS[@]}" testkit php /workspace/testkit/runTest.php migration-contract
+"$TK" run --rm "${ENV_ARGS[@]}" testkit php /workspace/testkit/runTest.php --suite migration-contract

@@ -2,82 +2,74 @@ Set-StrictMode -Version 2.0
 
 function Get-TestkitUiCatalog {
     $actions = @(
-        [pscustomobject]@{ Key = 'doctor'; Label = 'doctor'; Description = 'Diagnostico del entorno via bin/testkit.ps1 doctor --dump' },
-        [pscustomobject]@{ Key = 'up'; Label = 'up'; Description = 'Levanta la infraestructura via bin/testkit.ps1 up -d' },
-        [pscustomobject]@{ Key = 'seed'; Label = 'seed'; Description = 'Dispara el wrapper de seed existente' },
-        [pscustomobject]@{ Key = 'run-tests'; Label = 'run tests'; Description = 'Ejecuta runTest.php con target + env vars reales' },
-        [pscustomobject]@{ Key = 'report'; Label = 'report'; Description = 'Genera reporte humano via scripts/report.php' },
-        [pscustomobject]@{ Key = 'down'; Label = 'down'; Description = 'Baja la infraestructura via bin/testkit.ps1 down' }
+        [pscustomobject]@{ Key = 'doctor'; Label = 'doctor'; Description = 'Diagnostico del entorno' },
+        [pscustomobject]@{ Key = 'up'; Label = 'up'; Description = 'Levanta infraestructura' },
+        [pscustomobject]@{ Key = 'seed'; Label = 'seed'; Description = 'Ejecuta el wrapper de seed' },
+        [pscustomobject]@{ Key = 'run-tests'; Label = 'run tests'; Description = 'Ejecuta runTest.php con selector tipado' },
+        [pscustomobject]@{ Key = 'report'; Label = 'report'; Description = 'Genera reporte humano' },
+        [pscustomobject]@{ Key = 'down'; Label = 'down'; Description = 'Baja infraestructura' }
     )
 
-    $stacks = @(
-        [pscustomobject]@{ Key = 'mysql'; Label = 'mysql' },
-        [pscustomobject]@{ Key = 'mysql,redis'; Label = 'mysql,redis' },
-        [pscustomobject]@{ Key = 'pg'; Label = 'pg' }
-    )
-
-    $targets = @(
-        [pscustomobject]@{ Key = 'all'; Label = 'all' },
-        [pscustomobject]@{ Key = 'back'; Label = 'back' },
-        [pscustomobject]@{ Key = 'back-php'; Label = 'back-php' },
-        [pscustomobject]@{ Key = 'back-py'; Label = 'back-py' },
-        [pscustomobject]@{ Key = 'front'; Label = 'front' },
-        [pscustomobject]@{ Key = 'front-php'; Label = 'front-php' },
-        [pscustomobject]@{ Key = 'front-js'; Label = 'front-js' },
-        [pscustomobject]@{ Key = 'php'; Label = 'php' },
-        [pscustomobject]@{ Key = 'js'; Label = 'js' }
-    )
-
-    $scopes = @(
-        [pscustomobject]@{ Key = 'all'; Label = 'all (sin TEST_SCOPE explicito)' },
-        [pscustomobject]@{ Key = 'unit'; Label = 'unit' },
-        [pscustomobject]@{ Key = 'integration'; Label = 'integration' },
-        [pscustomobject]@{ Key = 'e2e'; Label = 'e2e' }
-    )
-
-    $categories = @(
-        [pscustomobject]@{ Key = 'all'; Label = 'all (sin TEST_CATEGORY explicito)' },
-        [pscustomobject]@{ Key = 'smoke'; Label = 'smoke' },
-        [pscustomobject]@{ Key = 'perf'; Label = 'perf' },
-        [pscustomobject]@{ Key = 'stress'; Label = 'stress' },
-        [pscustomobject]@{ Key = 'contract'; Label = 'contract' },
-        [pscustomobject]@{ Key = 'critical'; Label = 'critical' },
-        [pscustomobject]@{ Key = 'slow'; Label = 'slow' }
+    $selectors = @(
+        [pscustomobject]@{ Kind = 'group'; Key = 'all'; Label = 'group: all' },
+        [pscustomobject]@{ Kind = 'group'; Key = 'back'; Label = 'group: back' },
+        [pscustomobject]@{ Kind = 'group'; Key = 'front'; Label = 'group: front' },
+        [pscustomobject]@{ Kind = 'group'; Key = 'infra'; Label = 'group: infra' },
+        [pscustomobject]@{ Kind = 'group'; Key = 'php'; Label = 'group: php' },
+        [pscustomobject]@{ Kind = 'group'; Key = 'js'; Label = 'group: js' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'back-php'; Label = 'suite: back-php' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'back-python'; Label = 'suite: back-python' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'front-php'; Label = 'suite: front-php' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'front-js'; Label = 'suite: front-js' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'infra-php'; Label = 'suite: infra-php' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'migration-contract'; Label = 'suite: migration-contract' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'reference-contract'; Label = 'suite: reference-contract' },
+        [pscustomobject]@{ Kind = 'suite'; Key = 'sql-observability'; Label = 'suite: sql-observability' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'smoke'; Label = 'category: smoke' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'perf'; Label = 'category: perf' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'stress'; Label = 'category: stress' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'contract'; Label = 'category: contract' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'critical'; Label = 'category: critical' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'security'; Label = 'category: security' },
+        [pscustomobject]@{ Kind = 'category'; Key = 'slow'; Label = 'category: slow' }
     )
 
     return [pscustomobject]@{
         Actions = $actions
-        Stacks = $stacks
-        Targets = $targets
-        Scopes = $scopes
-        Categories = $categories
+        Selectors = $selectors
+        Stacks = @(
+            [pscustomobject]@{ Key = 'mysql'; Label = 'mysql' },
+            [pscustomobject]@{ Key = 'mysql,redis'; Label = 'mysql,redis' },
+            [pscustomobject]@{ Key = 'pg'; Label = 'pg' }
+        )
+        Scopes = @(
+            [pscustomobject]@{ Key = 'all'; Label = 'all' },
+            [pscustomobject]@{ Key = 'unit'; Label = 'unit' },
+            [pscustomobject]@{ Key = 'integration'; Label = 'integration' },
+            [pscustomobject]@{ Key = 'e2e'; Label = 'e2e' }
+        )
     }
 }
 
 function Resolve-TestkitUiPaths {
     param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
-
-    $paths = [ordered]@{
+    return [pscustomobject]@{
         RepositoryRoot = $RepositoryRoot
         TestkitScript = Join-Path $RepositoryRoot 'bin\testkit.ps1'
         SeedScript = Join-Path $RepositoryRoot 'scripts\seed.ps1'
         ReportPhp = '/workspace/testkit/scripts/report.php'
         RunTestPhp = '/workspace/testkit/runTest.php'
     }
-
-    return [pscustomobject]$paths
 }
 
 function New-TestkitUiSelection {
     param([Parameter(Mandatory = $true)][psobject]$Catalog)
-
     return [pscustomobject]@{
         Action = $null
         Stack = $null
-        Target = ($Catalog.Targets | Where-Object { $_.Key -eq 'all' } | Select-Object -First 1)
+        Selector = ($Catalog.Selectors | Where-Object { $_.Kind -eq 'group' -and $_.Key -eq 'all' } | Select-Object -First 1)
         Scope = ($Catalog.Scopes | Where-Object { $_.Key -eq 'all' } | Select-Object -First 1)
-        Category = ($Catalog.Categories | Where-Object { $_.Key -eq 'all' } | Select-Object -First 1)
-        Match = ''
+        TestPath = ''
         FailFast = $false
         Jobs = ''
         Coverage = $false
@@ -87,11 +79,7 @@ function New-TestkitUiSelection {
 
 function ConvertTo-TestkitBoolString {
     param([Parameter(Mandatory = $true)][bool]$Value)
-
-    if ($Value) {
-        return '1'
-    }
-
+    if ($Value) { return '1' }
     return '0'
 }
 
@@ -101,17 +89,13 @@ function Build-TestkitExecutionPlan {
         [Parameter(Mandatory = $true)][psobject]$Paths
     )
 
-    if ($null -eq $Selection.Action) {
-        throw 'No hay accion seleccionada.'
-    }
-
+    if ($null -eq $Selection.Action) { throw 'No hay accion seleccionada.' }
     if (-not (Test-Path -LiteralPath $Paths.TestkitScript)) {
-        throw "No se encontro el entrypoint no interactivo esperado: $($Paths.TestkitScript)"
+        throw "No se encontro el entrypoint: $($Paths.TestkitScript)"
     }
 
     $relativeTestkit = '.\bin\testkit.ps1'
     $relativeSeed = '.\scripts\seed.ps1'
-
     $plan = [ordered]@{
         ActionKey = $Selection.Action.Key
         ActionLabel = $Selection.Action.Label
@@ -127,150 +111,106 @@ function Build-TestkitExecutionPlan {
 
     if ($Selection.Stack) {
         $plan.Notes.Add('Stack seleccionado: ' + $Selection.Stack.Key)
-        $plan.Notes.Add('No se emite ninguna flag/env var de stack desde esta UI porque el contrato real de stack no aparece en el material provisto. El hook queda encapsulado en Build-TestkitExecutionPlan para cablearlo sin tocar la UI.')
+        $plan.Notes.Add('La UI no traduce stack en esta subfase.')
     }
 
     switch ($Selection.Action.Key) {
         'doctor' {
-            $plan.Command = Format-UiCommandLine -Command $relativeTestkit -Arguments @('doctor', '--dump')
             $plan.CommandPath = $Paths.TestkitScript
             $plan.Arguments = @('doctor', '--dump')
         }
         'up' {
-            $plan.Command = Format-UiCommandLine -Command $relativeTestkit -Arguments @('up', '-d')
             $plan.CommandPath = $Paths.TestkitScript
             $plan.Arguments = @('up', '-d')
         }
         'seed' {
-            if (-not (Test-Path -LiteralPath $Paths.SeedScript)) {
-                throw "No se encontro scripts/seed.ps1 en $($Paths.SeedScript). Esta UI evita inventar otro wrapper."
-            }
-
-            $plan.Command = Format-UiCommandLine -Command $relativeSeed
+            if (-not (Test-Path -LiteralPath $Paths.SeedScript)) { throw "Falta $($Paths.SeedScript)" }
             $plan.CommandPath = $Paths.SeedScript
             $plan.Arguments = @()
         }
         'run-tests' {
-            $target = 'all'
-            if ($Selection.Target) {
-                $target = $Selection.Target.Key
+            if ($null -eq $Selection.Selector) { throw 'Falta selector tipado.' }
+            $kind = [string]$Selection.Selector.Kind
+            $name = [string]$Selection.Selector.Key
+            if ($kind -notin @('suite', 'group', 'category')) { throw "Selector kind invalido: $kind" }
+            if ([string]::IsNullOrWhiteSpace($name)) { throw 'Selector name vacio.' }
+            if (-not [string]::IsNullOrWhiteSpace($Selection.TestPath) -and $kind -ne 'suite') {
+                throw '--test solo se admite con --suite.'
             }
 
             if ($Selection.Scope -and $Selection.Scope.Key -ne 'all') {
                 $plan.EnvVars['TEST_SCOPE'] = $Selection.Scope.Key
             }
+            if ($Selection.FailFast) { $plan.EnvVars['TEST_FAIL_FAST'] = '1' }
+            if (-not [string]::IsNullOrWhiteSpace($Selection.Jobs)) { $plan.EnvVars['TEST_JOBS'] = [string]$Selection.Jobs }
+            if ($Selection.Coverage) { $plan.EnvVars['TEST_COVERAGE'] = '1' }
 
-            if ($Selection.Category -and $Selection.Category.Key -ne 'all') {
-                $plan.EnvVars['TEST_CATEGORY'] = $Selection.Category.Key
+            $args = @('run', '--rm', 'testkit', 'php', $Paths.RunTestPhp, ('--' + $kind), $name)
+            if (-not [string]::IsNullOrWhiteSpace($Selection.TestPath)) {
+                $args += @('--test', $Selection.TestPath.Trim())
             }
-
-            if (-not [string]::IsNullOrWhiteSpace($Selection.Match)) {
-                $plan.EnvVars['TEST_MATCH'] = $Selection.Match.Trim()
-            }
-
-            if ($Selection.FailFast) {
-                $plan.EnvVars['TEST_FAIL_FAST'] = (ConvertTo-TestkitBoolString -Value $true)
-            }
-
-            if (-not [string]::IsNullOrWhiteSpace($Selection.Jobs)) {
-                $plan.EnvVars['TEST_JOBS'] = [string]$Selection.Jobs
-            }
-
-            if ($Selection.Coverage) {
-                $plan.EnvVars['TEST_COVERAGE'] = (ConvertTo-TestkitBoolString -Value $true)
-            }
-
-            if ($Selection.ListOnly) {
-                $plan.EnvVars['TEST_LIST'] = (ConvertTo-TestkitBoolString -Value $true)
-            }
-
-            $plan.Command = Format-UiCommandLine -Command $relativeTestkit -Arguments @('run', '--rm', 'testkit', 'php', $Paths.RunTestPhp, $target)
+            if ($Selection.ListOnly) { $args += '--list' }
             $plan.CommandPath = $Paths.TestkitScript
-            $plan.Arguments = @('run', '--rm', 'testkit', 'php', $Paths.RunTestPhp, $target)
+            $plan.Arguments = $args
         }
         'report' {
-            $plan.Command = Format-UiCommandLine -Command $relativeTestkit -Arguments @('run', '--rm', 'testkit', 'php', $Paths.ReportPhp)
             $plan.CommandPath = $Paths.TestkitScript
             $plan.Arguments = @('run', '--rm', 'testkit', 'php', $Paths.ReportPhp)
         }
         'down' {
-            $plan.Command = Format-UiCommandLine -Command $relativeTestkit -Arguments @('down')
             $plan.CommandPath = $Paths.TestkitScript
             $plan.Arguments = @('down')
         }
-        default {
-            throw ('Accion no soportada: ' + $Selection.Action.Key)
-        }
+        default { throw ('Accion no soportada: ' + $Selection.Action.Key) }
     }
 
-    $summaryRows = New-Object System.Collections.Generic.List[object]
-    $summaryRows.Add([pscustomobject]@{ Label = 'modo'; Value = 'interactivo' })
-    $summaryRows.Add([pscustomobject]@{ Label = 'accion'; Value = $Selection.Action.Label })
+    $commandDisplay = if ($Selection.Action.Key -eq 'seed') { $relativeSeed } else { $relativeTestkit }
+    $plan.Command = Format-UiCommandLine -Command $commandDisplay -Arguments $plan.Arguments
 
-    if ($Selection.Stack) {
-        $summaryRows.Add([pscustomobject]@{ Label = 'stack'; Value = $Selection.Stack.Key })
-    }
-
+    $rows = New-Object System.Collections.Generic.List[object]
+    $rows.Add([pscustomobject]@{ Label = 'modo'; Value = 'interactivo' })
+    $rows.Add([pscustomobject]@{ Label = 'accion'; Value = $Selection.Action.Label })
+    if ($Selection.Stack) { $rows.Add([pscustomobject]@{ Label = 'stack'; Value = $Selection.Stack.Key }) }
     if ($Selection.Action.Key -eq 'run-tests') {
-        $summaryRows.Add([pscustomobject]@{ Label = 'target'; Value = $Selection.Target.Key })
-        $summaryRows.Add([pscustomobject]@{ Label = 'scope'; Value = $Selection.Scope.Key })
-        $summaryRows.Add([pscustomobject]@{ Label = 'category'; Value = $Selection.Category.Key })
-        $summaryRows.Add([pscustomobject]@{ Label = 'selector libre'; Value = (Get-TestkitUiDisplayValue -Value $Selection.Match) })
-        $summaryRows.Add([pscustomobject]@{ Label = 'fail-fast'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.FailFast) })
-        $summaryRows.Add([pscustomobject]@{ Label = 'jobs'; Value = (Get-TestkitUiDisplayValue -Value $Selection.Jobs) })
-        $summaryRows.Add([pscustomobject]@{ Label = 'coverage'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.Coverage) })
-        $summaryRows.Add([pscustomobject]@{ Label = 'list-only'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.ListOnly) })
+        $rows.Add([pscustomobject]@{ Label = 'selector'; Value = ($Selection.Selector.Kind + ':' + $Selection.Selector.Key) })
+        $rows.Add([pscustomobject]@{ Label = 'scope'; Value = $Selection.Scope.Key })
+        $rows.Add([pscustomobject]@{ Label = 'test'; Value = (Get-TestkitUiDisplayValue -Value $Selection.TestPath) })
+        $rows.Add([pscustomobject]@{ Label = 'list-only'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.ListOnly) })
     }
-
-    $summaryRows.Add([pscustomobject]@{ Label = 'modo canonical'; Value = '.\bin\testkit.ps1 y wrappers existentes' })
-    $plan.SummaryRows = @($summaryRows)
+    $plan.SummaryRows = @($rows)
 
     $repro = New-Object System.Collections.Generic.List[string]
     $repro.Add('# ejecutar desde la raiz del repo testkit')
-
-    foreach ($name in $plan.EnvVars.Keys) {
-        $repro.Add('$env:' + $name + ' = ' + (Format-UiCommandToken -Value $plan.EnvVars[$name]))
+    foreach ($key in $plan.EnvVars.Keys) {
+        $repro.Add('$env:' + $key + ' = ' + (Format-UiCommandToken -Value $plan.EnvVars[$key]))
     }
-
     $repro.Add($plan.Command)
     $plan.ReproBlock = @($repro)
-
     return [pscustomobject]$plan
 }
 
 function Get-TestkitUiDisplayValue {
     param([string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return '(vacio)'
-    }
-
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '(vacio)' }
     return $Value
 }
 
 function Get-TestkitUiBooleanLabel {
     param([Parameter(Mandatory = $true)][bool]$Value)
-
-    if ($Value) {
-        return 'si'
-    }
-
+    if ($Value) { return 'si' }
     return 'no'
 }
 
 function Invoke-TestkitExecutionPlan {
     param([Parameter(Mandatory = $true)][psobject]$Plan)
-
     Push-Location -LiteralPath $Plan.WorkingDirectory
     try {
         $backup = New-Object System.Collections.Generic.List[object]
-
         foreach ($name in $Plan.EnvVars.Keys) {
             $existing = [Environment]::GetEnvironmentVariable($name, 'Process')
             $backup.Add([pscustomobject]@{ Name = $name; Value = $existing; HadValue = ($null -ne $existing) })
             [Environment]::SetEnvironmentVariable($name, $Plan.EnvVars[$name], 'Process')
         }
-
         try {
             $global:LASTEXITCODE = 0
             & $Plan.CommandPath @($Plan.Arguments)
@@ -278,16 +218,10 @@ function Invoke-TestkitExecutionPlan {
         }
         finally {
             foreach ($item in $backup) {
-                if ($item.HadValue) {
-                    [Environment]::SetEnvironmentVariable($item.Name, $item.Value, 'Process')
-                }
-                else {
-                    [Environment]::SetEnvironmentVariable($item.Name, $null, 'Process')
-                }
+                if ($item.HadValue) { [Environment]::SetEnvironmentVariable($item.Name, $item.Value, 'Process') }
+                else { [Environment]::SetEnvironmentVariable($item.Name, $null, 'Process') }
             }
         }
     }
-    finally {
-        Pop-Location
-    }
+    finally { Pop-Location }
 }

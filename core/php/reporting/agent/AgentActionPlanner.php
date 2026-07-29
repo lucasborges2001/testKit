@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting\Agent;
 
+use Testkit\Core\Config\ContractRegistry;
+
 final class AgentActionPlanner
 {
     /**
@@ -29,7 +31,7 @@ final class AgentActionPlanner
         if ($suiteId === '') {
             $suiteId = AgentSelectionDeriver::primarySuiteId($selection, $suiteReports);
         }
-        $target = $suiteId !== '' ? str_replace('_', '-', $suiteId) : AgentSelectionDeriver::targetHint($selection, $suiteReports);
+        $suiteName = self::suitePublicName($suiteId);
 
         if ($outcomeStatus === 'contention') {
             $basis['rules'][] = 'outcome_contention_then_inspect_concurrency';
@@ -93,11 +95,11 @@ final class AgentActionPlanner
             );
         }
 
-        if ($outcomeStatus === 'timeout' && $file !== '') {
+        if ($outcomeStatus === 'timeout' && $file !== '' && $suiteName !== '') {
             $basis['rules'][] = 'outcome_timeout_with_file_then_rerun_single_file';
             return self::action(
                 'rerun_single_file',
-                self::rerunSingleFileCommand($target, $file, $agentMode),
+                self::rerunSingleFileCommand($suiteName, $file, $agentMode),
                 'Timeout con archivo identificado; rerun focalizado preserva evidencia y acota duración.',
                 'medium',
                 $file,
@@ -106,11 +108,11 @@ final class AgentActionPlanner
             );
         }
 
-        if ($outcomeStatus === 'failed' && $file !== '') {
+        if ($outcomeStatus === 'failed' && $file !== '' && $suiteName !== '') {
             $basis['rules'][] = 'outcome_failed_with_file_then_rerun_single_file';
             return self::action(
                 'rerun_single_file',
-                self::rerunSingleFileCommand($target, $file, $agentMode),
+                self::rerunSingleFileCommand($suiteName, $file, $agentMode),
                 'Fallo de dominio/ejecución con archivo disponible; el siguiente paso más barato es aislar ese archivo.',
                 'high',
                 $file,
@@ -121,9 +123,10 @@ final class AgentActionPlanner
 
         if ($outcomeStatus === 'no_tests') {
             $basis['rules'][] = 'outcome_no_tests_then_list_tests';
+            [$selectorKind, $selectorName] = self::selectorForSelection($selection, $suiteReports);
             return self::action(
                 'list_tests',
-                self::listTestsCommand(AgentSelectionDeriver::targetHint($selection, $suiteReports), $agentMode),
+                self::listTestsCommand($selectorKind, $selectorName, $agentMode),
                 'La selección no encontró tests; validar filtros/listado, no arreglar tests inexistentes.',
                 'high',
                 null,
@@ -196,15 +199,66 @@ final class AgentActionPlanner
     }
 
     /** @param array<string,mixed> $agentMode */
-    public static function listTestsCommand(string $target, array $agentMode): string
+    public static function listTestsCommand(string $selectorKind, string $selectorName, array $agentMode): string
     {
-        return self::commandWithAgentMode('./bin/testkit run --rm testkit php runTest.php ' . $target . ' --list', $agentMode);
+        return self::commandWithAgentMode(
+            './bin/testkit run --rm testkit php runTest.php --'
+            . self::shellArgBare($selectorKind)
+            . ' '
+            . self::shellArgBare($selectorName)
+            . ' --list',
+            $agentMode
+        );
     }
 
     /** @param array<string,mixed> $agentMode */
-    public static function rerunSingleFileCommand(string $target, string $file, array $agentMode): string
+    public static function rerunSingleFileCommand(string $suiteName, string $file, array $agentMode): string
     {
-        return self::commandWithAgentMode('./bin/testkit run --rm -e TEST_MATCH=' . self::shellArg($file) . ' testkit php runTest.php ' . $target, $agentMode);
+        return self::commandWithAgentMode(
+            './bin/testkit run --rm testkit php runTest.php --suite '
+            . self::shellArgBare($suiteName)
+            . ' --test '
+            . self::shellArg($file),
+            $agentMode
+        );
+    }
+
+    /** @param array<string,mixed> $selection @param array<int,array<string,mixed>> $suiteReports @return array{0:string,1:string} */
+    private static function selectorForSelection(array $selection, array $suiteReports): array
+    {
+        $kind = strtolower(trim((string)($selection['selector_kind'] ?? '')));
+        $name = strtolower(trim((string)($selection['selector_name'] ?? '')));
+        if (in_array($kind, ContractRegistry::selectorKinds(), true)
+            && $name !== ''
+            && ContractRegistry::definition($kind, $name) !== null) {
+            return [$kind, $name];
+        }
+
+        $suiteName = self::suitePublicName(AgentSelectionDeriver::primarySuiteId($selection, $suiteReports));
+        if ($suiteName !== '') {
+            return ['suite', $suiteName];
+        }
+
+        $category = strtolower(trim((string)($selection['category'] ?? '')));
+        if ($category !== '' && $category !== 'all' && ContractRegistry::definition('category', $category) !== null) {
+            return ['category', $category];
+        }
+
+        $target = strtolower(trim(AgentSelectionDeriver::targetHint($selection, $suiteReports)));
+        foreach (['group', 'suite', 'category'] as $candidateKind) {
+            if (ContractRegistry::definition($candidateKind, $target) !== null) {
+                return [$candidateKind, $target];
+            }
+        }
+
+        return ['group', 'all'];
+    }
+
+    private static function suitePublicName(string $suiteId): string
+    {
+        $suiteId = strtolower(trim($suiteId));
+        $suite = ContractRegistry::suites()[$suiteId] ?? null;
+        return is_array($suite) ? (string)($suite['public_name'] ?? '') : '';
     }
 
     /** @param array<string,mixed> $agentMode */

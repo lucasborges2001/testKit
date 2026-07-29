@@ -169,7 +169,6 @@ final class InspectionPayloadBuilder
             'warnings' => InspectionResultNormalizer::collectWarnings($meta, $suiteReports),
             'active_locks' => InspectionArtifactCollector::activeLocks(),
             'suite_policies' => $suitePolicies,
-            'tarifa_evidence' => InspectionArtifactCollector::tarifaEvidence((string)$context['report_root']),
             'agent_decision' => $decision['agent_decision'] ?? null,
             'next_action' => $decision['next_action'] ?? null,
         ];

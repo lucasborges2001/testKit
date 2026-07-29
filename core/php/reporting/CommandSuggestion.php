@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+use InvalidArgumentException;
 use Testkit\Core\Common\Env;
 
 final class CommandSuggestion
@@ -17,14 +18,15 @@ final class CommandSuggestion
         return 'direct';
     }
 
-    public static function rerun(string $target, string $file): string
+    public static function rerun(string $suite, string $file): string
     {
-        $quoted = self::shellSingleQuote($file);
+        $suite = self::suiteName($suite);
+        $quotedFile = self::shellSingleQuote($file);
 
         return match (self::shellKind()) {
-            'bash' => "./bin/testkit run --rm -e TEST_MATCH='{$quoted}' testkit php runTest.php {$target}",
-            'powershell' => ".\\bin\\testkit.ps1 run --rm -e TEST_MATCH='{$quoted}' testkit php runTest.php {$target}",
-            default => "TEST_MATCH='{$quoted}' php runTest.php {$target}",
+            'bash' => "./bin/testkit run --rm testkit php runTest.php --suite {$suite} --test '{$quotedFile}'",
+            'powershell' => ".\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite {$suite} --test '{$quotedFile}'",
+            default => "php runTest.php --suite {$suite} --test '{$quotedFile}'",
         };
     }
 
@@ -37,22 +39,33 @@ final class CommandSuggestion
         };
     }
 
-    public static function listSelection(string $target): string
+    public static function listSelection(string $suite): string
     {
+        $suite = self::suiteName($suite);
         return match (self::shellKind()) {
-            'bash' => "./bin/testkit run --rm testkit php runTest.php {$target} --list",
-            'powershell' => ".\\bin\\testkit.ps1 run --rm testkit php runTest.php {$target} --list",
-            default => "php runTest.php {$target} --list",
+            'bash' => "./bin/testkit run --rm testkit php runTest.php --suite {$suite} --list",
+            'powershell' => ".\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite {$suite} --list",
+            default => "php runTest.php --suite {$suite} --list",
         };
     }
 
-    public static function traceMigrations(string $target): string
+    public static function traceMigrations(string $suite): string
     {
+        $suite = self::suiteName($suite);
         return match (self::shellKind()) {
-            'bash' => "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php {$target}",
-            'powershell' => ".\\bin\\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php {$target}",
-            default => "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php {$target}",
+            'bash' => "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite {$suite}",
+            'powershell' => ".\\bin\\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite {$suite}",
+            default => "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php --suite {$suite}",
         };
+    }
+
+    private static function suiteName(string $suite): string
+    {
+        $suite = str_replace('_', '-', strtolower(trim($suite)));
+        if ($suite === '' || preg_match('/^[a-z0-9][a-z0-9-]*$/', $suite) !== 1) {
+            throw new InvalidArgumentException('suite inválida para comando sugerido: ' . $suite);
+        }
+        return $suite;
     }
 
     private static function shellSingleQuote(string $value): string

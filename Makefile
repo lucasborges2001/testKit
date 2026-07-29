@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 help:
-	@echo "Targets: doctor up up-pg down seed test test-back test-back-py test-front test-smoke test-perf test-stress cov-back cov-front report query-report"
+	@echo "Targets: doctor up up-pg down seed test test-back test-back-python test-front test-smoke test-perf test-stress cov-back cov-front report query-report"
 
 doctor:
 	./bin/testkit doctor
@@ -19,31 +19,31 @@ seed:
 	./scripts/seed.sh
 
 test:
-	./bin/testkit run --rm testkit php runTest.php
+	./bin/testkit run --rm testkit php runTest.php --group all
 
 test-back:
-	./bin/testkit run --rm testkit php runTest.php back
+	./bin/testkit run --rm testkit php runTest.php --group back
 
-test-back-py:
-	./bin/testkit run --rm testkit php runTest.php back-py
+test-back-python:
+	./bin/testkit run --rm testkit php runTest.php --suite back-python
 
 test-front:
-	./bin/testkit run --rm testkit php runTest.php front
+	./bin/testkit run --rm testkit php runTest.php --group front
 
 test-smoke:
-	./bin/testkit run --rm -e TEST_CATEGORY=smoke testkit php runTest.php smoke
+	./bin/testkit run --rm testkit php runTest.php --category smoke
 
 test-perf:
-	./bin/testkit run --rm -e TEST_CATEGORY=perf testkit php runTest.php perf
+	./bin/testkit run --rm testkit php runTest.php --category perf
 
 test-stress:
-	./bin/testkit run --rm -e TEST_CATEGORY=stress testkit php runTest.php stress
+	./bin/testkit run --rm testkit php runTest.php --category stress
 
 cov-back:
-	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php back-php
+	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php --suite back-php
 
 cov-front:
-	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php front-php
+	./bin/testkit run --rm -e TEST_COVERAGE=1 -e TEST_COVERAGE_FORMAT=both testkit php runTest.php --suite front-php
 
 report:
 	./bin/testkit run --rm testkit php /workspace/testkit/scripts/report.php

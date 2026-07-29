@@ -24,7 +24,7 @@ The host project must provide a test env file at one of these paths:
 Validate the wrapper and project contract:
 
 ```bash
-./bin/testkit doctor
+./bin/testkit doctor --suite back-php
 ```
 
 Start services:
@@ -36,16 +36,25 @@ Start services:
 Run one concrete suite in real agent mode:
 
 ```bash
-TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php back-php
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --suite back-php
 ```
 
-Common suite targets:
+Common suite selectors:
 
 ```bash
-TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php back-php
-TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-php
-TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php front-js
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --suite back-php
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --suite front-php
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --suite front-js
 ```
+
+Groups and categories are explicit and are not inferred from a positional target:
+
+```bash
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --group all
+TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --category smoke
+```
+
+Positional targets, aliases, `TEST_TARGET`, and `TESTKIT_TARGET_*` are not supported.
 
 ## Windows (PowerShell)
 
@@ -56,9 +65,9 @@ setup, troubleshooting and the supported/unsupported path matrix live in
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\dev\host-project'
 
-.\bin\testkit.ps1 doctor --readonly --compact
+.\bin\testkit.ps1 doctor --readonly --suite back-php --compact
 $env:TESTKIT_MODE = 'agent'
-.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+.\bin\testkit.ps1 run --rm testkit php runTest.php --suite back-php
 ```
 
 `doctor --readonly` runs every base check without creating `test/` or writing
@@ -117,7 +126,8 @@ That artifact is a persisted decision/execution envelope. After the meta run fin
 
 ## Rules
 
-- Start with one concrete suite, not `all`.
+- Start with one concrete suite, not group `all`.
+- Declare exactly one of `--suite`, `--group`, or `--category`.
 - Consume persisted JSON and `--json` interfaces.
 - Do not parse console progress as the automation contract.
 - Do not assume legacy JSON fallback. `inspect` and `agent-run` require canonical reports.

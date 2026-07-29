@@ -69,6 +69,8 @@ function ad_suite(string $outcome, ?array $failure = null, bool $evidenceValid =
         },
         'selection' => [
             'suite_id' => 'back_php',
+            'selector_kind' => 'suite',
+            'selector_name' => 'back-php',
             'target' => null,
             'scope' => 'all',
             'category' => 'all',
@@ -113,7 +115,8 @@ function ad_failure(array $overrides = []): array
 
 $domain = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_suite('failed', ad_failure())]);
 ad_assert(($domain['next_action']['kind'] ?? null) === 'rerun_single_file', 'domain failure with file must rerun_single_file', $errors);
-ad_assert(str_contains((string)($domain['next_action']['command'] ?? ''), 'TEST_MATCH='), 'rerun_single_file command must include TEST_MATCH', $errors);
+ad_assert(str_contains((string)($domain['next_action']['command'] ?? ''), '--suite back-php --test '), 'rerun_single_file command must use typed suite and exact --test', $errors);
+ad_assert(!str_contains((string)($domain['next_action']['command'] ?? ''), 'TEST_MATCH='), 'rerun_single_file command must not use TEST_MATCH', $errors);
 ad_assert(($domain['decision_basis']['uses_canonical_report_only'] ?? null) === true, 'canonical-only reports must set uses_canonical_report_only=true', $errors);
 ad_assert(count((array)($domain['decision_basis']['rules'] ?? [])) > 0, 'decision_basis.rules must not be empty', $errors);
 
@@ -123,7 +126,7 @@ $contention = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_sui
     'cause_code' => 'shared_store_locked',
 ]))]);
 ad_assert(($contention['next_action']['kind'] ?? null) === 'inspect_concurrency', 'contention must inspect_concurrency', $errors);
-ad_assert(!str_contains((string)($contention['next_action']['command'] ?? ''), 'runTest.php back-php'), 'contention must not suggest generic rerun', $errors);
+ad_assert(!str_contains((string)($contention['next_action']['command'] ?? ''), 'runTest.php --suite back-php'), 'contention must not suggest generic rerun', $errors);
 
 $bootstrap = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_suite('bootstrap_error', ad_failure([
     'phase' => 'bootstrap',
@@ -134,7 +137,7 @@ ad_assert(in_array(($bootstrap['next_action']['kind'] ?? null), ['inspect_seed_s
 
 $noTests = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_suite('no_tests')]);
 ad_assert(($noTests['next_action']['kind'] ?? null) === 'list_tests', 'no_tests must list_tests', $errors);
-ad_assert(str_ends_with((string)($noTests['next_action']['command'] ?? ''), ' --list'), 'no_tests command must list tests', $errors);
+ad_assert(str_contains((string)($noTests['next_action']['command'] ?? ''), 'runTest.php --suite back-php --list'), 'no_tests command must preserve typed selector', $errors);
 
 $passed = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_suite('passed')]);
 ad_assert(($passed['next_action']['kind'] ?? null) === 'no_action', 'passed must no_action', $errors);
@@ -151,6 +154,7 @@ $fallback = AgentDecisionBuilder::buildFromContext(ad_context(), null, [ad_suite
 ad_assert(($fallback['decision_basis']['uses_canonical_report_only'] ?? null) === false, 'legacy fallback must set uses_canonical_report_only=false', $errors);
 ad_assert(in_array('fallback_top_level_fields_used', (array)($fallback['decision_basis']['rules'] ?? []), true), 'legacy fallback must document fallback rule', $errors);
 ad_assert(count((array)($fallback['decision_basis']['warnings'] ?? [])) > 0, 'legacy fallback must emit warning', $errors);
+ad_assert(str_contains((string)($fallback['next_action']['command'] ?? ''), '--suite back-php --test '), 'fallback command must still use typed suite selector', $errors);
 
 if ($errors !== []) {
     foreach ($errors as $error) {

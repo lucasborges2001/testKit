@@ -43,7 +43,14 @@ $suiteReport = [
     'failures' => [failure_row('test/back/auth/integration/a.test.php', 'boom')],
 ];
 $enrichedSuite = ReportSummary::enrichReport($suiteReport);
-assert_true(str_contains((string)($enrichedSuite['recommended_actions'][0]['command'] ?? ''), './bin/testkit run --rm -e TEST_MATCH='), 'recommended_actions should use wrapper rerun command', $errors);
+assert_true(
+    str_contains(
+        (string)($enrichedSuite['recommended_actions'][0]['command'] ?? ''),
+        './bin/testkit run --rm testkit php runTest.php --suite back-php --test '
+    ),
+    'recommended_actions should use typed wrapper rerun command',
+    $errors
+);
 assert_true(str_contains((string)($enrichedSuite['recommended_actions'][1]['command'] ?? ''), './bin/testkit run --rm testkit php scripts/report.php') || str_contains((string)($enrichedSuite['recommended_actions'][2]['command'] ?? ''), './bin/testkit run --rm testkit php scripts/report.php'), 'recommended_actions should expose wrapper report command', $errors);
 
 if ($errors !== []) {

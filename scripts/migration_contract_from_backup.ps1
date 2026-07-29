@@ -26,4 +26,5 @@ switch ($Kind) {
     'metadata' { $envArgs += @('-e', "TEST_BASELINE_BACKUPKIT_METADATA_JSON=$SourcePath") }
 }
 
-& $tk run --rm @envArgs testkit php /workspace/testkit/runTest.php migration-contract
+& $tk run --rm @envArgs testkit php /workspace/testkit/runTest.php --suite migration-contract
+exit $LASTEXITCODE

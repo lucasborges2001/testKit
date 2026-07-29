@@ -3,11 +3,11 @@ function Get-TestkitShellKind {
   return 'powershell'
 }
 
-function Get-TestkitSuggestedRerunCommand([string]$Target,[string]$File) {
+function Get-TestkitSuggestedRerunCommand([string]$Suite,[string]$File) {
   switch (Get-TestkitShellKind) {
-    'powershell' { return ".\bin\testkit.ps1 run --rm -e TEST_MATCH='$File' testkit php runTest.php $Target" }
-    'bash' { return "./bin/testkit run --rm -e TEST_MATCH='$File' testkit php runTest.php $Target" }
-    default { return "TEST_MATCH='$File' php runTest.php $Target" }
+    'powershell' { return ".\bin\testkit.ps1 run --rm testkit php runTest.php --suite $Suite --test '$File'" }
+    'bash' { return "./bin/testkit run --rm testkit php runTest.php --suite $Suite --test '$File'" }
+    default { return "php runTest.php --suite $Suite --test '$File'" }
   }
 }
 
@@ -19,19 +19,19 @@ function Get-TestkitSuggestedReportCommand {
   }
 }
 
-function Get-TestkitSuggestedListCommand([string]$Target) {
+function Get-TestkitSuggestedListCommand([string]$Suite) {
   switch (Get-TestkitShellKind) {
-    'powershell' { return ".\bin\testkit.ps1 run --rm testkit php runTest.php $Target --list" }
-    'bash' { return "./bin/testkit run --rm testkit php runTest.php $Target --list" }
-    default { return "php runTest.php $Target --list" }
+    'powershell' { return ".\bin\testkit.ps1 run --rm testkit php runTest.php --suite $Suite --list" }
+    'bash' { return "./bin/testkit run --rm testkit php runTest.php --suite $Suite --list" }
+    default { return "php runTest.php --suite $Suite --list" }
   }
 }
 
-function Get-TestkitSuggestedTraceCommand([string]$Target) {
+function Get-TestkitSuggestedTraceCommand([string]$Suite) {
   switch (Get-TestkitShellKind) {
-    'powershell' { return ".\bin\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php $Target" }
-    'bash' { return "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php $Target" }
-    default { return "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php $Target" }
+    'powershell' { return ".\bin\testkit.ps1 run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite $Suite" }
+    'bash' { return "./bin/testkit run --rm -e TESTKIT_TRACE_MIGRATIONS=1 testkit php runTest.php --suite $Suite" }
+    default { return "TESTKIT_TRACE_MIGRATIONS=1 php runTest.php --suite $Suite" }
   }
 }
 
