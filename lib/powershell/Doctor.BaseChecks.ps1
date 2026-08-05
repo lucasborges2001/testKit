@@ -2,7 +2,7 @@ function Invoke-TestkitDoctorBaseChecks {
   param(
     [Parameter(Mandatory=$true)]$Context,
     [Parameter(Mandatory=$false)]$EnvFile,
-    [Parameter(Mandatory=$true)][string]$StackCsv,
+    [Parameter(Mandatory=$true)][AllowEmptyString()][string]$StackCsv,
     [Parameter(Mandatory=$true)][ref]$Ok
   )
 
