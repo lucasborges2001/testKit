@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
 . (Join-Path $repoRoot 'lib\powershell\Doctor.BaseChecks.ps1')
+. (Join-Path $repoRoot 'lib\powershell\Doctor.Render.ps1')
 
 $script:DoctorChecks = [System.Collections.Generic.List[object]]::new()
 
@@ -20,7 +21,7 @@ function Add-TestkitDoctorCheck {
     Section = $Section
     Status = $Status
     Code = $Code
-    Message = $Message
+    Summary = $Message
     Action = $Action
   }) | Out-Null
 }
@@ -64,8 +65,14 @@ try {
   $env:TEST_STORE_DRIVER = 'none'
   $env:TEST_STORE_PROVISION = 'external'
   $env:TESTKIT_STACK = ''
+  $env:TESTKIT_DB_ENV_PATH = '/workspace/project/test/.env.test'
 
-  $context = [PSCustomObject]@{ ReadOnly = $true }
+  $context = [PSCustomObject]@{
+    ReadOnly = $true
+    Mode = 'compact'
+    Target = ''
+    Dump = $false
+  }
   $envFile = Resolve-Path $envFilePath
   $ok = $true
 
@@ -81,10 +88,49 @@ try {
     'doctor base checks must recognize TEST_STORE_DRIVER=none'
   Assert-True (($script:DoctorChecks | Where-Object Code -like 'MYSQL_*').Count -eq 0) `
     'doctor base checks must not require MySQL variables for TEST_STORE_DRIVER=none'
+
+  $script:TestkitDoctorBaseChecks = $script:DoctorChecks
+  $script:TestkitDoctorCapabilityChecks = [System.Collections.Generic.List[object]]::new()
+  $script:TestkitDoctorBaseStatus = if ($ok) { 'PASS' } else { 'FAIL' }
+  $script:TestkitDoctorCapabilityStatus = 'PASS'
+
+  $compactRendered = $true
+  try {
+    Show-TestkitDoctorCompact -Context $context -EnvFile $envFile -StackCsv '' *> $null
+  } catch {
+    $compactRendered = $false
+  }
+  Assert-True $compactRendered `
+    'compact doctor renderer must accept an empty resolved stack'
+
+  $fullContext = [PSCustomObject]@{
+    ReadOnly = $true
+    Mode = 'full'
+    Target = ''
+    Dump = $false
+  }
+  $fullRendered = $true
+  try {
+    Show-TestkitDoctorFull -Context $fullContext -EnvFile $envFile -StackCsv '' *> $null
+  } catch {
+    $fullRendered = $false
+  }
+  Assert-True $fullRendered `
+    'full doctor renderer must accept an empty resolved stack'
+
+  $dumpRendered = $true
+  try {
+    Show-TestkitDoctorDump -Context $fullContext -EnvFile $envFile -StackCsv '' *> $null
+  } catch {
+    $dumpRendered = $false
+  }
+  Assert-True $dumpRendered `
+    'doctor dump renderer must accept an empty resolved stack'
 } finally {
   Remove-Item Env:\TEST_STORE_DRIVER -ErrorAction SilentlyContinue
   Remove-Item Env:\TEST_STORE_PROVISION -ErrorAction SilentlyContinue
   Remove-Item Env:\TESTKIT_STACK -ErrorAction SilentlyContinue
+  Remove-Item Env:\TESTKIT_DB_ENV_PATH -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force $tempProject -ErrorAction SilentlyContinue
 }
 
