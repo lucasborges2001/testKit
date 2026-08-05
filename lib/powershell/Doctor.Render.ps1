@@ -24,7 +24,7 @@ function Show-TestkitDoctorFull {
   param(
     [Parameter(Mandatory=$true)]$Context,
     [Parameter(Mandatory=$false)]$EnvFile,
-    [Parameter(Mandatory=$true)][string]$StackCsv
+    [Parameter(Mandatory=$true)][AllowEmptyString()][string]$StackCsv
   )
 
   Write-Host ""
@@ -64,7 +64,7 @@ function Show-TestkitDoctorCompact {
   param(
     [Parameter(Mandatory=$true)]$Context,
     [Parameter(Mandatory=$false)]$EnvFile,
-    [Parameter(Mandatory=$true)][string]$StackCsv
+    [Parameter(Mandatory=$true)][AllowEmptyString()][string]$StackCsv
   )
 
   Write-Host ""
@@ -111,7 +111,7 @@ function Show-TestkitDoctorDump {
   param(
     [Parameter(Mandatory=$true)]$Context,
     [Parameter(Mandatory=$true)]$EnvFile,
-    [Parameter(Mandatory=$true)][string]$StackCsv
+    [Parameter(Mandatory=$true)][AllowEmptyString()][string]$StackCsv
   )
 
   Write-Host ""
