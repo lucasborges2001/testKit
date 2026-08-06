@@ -226,6 +226,43 @@ TEST_JOBS=1
 ENV
   chmod 0600 "$env_file"
 
+  # El bootstrap público puede haber cargado el .env.test del proyecto.
+  # Estas variables deben provenir exclusivamente del env runtime generado
+  # para evitar que credenciales o nombres heredados prevalezcan sobre él.
+  local runtime_env_keys=(
+    APP_DEBUG
+    COMPOSE_PROJECT_NAME
+    TESTKIT_STACK
+    TESTKIT_PHP_VERSION
+    TESTKIT_NODE_VERSION
+    TEST_MYSQL_ROOT_PASSWORD
+    TEST_MYSQL_DB
+    TEST_MYSQL_USER
+    TEST_MYSQL_PASSWORD
+    TEST_MYSQL_PORT
+    DB_DRIVER
+    DB_HOST
+    DB_PORT
+    DB_DATABASE
+    DB_NAME
+    DB_USER
+    DB_USERNAME
+    DB_PASSWORD
+    BASE_DB_HOST
+    BASE_DB_PORT
+    BASE_DB_NAME
+    BASE_DB_USER
+    BASE_DB_PASSWORD
+    TEST_DB_DSN
+    TEST_DB_USER
+    TEST_DB_PASS
+    TEST_JOBS
+  )
+  local runtime_env_key
+  for runtime_env_key in "${runtime_env_keys[@]}"; do
+    unset "$runtime_env_key"
+  done
+
   export APP_ENV=test
   export SQLOBS_ENV_FILE="$env_file"
   export SQLOBS_DATASET_MANIFEST="$dataset_manifest"
@@ -291,7 +328,7 @@ ENV
   local run_log="$output/scenario.log"
   local suite_exit=0
   local command=(
-    "$TESTKIT_BIN" run --rm
+    "$TESTKIT_BIN" run --rm --interactive=false -T
     -v "$output:$container_output"
     -e APP_ENV=test
     -e TEST_REQUIRE_TESTS=1
@@ -372,7 +409,7 @@ ENV
     TESTKIT_ENV_FILE="$env_file" \
     TESTKIT_STACK=mysql \
     TESTKIT_PROJECT_ROOT="$ROOT" \
-    "$TESTKIT_BIN" run --rm \
+    "$TESTKIT_BIN" run --rm --interactive=false -T \
       -v "$output:$container_output" \
       -e APP_ENV=test \
       -e TESTKIT_ARTIFACTS_ROOT="$container_output/testkit" \
