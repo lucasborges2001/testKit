@@ -63,7 +63,8 @@ testkit_load_env_kv_safe() {
     [[ "${line}" =~ ^[[:space:]]*# ]] && continue
     [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
     if [[ "${line}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-      export "${line}"
+      local key="${line%%=*}"
+      [[ -v "${key}" ]] || export "${line}"
     fi
   done < "${f}"
 }
