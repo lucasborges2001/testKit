@@ -58,7 +58,7 @@ $command = [
     '-e', 'TESTKIT_SQL_OBSERVABILITY_CONFIG=config/sql-observability/host.json',
     '-e', 'TESTKIT_SQL_OBSERVABILITY_SCENARIO=blocked-gate',
     '-e', 'TESTKIT_SQL_OBSERVABILITY_REPETITIONS=1',
-    'testkit', 'php', 'runTest.php', 'sql-observability',
+    'testkit', 'php', 'runTest.php', '--suite', 'sql-observability',
 ];
 $process = proc_open(
     $command,
@@ -126,4 +126,3 @@ if ($errors !== []) {
     exit(1);
 }
 echo "OK SQL observability public exit code 5\n";
-
