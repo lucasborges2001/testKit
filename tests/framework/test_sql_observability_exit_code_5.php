@@ -54,11 +54,10 @@ $before = $dockerResources();
 $assert($before === ['containers' => [], 'networks' => [], 'volumes' => []], 'fixture Docker resources must be absent before the run');
 
 $command = [
-    $testkit . '/bin/testkit', 'run', '--rm',
-    '-e', 'TESTKIT_SQL_OBSERVABILITY_CONFIG=config/sql-observability/host.json',
-    '-e', 'TESTKIT_SQL_OBSERVABILITY_SCENARIO=blocked-gate',
-    '-e', 'TESTKIT_SQL_OBSERVABILITY_REPETITIONS=1',
-    'testkit', 'php', 'runTest.php', '--suite', 'sql-observability',
+    PHP_BINARY,
+    $testkit . '/runTest.php',
+    '--suite',
+    'sql-observability',
 ];
 $process = proc_open(
     $command,
@@ -70,6 +69,9 @@ $process = proc_open(
         'HOME' => (string)getenv('HOME'),
         'TESTKIT_PROJECT_ROOT' => $fixture,
         'TEST_RUN_ID' => $runId,
+        'TESTKIT_SQL_OBSERVABILITY_CONFIG' => 'config/sql-observability/host.json',
+        'TESTKIT_SQL_OBSERVABILITY_SCENARIO' => 'blocked-gate',
+        'TESTKIT_SQL_OBSERVABILITY_REPETITIONS' => '1',
     ])
 );
 $stdout = is_resource($process) ? (stream_get_contents($pipes[1]) ?: '') : '';
