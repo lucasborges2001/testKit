@@ -113,9 +113,47 @@ function gate_finding(array $report, string $category, string $metric = ''): ?ar
     return null;
 }
 
+/**
+ * Creates a temporary active copy of an allowlist fixture.
+ *
+ * Self-tests must not depend on absolute expiration dates that eventually age out.
+ */
+function gate_active_allowlist_fixture(string $source, string $target): string
+{
+    $payload = gate_json($source);
+    $createdAt = time() - 3600;
+    $expiresAt = $createdAt + (30 * 86400);
+
+    foreach ((array)($payload['allowlist']['entries'] ?? []) as $index => $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $payload['allowlist']['entries'][$index]['created_at'] = gmdate('Y-m-d\TH:i:s\Z', $createdAt);
+        $payload['allowlist']['entries'][$index]['expires_at'] = gmdate('Y-m-d\TH:i:s\Z', $expiresAt);
+    }
+
+    $encoded = json_encode(
+        $payload,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+    );
+    if (file_put_contents($target, $encoded . PHP_EOL) === false) {
+        throw new RuntimeException('Unable to write active allowlist fixture: ' . $target);
+    }
+
+    return $target;
+}
+
 $fixtures = __DIR__ . '/../fixtures/mysql_query_gate';
 $tmpRoot = sys_get_temp_dir() . '/testkit_mysql_gate_' . getmypid();
 @mkdir($tmpRoot, 0777, true);
+$activeAllowlistPath = gate_active_allowlist_fixture(
+    $fixtures . '/allowlist_valid.json',
+    $tmpRoot . '/allowlist_valid_active.json'
+);
+$unusedAllowlistPath = gate_active_allowlist_fixture(
+    $fixtures . '/allowlist_unused.json',
+    $tmpRoot . '/allowlist_unused_active.json'
+);
 
 // Safe defaults and strict loader.
 putenv('TESTKIT_DB_PROFILE_GATE_FILE');
@@ -208,13 +246,13 @@ $incompatibleGate = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime
 gate_same(0, $incompatibleGate['decision']['exit_code'] ?? null, 'incompatible comparison does not block', $errors);
 
 // Allowlist contract, suppression, expiration and visibility.
-$validAllowlist = MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_valid.json');
+$validAllowlist = MysqlQueryGateAllowlistLoader::load($activeAllowlistPath);
 gate_same('pruebas.sql.temporary', $validAllowlist['allowlist']['id'] ?? null, 'valid allowlist loads', $errors);
 gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_invalid.json'), 'invalid_allowlist_string', '$.allowlist.entries[0].owner', 'invalid allowlist', $errors);
 gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_too_broad.json'), 'allowlist_selector_too_broad', '$.allowlist.entries[0].selectors', 'broad allowlist', $errors);
 gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_non_suppressible.json'), 'allowlist_non_suppressible_category', '$.allowlist.entries[0].selectors.category', 'non suppressible allowlist', $errors);
 $suppressed = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
-    $fixtures . '/gate_valid_fail.json', 'fail', $fixtures . '/allowlist_valid.json', $fixtures . '/evidence_3_runs_confirmed.json', $tmpRoot . '/suppressed'
+    $fixtures . '/gate_valid_fail.json', 'fail', $activeAllowlistPath, $fixtures . '/evidence_3_runs_confirmed.json', $tmpRoot . '/suppressed'
 ));
 gate_assert(($suppressed['summary']['suppressed'] ?? 0) > 0, 'valid suppression visible', $errors);
 gate_assert(($suppressed['summary']['suppressed_blocking'] ?? 0) > 0, 'suppressed blocking finding counted', $errors);
@@ -228,7 +266,7 @@ $expired = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
 gate_assert(is_array(gate_finding($expired, 'allowlist.expired')), 'expired allowlist generates finding', $errors);
 gate_same(false, gate_finding($expired, 'baseline.temporal_regression', 'p95_ms')['suppressed'] ?? null, 'expired entry does not suppress', $errors);
 $unused = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
-    $fixtures . '/gate_valid_report.json', 'report', $fixtures . '/allowlist_unused.json', '', $tmpRoot . '/unused'
+    $fixtures . '/gate_valid_report.json', 'report', $unusedAllowlistPath, '', $tmpRoot . '/unused'
 ));
 gate_assert(in_array('catalog-p95-temporary', (array)($unused['allowlist']['unused'] ?? []), true), 'unused allowlist reported', $errors);
 
