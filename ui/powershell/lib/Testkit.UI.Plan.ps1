@@ -106,12 +106,12 @@ function Build-TestkitExecutionPlan {
         EnvVars = [ordered]@{}
         SummaryRows = @()
         ReproBlock = @()
-        Notes = New-Object System.Collections.Generic.List[string]
+        Notes = @()
     }
 
     if ($Selection.Stack) {
-        $plan.Notes.Add('Stack seleccionado: ' + $Selection.Stack.Key)
-        $plan.Notes.Add('La UI no traduce stack en esta subfase.')
+        $plan.Notes += 'Stack seleccionado: ' + $Selection.Stack.Key
+        $plan.Notes += 'La UI no traduce stack en esta subfase.'
     }
 
     switch ($Selection.Action.Key) {
@@ -167,25 +167,24 @@ function Build-TestkitExecutionPlan {
     $commandDisplay = if ($Selection.Action.Key -eq 'seed') { $relativeSeed } else { $relativeTestkit }
     $plan.Command = Format-UiCommandLine -Command $commandDisplay -Arguments $plan.Arguments
 
-    $rows = New-Object System.Collections.Generic.List[object]
-    $rows.Add([pscustomobject]@{ Label = 'modo'; Value = 'interactivo' })
-    $rows.Add([pscustomobject]@{ Label = 'accion'; Value = $Selection.Action.Label })
-    if ($Selection.Stack) { $rows.Add([pscustomobject]@{ Label = 'stack'; Value = $Selection.Stack.Key }) }
+    $rows = @()
+    $rows += [pscustomobject]@{ Label = 'modo'; Value = 'interactivo' }
+    $rows += [pscustomobject]@{ Label = 'accion'; Value = $Selection.Action.Label }
+    if ($Selection.Stack) { $rows += [pscustomobject]@{ Label = 'stack'; Value = $Selection.Stack.Key } }
     if ($Selection.Action.Key -eq 'run-tests') {
-        $rows.Add([pscustomobject]@{ Label = 'selector'; Value = ($Selection.Selector.Kind + ':' + $Selection.Selector.Key) })
-        $rows.Add([pscustomobject]@{ Label = 'scope'; Value = $Selection.Scope.Key })
-        $rows.Add([pscustomobject]@{ Label = 'test'; Value = (Get-TestkitUiDisplayValue -Value $Selection.TestPath) })
-        $rows.Add([pscustomobject]@{ Label = 'list-only'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.ListOnly) })
+        $rows += [pscustomobject]@{ Label = 'selector'; Value = ($Selection.Selector.Kind + ':' + $Selection.Selector.Key) }
+        $rows += [pscustomobject]@{ Label = 'scope'; Value = $Selection.Scope.Key }
+        $rows += [pscustomobject]@{ Label = 'test'; Value = (Get-TestkitUiDisplayValue -Value $Selection.TestPath) }
+        $rows += [pscustomobject]@{ Label = 'list-only'; Value = (Get-TestkitUiBooleanLabel -Value $Selection.ListOnly) }
     }
-    $plan.SummaryRows = @($rows)
+    $plan.SummaryRows = $rows
 
-    $repro = New-Object System.Collections.Generic.List[string]
-    $repro.Add('# ejecutar desde la raiz del repo testkit')
+    $repro = @('# ejecutar desde la raiz del repo testkit')
     foreach ($key in $plan.EnvVars.Keys) {
-        $repro.Add('$env:' + $key + ' = ' + (Format-UiCommandToken -Value $plan.EnvVars[$key]))
+        $repro += '$env:' + $key + ' = ' + (Format-UiCommandToken -Value $plan.EnvVars[$key])
     }
-    $repro.Add($plan.Command)
-    $plan.ReproBlock = @($repro)
+    $repro += $plan.Command
+    $plan.ReproBlock = $repro
     return [pscustomobject]$plan
 }
 
@@ -205,10 +204,10 @@ function Invoke-TestkitExecutionPlan {
     param([Parameter(Mandatory = $true)][psobject]$Plan)
     Push-Location -LiteralPath $Plan.WorkingDirectory
     try {
-        $backup = New-Object System.Collections.Generic.List[object]
+        $backup = @()
         foreach ($name in $Plan.EnvVars.Keys) {
             $existing = [Environment]::GetEnvironmentVariable($name, 'Process')
-            $backup.Add([pscustomobject]@{ Name = $name; Value = $existing; HadValue = ($null -ne $existing) })
+            $backup += [pscustomobject]@{ Name = $name; Value = $existing; HadValue = ($null -ne $existing) }
             [Environment]::SetEnvironmentVariable($name, $Plan.EnvVars[$name], 'Process')
         }
         try {
