@@ -26,21 +26,24 @@ $workflow = $read($workflowPath);
 $docs = $read($docsPath);
 
 $requiredWorkflow = [
-    'TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract',
-    'TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list',
-    'TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all',
+    'TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host',
+    'TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test',
+    './bin/testkit doctor --full --suite back-php',
+    './bin/testkit run --rm testkit php runTest.php --group all --list',
+    './bin/testkit run --rm testkit php runTest.php --group all',
 ];
 foreach ($requiredWorkflow as $fragment) {
-    $assert(str_contains($workflow, $fragment), 'CI missing canonical typed command: ' . $fragment);
+    $assert(str_contains($workflow, $fragment), 'CI missing canonical typed/runtime fragment: ' . $fragment);
 }
 
 $requiredDocs = [
-    'TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract',
-    'TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list',
-    'TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all',
+    'tests/fixtures/runtime-mysql-host',
+    './bin/testkit doctor --full --suite back-php',
+    './bin/testkit run --rm testkit php runTest.php --group all --list',
+    './bin/testkit run --rm testkit php runTest.php --group all',
 ];
 foreach ($requiredDocs as $fragment) {
-    $assert(str_contains($docs, $fragment), 'docs/CI.md missing canonical typed command: ' . $fragment);
+    $assert(str_contains($docs, $fragment), 'docs/CI.md missing canonical typed/runtime fragment: ' . $fragment);
 }
 
 $forbiddenFragments = [
@@ -54,6 +57,11 @@ $forbiddenFragments = [
 foreach ($forbiddenFragments as $fragment) {
     $assert(!str_contains($workflow, $fragment), 'CI contains legacy selector surface: ' . $fragment);
 }
+
+$assert(
+    !str_contains($workflow, './bin/testkit doctor --full --suite migration-contract'),
+    'runtime-mysql must not use migration-contract without a snapshot fixture'
+);
 
 $positionalRunPattern = '/runTest\.php\s+(all|back|front|public_html|back-php|back-py|back-python|python|py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|security|slow|migration-contract|migration|migrations)(?=\s|\\\\|$)/m';
 $assert(
