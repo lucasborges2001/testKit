@@ -14,7 +14,12 @@ foreach ($key in $trackedEnv) {
 }
 
 function Set-ProcessEnv([string]$Name, [AllowNull()][string]$Value) {
-  [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+  $envPath = "Env:{0}" -f $Name
+  if ($null -eq $Value) {
+    Remove-Item -Path $envPath -ErrorAction SilentlyContinue
+    return
+  }
+  Set-Item -Path $envPath -Value $Value
 }
 
 function Assert-Case(
