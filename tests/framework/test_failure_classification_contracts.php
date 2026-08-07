@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../core/php/reporting/FailureNormalizer.php';
 require_once __DIR__ . '/../../core/php/reporting/OutcomeDiagnostics.php';
 require_once __DIR__ . '/../../core/php/execution/ProcessRunner.php';
 require_once __DIR__ . '/../../core/php/execution/SuiteExecutor.php';
+require_once __DIR__ . '/../../core/php/store/StoreRegistry.php';
 require_once __DIR__ . '/../../core/php/execution/ParallelGuard.php';
 
 use Testkit\Core\Execution\ParallelGuard;
