@@ -13,20 +13,20 @@ foreach ($key in $trackedEnv) {
   $snapshot[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
 }
 
-function Set-ProcessEnv([string]$Name, [AllowNull()][string]$Value) {
+function Set-ProcessEnv([string]$Name, [AllowNull()][object]$Value) {
   $envPath = "Env:{0}" -f $Name
   if ($null -eq $Value) {
     Remove-Item -Path $envPath -ErrorAction SilentlyContinue
     return
   }
-  Set-Item -Path $envPath -Value $Value
+  Set-Item -Path $envPath -Value ([string]$Value)
 }
 
 function Assert-Case(
   [string]$Label,
   [string]$Script,
   [string[]]$EnvLines,
-  [AllowNull()][string]$ExplicitDriver,
+  [AllowNull()][object]$ExplicitDriver,
   [int]$ExpectedExit,
   [string]$ExpectedText
 ) {
