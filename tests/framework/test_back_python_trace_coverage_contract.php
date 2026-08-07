@@ -210,6 +210,7 @@ try {
             'TEST_JOBS',
             'TEST_PYTHON_BINARY',
             'TESTKIT_SKIP_STORE_BOOTSTRAP',
+            'TEST_STORE_DRIVER',
             'TEST_DB_STRATEGY',
             'TESTKIT_PROGRESS_MODE',
             'TEST_REPORT_ROOT',
@@ -237,6 +238,7 @@ try {
             set_env_pytrace('TEST_JOBS', '3');
             set_env_pytrace('TEST_PYTHON_BINARY', $python);
             set_env_pytrace('TESTKIT_SKIP_STORE_BOOTSTRAP', '1');
+            set_env_pytrace('TEST_STORE_DRIVER', 'none');
             set_env_pytrace('TEST_DB_STRATEGY', 'shared');
             set_env_pytrace('TESTKIT_PROGRESS_MODE', 'quiet');
             set_env_pytrace('TEST_REPORT_ROOT', $artifactRoot . '/reports');
