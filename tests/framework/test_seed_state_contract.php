@@ -11,6 +11,7 @@ putenv('TK_REPO_ROOT=' . $projectRoot);
 putenv('TESTKIT_ARTIFACTS_ROOT=' . $projectRoot . '/.testkit');
 
 foreach ([
+    'TEST_STORE_DRIVER',
     'DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE', 'DB_HOST', 'TEST_MYSQL_HOST', 'MYSQL_HOST',
     'DB_USER', 'TEST_MYSQL_USER', 'MYSQL_USER', 'DB_PASS', 'TEST_MYSQL_PASSWORD', 'MYSQL_PASSWORD',
     'PG_DB', 'TEST_PG_DB', 'TEST_DB_DSN', 'DB_DRIVER', 'TEST_DB_DRIVER', 'TEST_BASELINE_MANIFEST_PATH',
@@ -18,6 +19,9 @@ foreach ([
     putenv($key);
     unset($_ENV[$key], $_SERVER[$key]);
 }
+putenv('TEST_STORE_DRIVER=none');
+$_ENV['TEST_STORE_DRIVER'] = 'none';
+$_SERVER['TEST_STORE_DRIVER'] = 'none';
 
 require_once $repoRoot . '/core/php/bootstrap.php';
 
@@ -261,6 +265,8 @@ try {
 } finally {
     putenv('TEST_SEED_MIGRATIONS');
     putenv(TestSeedMetadata::LEGACY_ENABLE_ENV);
+    putenv('TEST_STORE_DRIVER');
+    unset($_ENV['TEST_STORE_DRIVER'], $_SERVER['TEST_STORE_DRIVER']);
     rrmdir($projectRoot);
 }
 
