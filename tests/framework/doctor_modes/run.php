@@ -62,11 +62,10 @@ function runCase(string $repoRoot, array $wrapper, array $case): array
 {
     $tempRoot = sys_get_temp_dir() . '/testkit-doctor-modes-' . bin2hex(random_bytes(6));
     $projectRoot = $tempRoot . '/project';
-    $testkitRoot = $tempRoot . '/testkit-root';
     $testDir = $projectRoot . '/test';
     $fakeBin = $tempRoot . '/bin';
 
-    foreach ([$testDir, $fakeBin, $testkitRoot] as $dir) {
+    foreach ([$testDir, $fakeBin] as $dir) {
         if (!mkdir($dir, 0777, true) && !is_dir($dir)) {
             throw new RuntimeException('Could not create temp dir: ' . $dir);
         }
@@ -98,7 +97,6 @@ function runCase(string $repoRoot, array $wrapper, array $case): array
     $dockerStub = $fakeBin . '/docker';
     file_put_contents($dockerStub, "#!/usr/bin/env sh\nexit 0\n");
     @chmod($dockerStub, 0755);
-    file_put_contents($testkitRoot . '/runTest.php', "<?php\n");
 
     $command = $wrapper['cmd'];
     $command[] = 'doctor';
@@ -109,7 +107,7 @@ function runCase(string $repoRoot, array $wrapper, array $case): array
     $processEnv = [
         'PATH' => $fakeBin . PATH_SEPARATOR . (getenv('PATH') ?: ''),
         'TESTKIT_PROJECT_ROOT' => $projectRoot,
-        'TESTKIT_ROOT' => $testkitRoot,
+        'TESTKIT_ROOT' => $repoRoot,
     ];
     foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
         if (!is_scalar($value) || $value === null) {
