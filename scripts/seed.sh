@@ -34,7 +34,10 @@ load_env_kv_safe() {
   while IFS= read -r line; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && export "$line"
+    if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+      local key="${line%%=*}"
+      [[ -v "$key" ]] || export "$line"
+    fi
   done < "$f"
 }
 
