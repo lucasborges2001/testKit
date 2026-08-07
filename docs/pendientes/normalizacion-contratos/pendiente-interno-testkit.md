@@ -2,53 +2,30 @@
 
 ## Estado
 
-Planificado. No implementado en este corte.
+Activo. Este documento contiene únicamente trabajo interno todavía no implementado.
+
+La frontera documental vigente está en [`../README.md`](../README.md): cuando una fase queda implementada debe retirarse de este pendiente y, si todavía falta evidencia de ejecución, convertirse en una verificación bajo `docs/verificaciones/`.
 
 ## Ownership
 
 Todo este pendiente pertenece a `lucasborges2001/testKit` y debe poder resolverse sin modificar `Base`, `Pruebas` ni repositorios consumidores.
 
-## Baseline inicial
+## Baseline obligatorio por fase
 
-```text
-Rama de referencia: agent/testkit-contract-normalization
-Commit de referencia: bef2484529fbfa38e4476399ca96675fbeef6bae
-Fecha: 2026-07-28
+Antes de implementar cualquier punto registrar un baseline nuevo:
+
+```bash
+git branch --show-current
+git rev-parse HEAD
+git status --short
+git log --oneline -8
 ```
 
-Antes de implementar debe fijarse un baseline nuevo y verificarse el estado de la rama elegida.
+No reutilizar SHAs históricos como baseline operativo.
 
 ## Objetivo
 
 Completar la normalización interna del repositorio sin aliases, fallbacks silenciosos ni contratos duales.
-
-## Fase I1 — Cerrar CI sobre selectores tipados
-
-### Evidencia
-
-El workflow vigente aún contiene invocaciones posicionales o sin selector:
-
-```text
-doctor --full migration-contract
-php runTest.php --list
-php runTest.php all
-```
-
-### Cambios internos
-
-- migrar `.github/workflows/ci.yml` a `--suite`, `--group` y `--category`;
-- agregar un gate que rechace comandos posicionales en superficies ejecutables internas;
-- ejecutar self-tests PHP y PowerShell desde CI;
-- conservar artifacts y teardown actuales.
-
-### Criterio PASS
-
-- CI no contiene targets posicionales;
-- discovery usa `--group all --list`;
-- runtime usa `--group all`;
-- doctor usa un selector tipado explícito cuando corresponde;
-- Linux y Windows static jobs pasan;
-- fallos de baseline se distinguen de fallos introducidos.
 
 ## Fase I2 — Store explícito
 
@@ -95,7 +72,7 @@ Eliminar la superposición entre `TEST_MATCH`, listas, archivos y modos de selec
 
 ### Criterio PASS
 
-- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas públicas;
+- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas públicas e internas de transición;
 - CLI, UI, reporting y rerun usan el mismo modelo;
 - selección vacía o contradictoria falla explícitamente.
 
@@ -179,7 +156,6 @@ Eliminar drift entre registro, ayuda, schema, doctor y documentación.
 ## Orden recomendado
 
 ```text
-I1 CI tipada
 I2 store
 I3 stack
 I4 selección
@@ -206,10 +182,28 @@ find bin scripts lib -type f \( -name '*.sh' -o -name 'testkit' \) -print0 | xar
 pwsh -NoProfile -NonInteractive -File tests/powershell/run.ps1
 ```
 
+## Conversión a verificación
+
+Una fase debe salir de este archivo cuando:
+
+1. el código/contrato necesario ya existe;
+2. sus self-tests o gates reproducibles están definidos;
+3. no queda implementación funcional pendiente para ejecutar esos gates.
+
+Si todavía falta ejecución local, CI real, Docker, Windows o infraestructura externa, crear un documento en `docs/verificaciones/` con:
+
+- baseline;
+- entorno requerido;
+- comandos exactos;
+- resultado esperado;
+- evidencia;
+- `PASS/FAIL/BLOCKED`;
+- acción después de `PASS`.
+
 ## Acciones excluidas
 
 - modificar consumidores externos;
 - actualizar gitlinks en `Base` o `Pruebas`;
 - crear aliases temporales;
-- hacer merge, release o tag sin autorización;
+- hacer release o tag sin autorización;
 - declarar soporte runtime no probado.
