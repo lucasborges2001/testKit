@@ -1,32 +1,40 @@
 # CI de testKit
 
-Este documento describe el workflow principal `CI` de `testKit` y cómo reproducir sus validaciones principales en local.
+Este documento describe el workflow principal `CI` de `testKit`, su contrato vigente y cómo reproducir sus gates principales antes de habilitarlo o usarlo como evidencia de cierre.
 
 ## Objetivo
 
-El CI valida `testKit` como plataforma compartida de testing, separando estas superficies:
+El CI valida cinco superficies separadas:
 
 1. sintaxis y estructura sin Docker;
-2. contratos internos del framework sin Docker;
+2. contratos internos del framework;
 3. ruta Windows/PowerShell;
 4. runtime Docker/MySQL contra un host fixture controlado;
-5. smoke mínimo del runner Browser E2E reusable.
+5. smoke del runner Browser E2E contra un host fixture separado.
 
-El workflow no usa secrets, no depende de aplicaciones host externas y mantiene permisos mínimos:
+El workflow mantiene permisos mínimos:
 
 ```yaml
 permissions:
   contents: read
 ```
 
-Los jobs host fijan versiones de herramientas:
+## Baseline de plataforma
 
+El baseline normalizado usa:
+
+- Ubuntu `24.04` para jobs Linux;
+- `windows-2025` para evitar la deriva implícita de `windows-latest`;
 - PHP `8.4` mediante `shivammathur/setup-php@v2`;
-- Node `20` mediante `actions/setup-node@v4`.
+- Node `24` LTS mediante `actions/setup-node@v7`;
+- `actions/checkout@v7`;
+- `actions/upload-artifact@v7`.
 
-## Contrato de selectores en CI
+La imagen Docker reusable mantiene el mismo baseline Node `24` y fija Playwright `1.61.0`.
 
-Toda invocación de `runTest.php` desde CI debe declarar exactamente uno de:
+## Contrato de selectores
+
+Toda invocación de `runTest.php` desde CI declara exactamente uno de:
 
 ```text
 --suite
@@ -36,31 +44,36 @@ Toda invocación de `runTest.php` desde CI debe declarar exactamente uno de:
 
 No se aceptan targets posicionales, `TEST_TARGET`, `TESTKIT_TARGET_*` ni `doctor --target`.
 
-El gate `tests/framework/test_ci_typed_selectors.php`, ejecutado por `php tests/framework/run.php`, falla si el workflow vuelve a introducir esas superficies legacy o si pierde los comandos tipados y el host fixture esperados del runtime MySQL.
+El gate `tests/framework/test_ci_typed_selectors.php` protege este contrato y también evita volver a introducir el baseline CI anterior.
 
-## Contrato de store en CI
+## Contrato de store
 
-`TEST_STORE_DRIVER` es el único selector del store estructural. El workflow debe declararlo explícitamente como `mysql`, `pgsql` o `none` según el job.
+`TEST_STORE_DRIVER` es el único selector del store estructural. Valores exactos:
 
-No se admite seleccionar el motor mediante `DB_DRIVER`, `TEST_DB_DRIVER`, DSN, credenciales, nombres de DB o `TESTKIT_STACK`.
+```text
+mysql
+pgsql
+none
+```
 
-El gate `tests/framework/test_store_driver_contract.php` protege esta superficie junto con runtime, doctor, scripts, schema, ejemplos y CI.
+`DB_DRIVER`, `TEST_DB_DRIVER`, DSN, nombres de DB y `TESTKIT_STACK` no seleccionan store.
 
-## Jobs blocking
+## Jobs
 
 ### `static`
 
-Valida estructura básica sin Docker.
+Runner:
 
-Controles:
+```text
+ubuntu-24.04
+```
 
-- checkout con `actions/checkout@v4`;
-- PHP 8.4 explícito;
-- Node 20 explícito;
-- existencia de archivos críticos;
-- sintaxis PHP con `php -l`, excluyendo `vendor/`;
-- sintaxis Bash con `bash -n` sobre `bin`, `scripts` y `lib`;
-- sintaxis Node/ESM sobre runners, utils y fixtures browser.
+Valida:
+
+- archivos críticos;
+- PHP syntax;
+- Bash syntax;
+- sintaxis de módulos JS con Node `24` LTS.
 
 ### `framework-self-tests`
 
@@ -70,29 +83,42 @@ Ejecuta:
 php tests/framework/run.php
 ```
 
-Depende de `static` y valida contratos internos del framework, incluidos store explícito y selectores tipados de CI.
+Depende de `static`.
 
 ### `windows-static`
 
-Valida la ruta Windows/PowerShell sin Docker en `windows-latest`.
+Runner fijado:
 
-Incluye:
+```text
+windows-2025
+```
 
-- parseo de todos los `.ps1`/`.psm1`;
-- detección de CRLF en scripts Linux críticos;
-- `tests/powershell/run.ps1`;
-- `php tests/framework/run.php` también sobre Windows.
+Ejecuta:
 
-No cubre Docker Desktop ni runtime MySQL sobre Windows.
+1. verificación de archivos PowerShell requeridos;
+2. parseo de `.ps1`/`.psm1` bajo `bin`, `lib`, `ui`, `scripts` y `tests/powershell`;
+3. chequeo CRLF de scripts Linux críticos;
+4. `tests/powershell/run.ps1`;
+5. `php tests/framework/run.php`.
+
+El harness PowerShell incluye el contrato explícito de store para `seed.ps1` y `db_clean.ps1`: ausencia e inválido fallan antes de Docker, y `none` termina sin runtime.
+
+Este job no valida Docker Desktop ni MySQL sobre Windows.
 
 ### `runtime-mysql`
 
-Valida el camino runtime principal con Docker y MySQL usando un **host fixture separado de TestKit**.
-
-Fixture canónico:
+Usa un host fixture separado de TestKit:
 
 ```text
 tests/fixtures/runtime-mysql-host
+```
+
+Variables del job:
+
+```yaml
+TESTKIT_STACK: mysql
+TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host
+TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test
 ```
 
 El fixture contiene:
@@ -102,27 +128,7 @@ test/seeds/mysql/001_runtime_probe.sql
 test/back/runtime_mysql_store.test.php
 ```
 
-El seed crea un dato observable y el test lo consulta mediante PDO. Por lo tanto, el gate prueba bootstrap, seed, conexión y persistencia real; no se limita a imprimir `PASS`.
-
-El job define:
-
-```yaml
-TESTKIT_STACK: mysql
-TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host
-TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test
-```
-
-El env se deriva de `.env.test.example` y fija explícitamente:
-
-```env
-TESTKIT_STACK=mysql
-TEST_STORE_DRIVER=mysql
-TEST_STORE_PROVISION=managed
-TEST_DB_STRATEGY=shared
-TEST_JOBS=1
-```
-
-Secuencia principal:
+El seed escribe un dato observable y el test lo consulta mediante PDO. La secuencia es:
 
 ```bash
 ./bin/testkit doctor --compact
@@ -136,41 +142,57 @@ Secuencia principal:
 ./bin/testkit down -v --remove-orphans
 ```
 
-`migration-contract` no se usa en este gate porque exige una fuente snapshot resoluble. Ese contrato debe validarse con un fixture snapshot específico, no con el env genérico de runtime MySQL.
-
-El job captura diagnósticos y artifacts aunque falle una etapa previa.
+`migration-contract` no forma parte de este gate porque requiere snapshot resoluble.
 
 ### `browser-runner-smoke`
 
-Valida la superficie mínima de `runners/runBrowserE2e.mjs` sin depender de una aplicación externa.
+Usa un host fixture no-store separado:
 
-Usa:
+```text
+tests/fixtures/browser
+```
 
-- `TEST_STORE_DRIVER=none`;
-- `TEST_STORE_PROVISION=external`;
-- `TESTKIT_STACK=` vacío;
-- fixture HTML local;
-- Chromium headless dentro del contenedor TestKit.
+Variables del job:
 
-## Qué queda fuera del CI principal
+```yaml
+TESTKIT_STACK: ""
+TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/browser
+TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/browser/.env.test
+```
+
+El env temporal fuerza:
+
+```env
+TEST_STORE_DRIVER=none
+TEST_STORE_PROVISION=external
+```
+
+El contenedor TestKit monta ese fixture como `/workspace/project`, sirve `/workspace/project/public`, ejecuta el runner reusable desde `/workspace/testkit/runners/runBrowserE2e.mjs` y resuelve `smoke.spec.mjs` desde el host fixture.
+
+Artifacts:
+
+```text
+tests/fixtures/browser/test-results/**
+tests/fixtures/browser/playwright-report/**
+```
+
+El env temporal se elimina siempre al finalizar.
+
+## Qué queda fuera del workflow principal
 
 No son blocking actualmente:
 
 - PostgreSQL runtime;
-- Redis como servicio obligatorio;
-- Influx como profiling obligatorio;
+- Redis obligatorio;
+- Influx obligatorio;
 - coverage extendido;
 - performance/stress;
 - runtime Docker sobre Windows;
 - `migration-contract` con snapshot real.
 
-## Reproducción local de contratos estáticos
-
-Desde la raíz de `testKit`:
+## Reproducción local — contratos estáticos
 
 ```bash
-git status --short
-
 php tests/framework/test_ci_typed_selectors.php
 php tests/framework/test_store_driver_contract.php
 php tests/framework/run.php
@@ -184,14 +206,14 @@ find bin scripts lib -type f \
   -print0 | xargs -0 -r -n1 bash -n
 ```
 
-## Reproducción local de `windows-static`
+## Reproducción local — PowerShell
 
 Desde PowerShell 7:
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 
-Get-ChildItem bin,lib,ui,tests\powershell -Recurse -Include *.ps1,*.psm1 |
+Get-ChildItem bin,lib,ui,scripts,tests\powershell -Recurse -Include *.ps1,*.psm1 |
   ForEach-Object {
     $parseErrors = $null
     [System.Management.Automation.Language.Parser]::ParseFile(
@@ -206,16 +228,13 @@ pwsh -NoProfile -NonInteractive -File tests\powershell\run.ps1
 php tests\framework\run.php
 ```
 
-## Reproducción local del runtime MySQL
-
-Desde la raíz de `testKit`:
+## Reproducción local — runtime MySQL
 
 ```bash
 ROOT="$PWD"
 FIXTURE="$ROOT/tests/fixtures/runtime-mysql-host"
 
 cp .env.test.example "$FIXTURE/.env.i2-runtime"
-
 export TESTKIT_PROJECT_ROOT="$FIXTURE"
 export TESTKIT_ENV_FILE="$FIXTURE/.env.i2-runtime"
 export TESTKIT_STACK=mysql
@@ -228,47 +247,29 @@ export TESTKIT_STACK=mysql
 ./bin/testkit run --rm testkit php runTest.php --group all --list
 ./bin/testkit run --rm testkit php runTest.php --group all
 ./bin/testkit inspect latest
-```
 
-Teardown obligatorio:
-
-```bash
 ./bin/testkit down -v --remove-orphans
-
-unset TESTKIT_PROJECT_ROOT
-unset TESTKIT_ENV_FILE
-unset TESTKIT_STACK
-
+unset TESTKIT_PROJECT_ROOT TESTKIT_ENV_FILE TESTKIT_STACK
 rm -f "$FIXTURE/.env.i2-runtime"
-rm -rf \
-  "$FIXTURE/.testkit" \
-  "$FIXTURE/reports" \
-  "$FIXTURE/coverage" \
-  "$FIXTURE/test/coverage"
-
-git status --short
+rm -rf "$FIXTURE/.testkit" "$FIXTURE/reports" "$FIXTURE/coverage" "$FIXTURE/test/coverage"
 ```
 
-Criterio mínimo de PASS:
-
-```text
-Doctor: OK
-Seeds aplicadas: 1
-runtime_mysql_store.test.php descubierto
-PASS=1 FAIL=0
-inspect latest con evidence_valid=true
-teardown sin contenedores testkit residuales
-```
-
-## Reproducción local del browser smoke
+## Reproducción local — browser smoke
 
 ```bash
-cp .env.test.example .env.test
-sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=/' .env.test
-sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=none/' .env.test
-sed -i 's/^TEST_STORE_PROVISION=.*/TEST_STORE_PROVISION=external/' .env.test
+ROOT="$PWD"
+FIXTURE="$ROOT/tests/fixtures/browser"
 
-mkdir -p test-results/browser
+cp .env.test.example "$FIXTURE/.env.test"
+sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=/' "$FIXTURE/.env.test"
+sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=none/' "$FIXTURE/.env.test"
+sed -i 's/^TEST_STORE_PROVISION=.*/TEST_STORE_PROVISION=external/' "$FIXTURE/.env.test"
+
+export TESTKIT_PROJECT_ROOT="$FIXTURE"
+export TESTKIT_ENV_FILE="$FIXTURE/.env.test"
+export TESTKIT_STACK=
+
+mkdir -p "$FIXTURE/test-results/browser"
 ./bin/testkit run --rm \
   -e TESTKIT_BROWSER_BASE_URL=http://127.0.0.1:4173 \
   -e TESTKIT_BROWSER_HEADLESS=1 \
@@ -280,7 +281,7 @@ mkdir -p test-results/browser
   testkit bash -lc '
     set -euo pipefail
     mkdir -p /workspace/project/test-results/browser
-    php -S 127.0.0.1:4173 -t tests/fixtures/browser/public \
+    php -S 127.0.0.1:4173 -t /workspace/project/public \
       > /workspace/project/test-results/browser/fixture-server.log 2>&1 &
     server_pid="$!"
     trap "kill ${server_pid} >/dev/null 2>&1 || true" EXIT
@@ -292,34 +293,29 @@ mkdir -p test-results/browser
       sleep 0.2
     done
 
-    node /workspace/testkit/runners/runBrowserE2e.mjs tests/fixtures/browser/smoke.spec.mjs
+    node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs
   '
+
+unset TESTKIT_PROJECT_ROOT TESTKIT_ENV_FILE TESTKIT_STACK
+rm -f "$FIXTURE/.env.test"
 ```
 
-## Artifacts de diagnóstico
+## Reactivación
 
-### `runtime-mysql`
+La definición del workflow puede validarse en Git sin habilitar Actions. La reactivación es una acción remota separada y debe hacerse únicamente después de que los gates locales anteriores pasen.
 
-Revisar primero:
+Una vez autorizada:
 
-- `ci-artifacts/ci-testkit-ps.txt`;
-- `ci-artifacts/ci-docker-logs.txt`;
-- `ci-artifacts/ci-runtest-list.txt`;
-- `ci-artifacts/ci-runtest-all.txt`;
-- `ci-artifacts/ci-inspect-latest.txt`;
-- `tests/fixtures/runtime-mysql-host/.testkit/**`.
+```bash
+gh workflow enable ci.yml --repo lucasborges2001/testKit
+gh workflow run ci.yml --repo lucasborges2001/testKit --ref main
+```
 
-### `browser-runner-smoke`
-
-Revisar:
-
-- `test-results/browser/fixture-server.log`;
-- screenshots y traces cuando haya fallo.
+No declarar CI PASS hasta observar los jobs del run nuevo.
 
 ## Riesgos conocidos
 
-- `runtime-mysql` usa `--group all` sobre un fixture deliberadamente mínimo. Si se agregan suites al fixture, deben conservarse deterministas y cerradas.
-- El fixture runtime es parte del contrato CI; no debe convertirse en una aplicación paralela ni acumular lógica de dominio.
-- `migration-contract` necesita un fixture snapshot propio; no debe reintroducirse en el gate genérico.
-- El workflow no hace obligatorios PostgreSQL, Redis ni Influx.
-- La validación local no sustituye una corrida real de GitHub Actions sobre el SHA candidato.
+- actualizar Node/Playwright puede revelar incompatibilidades del browser runner; el smoke existe para detectarlas;
+- `runtime-mysql` y browser usan fixtures deliberadamente mínimos y no deben crecer como aplicaciones paralelas;
+- la validación local no sustituye la corrida real de Actions;
+- el workflow deshabilitado no produce evidencia nueva aunque su YAML sea correcto.
