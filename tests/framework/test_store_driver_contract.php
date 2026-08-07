@@ -82,7 +82,14 @@ try {
 
     $root = dirname(__DIR__, 2);
     $forbiddenByFile = [
-        'core/php/store/StoreRegistry.php' => ["getenv('DB_DRIVER')", "getenv('TEST_DB_DRIVER')", 'strtok('],
+        'core/php/store/StoreRegistry.php' => ["getenv('DB_DRIVER')", "getenv('TEST_DB_DRIVER')", 'strtok(', "str_starts_with(\$driver, 'pg')"],
+        'core/php/execution/ParallelGuard.php' => ["getenv('DB_DRIVER')", "getenv('TEST_DB_DRIVER')", 'strtok('],
+        'core/php/seeding/SuiteSeedState.php' => ['safeDetectDriver', "return 'mysql';"],
+        'core/php/config/ConfigSchema.php' => ["self::env('DB_DRIVER'"],
+        'lib/bash/doctor/base_checks.sh' => ['${TEST_STORE_DRIVER:-mysql}', 'normalize_token "${TEST_STORE_DRIVER'],
+        'lib/bash/doctor/capability_checks.sh' => ['DB_DRIVER', 'TEST_DB_DRIVER', 'TEST_DB_DSN'],
+        'lib/powershell/Doctor.BaseChecks.ps1' => ["Normalize-TestkitDoctorToken \$env:TEST_STORE_DRIVER", "\$storeDriver = 'mysql'"],
+        'lib/powershell/Doctor.CapabilityChecks.ps1' => ['DB_DRIVER', 'TEST_DB_DRIVER', 'TEST_DB_DSN'],
         'scripts/seed.sh' => ['TEST_DB_DRIVER', 'DB_DRIVER', 'has_service'],
         'scripts/seed.ps1' => ['TEST_DB_DRIVER', 'DB_DRIVER', 'serviceNames'],
         'scripts/db_clean.sh' => ['TEST_DB_DRIVER', 'DB_DRIVER'],
