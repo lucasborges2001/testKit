@@ -1,20 +1,40 @@
 # testKit en Windows
 
-Este documento describe la ruta operativa soportada para usar `testkit` desde
-Windows, con PowerShell 7 como wrapper y Docker Desktop (Linux containers)
-como runtime. Léelo junto con [`docs/USO.md`](USO.md),
-[`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) y
-[`SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md).
+Este documento describe la ruta operativa soportada para usar `testkit` desde Windows, con PowerShell 7 como wrapper y Docker Desktop (Linux containers) como runtime. Léelo junto con [`docs/USO.md`](USO.md), [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`docs/CI.md`](CI.md) y [`SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md).
 
 ## Requisitos
 
 - Windows 11 (o Windows 10 con soporte WSL2 vigente).
-- PowerShell 7 (`pwsh`). El wrapper (`bin/testkit.ps1`) está pensado para
-  PowerShell 7; no se prueba contra PowerShell 5.1.
-- Docker Desktop, con el backend WSL2 habilitado y contenedores **Linux**
-  (no Windows containers).
-- Un checkout de `testkit` y un checkout del proyecto host, ambos accesibles
-  desde el filesystem que Docker Desktop puede montar.
+- PowerShell 7 (`pwsh`). El wrapper `bin/testkit.ps1` no tiene PowerShell 5.1 como objetivo contractual.
+- Docker Desktop con backend WSL2 y contenedores Linux para los comandos runtime.
+- Un checkout de `testkit` y un checkout del proyecto host accesibles desde Docker Desktop.
+
+## Contrato público vigente
+
+Antes de ejecutar TestKit se define el proyecto host:
+
+```powershell
+$env:TESTKIT_PROJECT_ROOT = 'D:\dev\Pruebas'
+```
+
+El host debe proveer su env de test en una de estas rutas:
+
+```text
+<project>\test\.env.test
+<project>\.env.test
+```
+
+`TESTKIT_ENV_FILE` puede seleccionar explícitamente uno de esos archivos cuando sea necesario.
+
+Los comandos de test usan exactamente un selector tipado:
+
+```text
+--suite
+--group
+--category
+```
+
+No se soportan targets posicionales, `TEST_TARGET`, `TESTKIT_TARGET_*` ni `doctor --target`.
 
 ## Rutas soportadas
 
@@ -24,147 +44,153 @@ como runtime. Léelo junto con [`docs/USO.md`](USO.md),
 Windows 11 → PowerShell 7 → Docker Desktop (backend WSL2) → contenedor Linux de testkit
 ```
 
-El proyecto y `testkit` pueden vivir en el mismo drive o en drives distintos
-(`C:\dev\Pruebas` y `D:\dev\testkit`, por ejemplo). Ambos casos están
-cubiertos por `Test-TestkitPathUnderRoot` en `lib/powershell/Env.ps1`.
+El proyecto y `testkit` pueden vivir en el mismo drive o en drives distintos. Ambos casos están cubiertos por `Test-TestkitPathUnderRoot` en `lib/powershell/Env.ps1`.
 
 ### Ruta alternativa: checkout dentro de WSL2
 
-Para repos grandes o con muchos bind mounts, hacer el checkout dentro del
-filesystem de una distribución WSL2 y operar desde Bash suele rendir mejor
-que un checkout NTFS. Esa ruta usa el wrapper Bash (`bin/testkit`), no
-`testkit.ps1`; el resto de este documento asume la ruta primaria (PowerShell).
+Para repos grandes o con muchos bind mounts, un checkout dentro del filesystem de WSL2 suele rendir mejor. Esa ruta usa el wrapper Bash `bin/testkit`, no `testkit.ps1`.
 
 ### Fuera de alcance
 
 - Windows containers.
-- PowerShell 5.1 como objetivo contractual (puede funcionar, pero no está
-  cubierto por `tests/powershell/`).
-- Paths de red (UNC) como `\\server\share\...`.
-- Cambiar la Execution Policy automáticamente — ver más abajo.
+- PowerShell 5.1 como objetivo contractual.
+- Paths UNC (`\\server\share\...`).
+- Cambiar automáticamente la Execution Policy.
 
 ## Variables de entorno clave
 
 ```powershell
-$env:TESTKIT_PROJECT_ROOT = 'D:\dev\Pruebas'   # repo bajo prueba
-$env:TESTKIT_ROOT = 'D:\dev\testkit'           # checkout de testkit (opcional; por defecto, el padre de bin/)
-$env:TESTKIT_MODE = 'agent'                    # opcional: perfil determinista para agentes, ver AGENTS.md
+$env:TESTKIT_PROJECT_ROOT = 'D:\dev\Pruebas'
+$env:TESTKIT_ROOT = 'D:\dev\testkit'        # opcional
+$env:TESTKIT_MODE = 'agent'                  # opcional
 ```
 
-`testkit.ps1` busca el env de tests en `<project>/test/.env.test` primero, y
-`<project>/.env.test` como fallback. `TESTKIT_ENV_FILE` puede forzar una ruta
-explícita si ninguna de las dos aplica.
+El store estructural se selecciona únicamente con:
 
-## Execution Policy
-
-`testkit.ps1` no cambia la Execution Policy del sistema ni la de la sesión.
-Si PowerShell bloquea la ejecución del script, es un diagnóstico a resolver
-por quien administra la máquina (política de grupo, `Set-ExecutionPolicy`
-a nivel de usuario), no algo que este proyecto automatice. Para diagnosticar:
-
-```powershell
-Get-ExecutionPolicy -List
+```text
+TEST_STORE_DRIVER=mysql
+TEST_STORE_DRIVER=pgsql
+TEST_STORE_DRIVER=none
 ```
+
+Los valores son exactos y case-sensitive. `DB_DRIVER`, `TEST_DB_DRIVER`, DSN, nombres de DB y `TESTKIT_STACK` no seleccionan store.
 
 ## Quick start sin store
 
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\dev\Pruebas'
 $env:TEST_STORE_DRIVER = 'none'
+$env:TEST_STORE_PROVISION = 'external'
 
-.\bin\testkit.ps1 doctor --readonly --compact
-.\bin\testkit.ps1 run --rm testkit php runTest.php --list
-.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+.\bin\testkit.ps1 doctor --readonly --suite back-php --compact
+.\bin\testkit.ps1 run --rm testkit php runTest.php --suite back-php --list
+.\bin\testkit.ps1 run --rm testkit php runTest.php --suite back-php
 .\bin\testkit.ps1 inspect latest
 ```
 
 ## Quick start MySQL
 
+El env del proyecto debe declarar `TEST_STORE_DRIVER=mysql` y las credenciales requeridas por su estrategia de provisioning.
+
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'D:\dev\Pruebas'
 
 .\bin\testkit.ps1 doctor --compact
-.\bin\testkit.ps1 doctor --full migration-contract
+.\bin\testkit.ps1 doctor --full --suite back-php
 .\bin\testkit.ps1 up -d
-.\bin\testkit.ps1 run --rm testkit php runTest.php back-php
+.\bin\testkit.ps1 run --rm testkit php runTest.php --suite back-php
 .\bin\testkit.ps1 inspect latest
-.\bin\testkit.ps1 down -vc
+.\bin\testkit.ps1 down -v --remove-orphans
 ```
+
+`migration-contract` no debe usarse como preflight genérico: exige una fuente snapshot resoluble. Debe ejecutarse únicamente con un fixture/proyecto que declare ese contrato.
 
 ## `doctor --readonly`
 
-`doctor` por defecto crea `<project>/test/` si no existe y escribe/borra una
-sonda de escritura (`.doctor_write_probe`) para confirmar permisos. Cuando
-sólo se quiere diagnosticar sin tocar el repo del proyecto (por ejemplo,
-antes de que un agente decida qué hacer), usar:
+`doctor` por defecto puede crear `<project>/test/` y usar una sonda de escritura. Cuando sólo se quiere diagnosticar sin tocar el host:
 
 ```powershell
-.\bin\testkit.ps1 doctor --readonly --compact
+.\bin\testkit.ps1 doctor --readonly --suite back-php --compact
 ```
 
-En modo `--readonly`, doctor no crea `test/`, no escribe ninguna sonda, y
-reporta ese chequeo puntual como `UNKNOWN` (`TEST_DIR_WRITE_NOT_PROBED`) en
-vez de `PASS`/`FAIL`. El resto de los chequeos (env detectado, `TESTKIT_ROOT`,
-`TESTKIT_PROJECT_ROOT`, containment, Docker en PATH, credenciales visibles)
-se ejecutan igual — sólo el chequeo de escritura se omite.
+En `--readonly` no se crea `test/` ni se escribe la sonda; el chequeo de escritura queda `UNKNOWN` en vez de inventar un PASS.
 
 ```powershell
 git status --short
-.\bin\testkit.ps1 doctor --readonly --compact
-git status --short   # debe quedar idéntico al anterior
+.\bin\testkit.ps1 doctor --readonly --suite back-php --compact
+git status --short
 ```
+
+El estado Git debe ser idéntico antes y después.
+
+## Evidencia Windows en CI
+
+El job canónico `windows-static` usa `windows-2025` para evitar la deriva de `windows-latest` y ejecuta:
+
+1. existencia de archivos PowerShell críticos;
+2. parseo de `bin`, `lib`, `ui`, `scripts` y `tests/powershell`;
+3. detección de CRLF en scripts Linux críticos;
+4. `tests/powershell/run.ps1`;
+5. `php tests/framework/run.php`.
+
+El harness PowerShell incluye un gate específico de `TEST_STORE_DRIVER` sobre `seed.ps1` y `db_clean.ps1`. Sin Docker valida:
+
+- ausencia → `TEST_STORE_DRIVER_REQUIRED`, exit `2`;
+- valor inválido → `TEST_STORE_DRIVER_INVALID`, exit `2`;
+- `TEST_STORE_DRIVER=none` exportado prevalece sobre un valor distinto del archivo env y termina sin invocar runtime.
+
+Este job no demuestra Docker Desktop/MySQL sobre Windows; esa superficie sigue fuera del CI principal.
+
+## Execution Policy
+
+`testkit.ps1` no modifica la Execution Policy. Si PowerShell bloquea scripts, diagnosticar la política vigente:
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+La corrección corresponde al usuario/administrador de la máquina, no a TestKit.
 
 ## Troubleshooting
 
 ### El repo no se monta / Docker no ve los archivos
 
-Confirmá que el drive donde vive el checkout está compartido con Docker
-Desktop (Settings → Resources → File sharing, si usás el backend Hyper-V; con
-WSL2 esto normalmente no aplica porque Docker Desktop monta directo desde la
-distro). Si `TESTKIT_ROOT`/`TESTKIT_PROJECT_ROOT` no son un repo completo,
-`doctor` lo va a marcar con `TESTKIT_ROOT_INCOMPLETE` o
-`PROJECT_ROOT_MISSING`.
+Confirmá que Docker Desktop puede montar los drives de los checkouts. Si `TESTKIT_ROOT` o `TESTKIT_PROJECT_ROOT` no son válidos, `doctor` debe reportarlo antes del runtime.
 
 ### Puertos ocupados
 
-Si `up -d` falla por un puerto en uso (MySQL 3306, Redis 6379, etc.), otro
-proceso local (otra instancia de MySQL, otro stack de Docker) probablemente
-ya lo está usando. Bajalo con `.\bin\testkit.ps1 down -vc` antes de reintentar,
-o cambiá el mapeo de puertos en el compose override que corresponda.
+Si `up -d` falla por un puerto en uso, eliminá primero el stack anterior:
 
-### El env de tests "quedó afuera del repo montado"
+```powershell
+.\bin\testkit.ps1 down -v --remove-orphans
+```
 
-`doctor` (y el wrapper antes de correr cualquier comando runtime) valida que
-el env de tests esté dentro de `TESTKIT_PROJECT_ROOT`. Si ves
-`ENV_OUTSIDE_PROJECT` o el wrapper corta con "El env de tests quedó fuera del
-repo montado", movés el archivo a `<project>/test/.env.test` o
-`<project>/.env.test`, no fuera del checkout.
+### Env fuera del proyecto montado
 
-### CRLF inesperado en un script
+El env de test debe permanecer dentro de `TESTKIT_PROJECT_ROOT`. Si aparece `ENV_OUTSIDE_PROJECT`, corregí la ruta; no uses un archivo externo al checkout del host.
 
-Este repo fija `eol=lf` para `.sh`, `bin/testkit`, `.ps1`/`.psm1` y el resto
-del código fuente vía `.gitattributes`. Si tu editor o tu configuración local
-de Git reintroduce CRLF y algo se rompe dentro de un contenedor Linux, revisá
-`core.autocrlf` y volvé a hacer checkout del archivo afectado.
+### CRLF inesperado
+
+El repo fija EOL para scripts mediante `.gitattributes`. Si un checkout local reintroduce CRLF, revisar `core.autocrlf` y volver a materializar el archivo afectado.
 
 ## Limpieza
 
-Igual que en Linux/macOS, ver [`docs/CLEANUP.md`](CLEANUP.md):
+Ver [`docs/CLEANUP.md`](CLEANUP.md):
 
 ```powershell
 .\bin\testkit.ps1 cleanup reports --max-runs=10 --dry-run
 .\bin\testkit.ps1 cleanup reports --max-runs=10 --apply
 ```
 
-## Rutas soportadas / no soportadas
+## Matriz resumida
 
 | Caso | Soporte |
 |---|---|
-| PowerShell 7 + Docker Desktop (backend WSL2) | Soportado, ruta primaria |
-| Checkout NTFS con path con espacios | Soportado |
+| PowerShell 7 + Docker Desktop/WSL2 | Soportado, ruta primaria |
+| Checkout NTFS con espacios | Soportado |
 | Proyecto y `testkit` en drives distintos | Soportado |
-| Path vecino con prefijo común (`Pruebas` vs `Pruebas-otro`) | Rechazado explícitamente por containment |
-| Checkout dentro de una distro WSL2, operado por Bash | Soportado como ruta alternativa (usa `bin/testkit`, no este documento) |
+| Checkout dentro de WSL2 operado por Bash | Soportado como alternativa |
+| `windows-2025` para gates estáticos de CI | Soportado |
 | Windows containers | No soportado |
-| PowerShell 5.1 | No cubierto por los tests de este repo |
-| Paths UNC (`\\server\share\...`) | No soportado |
+| PowerShell 5.1 | No cubierto |
+| Paths UNC | No soportado |
