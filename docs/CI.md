@@ -39,6 +39,14 @@ No se aceptan targets posicionales, `TEST_TARGET`, `TESTKIT_TARGET_*` ni `doctor
 
 El gate `tests/framework/test_ci_typed_selectors.php`, ejecutado por `php tests/framework/run.php`, falla si el workflow vuelve a introducir esas superficies legacy o si pierde los comandos tipados esperados del runtime MySQL.
 
+## Contrato de store en CI
+
+`TEST_STORE_DRIVER` es el único selector del store estructural. El workflow debe declararlo explícitamente como `mysql`, `pgsql` o `none` según el job.
+
+No se admite seleccionar el motor mediante `DB_DRIVER`, `TEST_DB_DRIVER`, DSN, credenciales, nombres de DB o `TESTKIT_STACK`.
+
+El gate `tests/framework/test_store_driver_contract.php`, registrado en `tests/framework/run.php`, protege esta superficie junto con runtime, doctor, scripts y schema.
+
 ## Jobs blocking
 
 ### `static`
@@ -71,7 +79,7 @@ php tests/framework/run.php
 
 Depende de `static`.
 
-Este job no requiere Docker. Su objetivo es validar contratos internos como concurrencia, locks, reporting, selección de suites, contratos de seed state, contratos de ejecución y ausencia de selectores legacy en el workflow.
+Este job no requiere Docker. Su objetivo es validar contratos internos como concurrencia, locks, reporting, selección de suites, contratos de seed state, store explícito, contratos de ejecución y ausencia de selectores legacy en el workflow.
 
 ### `windows-static`
 
@@ -114,7 +122,7 @@ El job copia `.env.test.example` a `.env.test` y fuerza explícitamente:
 
 ```env
 TESTKIT_STACK=mysql
-DB_DRIVER=mysql
+TEST_STORE_DRIVER=mysql
 TEST_DB_STRATEGY=shared
 TEST_JOBS=1
 ```
@@ -181,7 +189,7 @@ Estas superficies pueden agregarse como workflows manuales o jobs no blocking cu
 
 MySQL es el único camino cerrado primario del framework en esta fase. Es el contrato que cubre provision, reset, baseline por capas, snapshot restore, clone por worker y `migration-contract`.
 
-Por eso el CI principal usa `TESTKIT_STACK=mysql` y `DB_DRIVER=mysql` explícitamente, en vez de heredar el default histórico `mysql,redis` de `.env.test.example`.
+Por eso el CI principal declara `TEST_STORE_DRIVER=mysql` y usa `TESTKIT_STACK=mysql` como composición de infraestructura. `TESTKIT_STACK` no selecciona el store y no se hereda ningún default de driver.
 
 ## Por qué Postgres, Redis e Influx no son obligatorios
 
@@ -204,6 +212,7 @@ php -v
 node --version
 
 php tests/framework/test_ci_typed_selectors.php
+php tests/framework/test_store_driver_contract.php
 php tests/framework/run.php
 
 find . -type f -name '*.php' \
@@ -247,7 +256,7 @@ php tests\framework\run.php
 ```bash
 cp .env.test.example .env.test
 sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=mysql/' .env.test
-sed -i 's/^DB_DRIVER=.*/DB_DRIVER=mysql/' .env.test
+sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=mysql/' .env.test
 sed -i 's/^TEST_DB_STRATEGY=.*/TEST_DB_STRATEGY=shared/' .env.test
 sed -i 's/^TEST_JOBS=.*/TEST_JOBS=1/' .env.test
 
@@ -276,10 +285,9 @@ TESTKIT_STACK=mysql ./bin/testkit down -vc || true
 ```bash
 cp .env.test.example .env.test
 sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=/' .env.test
-cat >> .env.test <<'ENV'
-TEST_STORE_DRIVER=none
-TEST_STORE_PROVISION=external
-ENV
+sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=none/' .env.test
+sed -i 's/^TEST_STORE_PROVISION=.*/TEST_STORE_PROVISION=external/' .env.test || true
+grep -q '^TEST_STORE_PROVISION=' .env.test || printf '%s\n' 'TEST_STORE_PROVISION=external' >> .env.test
 
 mkdir -p test-results/browser
 ./bin/testkit run --rm \
@@ -314,7 +322,7 @@ mkdir -p test-results/browser
 ```bash
 git status --short
 
-git diff -- .github/workflows/ci.yml docs/CI.md tests/framework/run.php tests/framework/test_ci_typed_selectors.php
+git diff -- .github/workflows/ci.yml docs/CI.md tests/framework/run.php tests/framework/test_ci_typed_selectors.php tests/framework/test_store_driver_contract.php
 ```
 
 No debería aparecer ningún cambio fuera de esas rutas, salvo artifacts locales generados por las pruebas.
