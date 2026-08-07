@@ -4,6 +4,9 @@ declare(strict_types=1);
 $root = dirname(__DIR__, 2);
 $workflowPath = $root . '/.github/workflows/ci.yml';
 $docsPath = $root . '/docs/CI.md';
+$windowsDocsPath = $root . '/docs/WINDOWS.md';
+$dockerfilePath = $root . '/docker/Dockerfile';
+$composePath = $root . '/compose.yaml';
 
 $errors = [];
 $assert = static function (bool $condition, string $message) use (&$errors): void {
@@ -24,29 +27,64 @@ $read = static function (string $path) use ($assert): string {
 
 $workflow = $read($workflowPath);
 $docs = $read($docsPath);
+$windowsDocs = $read($windowsDocsPath);
+$dockerfile = $read($dockerfilePath);
+$compose = $read($composePath);
 
 $requiredWorkflow = [
+    'uses: actions/checkout@v7',
+    'uses: actions/setup-node@v7',
+    'node-version: "24"',
+    'uses: actions/upload-artifact@v7',
+    'runs-on: windows-2025',
     'TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host',
     'TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test',
+    'TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/browser',
+    'TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/browser/.env.test',
     './bin/testkit doctor --full --suite back-php',
     './bin/testkit run --rm testkit php runTest.php --group all --list',
     './bin/testkit run --rm testkit php runTest.php --group all',
+    'node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs',
 ];
 foreach ($requiredWorkflow as $fragment) {
-    $assert(str_contains($workflow, $fragment), 'CI missing canonical typed/runtime fragment: ' . $fragment);
+    $assert(str_contains($workflow, $fragment), 'CI missing normalized contract fragment: ' . $fragment);
 }
 
 $requiredDocs = [
+    'Node `24`',
+    '`windows-2025`',
     'tests/fixtures/runtime-mysql-host',
+    'tests/fixtures/browser',
     './bin/testkit doctor --full --suite back-php',
     './bin/testkit run --rm testkit php runTest.php --group all --list',
     './bin/testkit run --rm testkit php runTest.php --group all',
 ];
 foreach ($requiredDocs as $fragment) {
-    $assert(str_contains($docs, $fragment), 'docs/CI.md missing canonical typed/runtime fragment: ' . $fragment);
+    $assert(str_contains($docs, $fragment), 'docs/CI.md missing normalized contract fragment: ' . $fragment);
 }
 
-$forbiddenFragments = [
+$requiredWindowsDocs = [
+    '.\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite back-php --list',
+    '.\\bin\\testkit.ps1 run --rm testkit php runTest.php --suite back-php',
+    '.\\bin\\testkit.ps1 doctor --full --suite back-php',
+    'TEST_STORE_DRIVER_REQUIRED',
+    'TEST_STORE_DRIVER_INVALID',
+    '`windows-2025`',
+];
+foreach ($requiredWindowsDocs as $fragment) {
+    $assert(str_contains($windowsDocs, $fragment), 'docs/WINDOWS.md missing canonical fragment: ' . $fragment);
+}
+
+$assert(str_contains($dockerfile, 'ARG NODE_VERSION=24'), 'docker/Dockerfile must default to Node 24');
+$assert(str_contains($dockerfile, 'ARG PLAYWRIGHT_VERSION=1.61.0'), 'docker/Dockerfile must pin Playwright 1.61.0');
+$assert(str_contains($compose, 'NODE_VERSION: ${TESTKIT_NODE_VERSION:-24}'), 'compose.yaml must default TESTKIT_NODE_VERSION to 24');
+
+$forbiddenWorkflowFragments = [
+    'actions/checkout@v4',
+    'actions/setup-node@v4',
+    'actions/upload-artifact@v4',
+    'node-version: "20"',
+    'runs-on: windows-latest',
     'php runTest.php --list',
     'php runTest.php all',
     'doctor --full migration-contract',
@@ -54,8 +92,17 @@ $forbiddenFragments = [
     'TEST_TARGET=',
     'TESTKIT_TARGET_',
 ];
-foreach ($forbiddenFragments as $fragment) {
-    $assert(!str_contains($workflow, $fragment), 'CI contains legacy selector surface: ' . $fragment);
+foreach ($forbiddenWorkflowFragments as $fragment) {
+    $assert(!str_contains($workflow, $fragment), 'CI contains stale/legacy surface: ' . $fragment);
+}
+
+$forbiddenWindowsFragments = [
+    'php runTest.php --list',
+    'php runTest.php back-php',
+    'doctor --full migration-contract',
+];
+foreach ($forbiddenWindowsFragments as $fragment) {
+    $assert(!str_contains($windowsDocs, $fragment), 'docs/WINDOWS.md contains legacy selector surface: ' . $fragment);
 }
 
 $assert(
