@@ -77,13 +77,13 @@ Valida:
 
 ### `framework-self-tests`
 
-Ejecuta:
+Ejecuta una vez la suite PHP completa:
 
 ```bash
 php tests/framework/run.php
 ```
 
-Depende de `static`.
+Depende de `static` y es el gate canónico de contratos internos del framework.
 
 ### `windows-static`
 
@@ -98,12 +98,13 @@ Ejecuta:
 1. verificación de archivos PowerShell requeridos;
 2. parseo de `.ps1`/`.psm1` bajo `bin`, `lib`, `ui`, `scripts` y `tests/powershell`;
 3. chequeo CRLF de scripts Linux críticos;
-4. `tests/powershell/run.ps1`;
-5. `php tests/framework/run.php`.
+4. `tests/powershell/run.ps1`.
 
 El harness PowerShell incluye el contrato explícito de store para `seed.ps1` y `db_clean.ps1`: ausencia e inválido fallan antes de Docker, y `none` termina sin runtime.
 
-Este job no valida Docker Desktop ni MySQL sobre Windows.
+La suite PHP completa no se duplica en este job. El run `31196294460` demostró que los self-tests PowerShell pasan `10/10`, mientras `tests/framework/test_process_timeout.php` falla al intentar terminar un proceso nativo en Windows y puede bloquear el job hasta su timeout global. Esa portabilidad de `ProcessRunner` queda registrada como deuda separada en `docs/pendientes/processrunner-timeout-windows.md` y no forma parte del contrato I2 de store explícito.
+
+Este job no valida Docker Desktop, MySQL ni soporte general de `ProcessRunner` sobre Windows.
 
 ### `runtime-mysql`
 
@@ -188,7 +189,8 @@ No son blocking actualmente:
 - coverage extendido;
 - performance/stress;
 - runtime Docker sobre Windows;
-- `migration-contract` con snapshot real.
+- `migration-contract` con snapshot real;
+- terminación/timeout de procesos PHP nativos en Windows (`ProcessRunner`).
 
 ## Reproducción local — contratos estáticos
 
@@ -225,8 +227,9 @@ Get-ChildItem bin,lib,ui,scripts,tests\powershell -Recurse -Include *.ps1,*.psm1
   }
 
 pwsh -NoProfile -NonInteractive -File tests\powershell\run.ps1
-php tests\framework\run.php
 ```
+
+La suite PHP completa se reproduce con el gate `framework-self-tests`; no debe duplicarse dentro del gate Windows hasta cerrar `docs/pendientes/processrunner-timeout-windows.md`.
 
 ## Reproducción local — runtime MySQL
 
@@ -317,5 +320,6 @@ No declarar CI PASS hasta observar los jobs del run nuevo.
 
 - actualizar Node/Playwright puede revelar incompatibilidades del browser runner; el smoke existe para detectarlas;
 - `runtime-mysql` y browser usan fixtures deliberadamente mínimos y no deben crecer como aplicaciones paralelas;
+- `ProcessRunner` no tiene todavía terminación nativa de árbol de procesos verificada en Windows; no inferir soporte por el PASS del wrapper PowerShell;
 - la validación local no sustituye la corrida real de Actions;
 - el workflow deshabilitado no produce evidencia nueva aunque su YAML sea correcto.
