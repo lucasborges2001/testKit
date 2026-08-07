@@ -162,13 +162,6 @@ jobs:
           pwsh -NoProfile -NonInteractive -File tests/powershell/run.ps1
           exit $LASTEXITCODE
 
-      - name: Run PHP framework self-tests
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          php tests/framework/run.php
-          exit $LASTEXITCODE
-
   framework-self-tests:
     name: framework-self-tests
     runs-on: ubuntu-24.04
