@@ -198,6 +198,8 @@ jobs:
     needs: [static, framework-self-tests]
     env:
       TESTKIT_STACK: mysql
+      TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host
+      TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test
 
     steps:
       - name: Checkout
@@ -206,61 +208,62 @@ jobs:
       - name: Prepare test environment
         run: |
           set -euo pipefail
-          cp .env.test.example .env.test
+          cp .env.test.example "${TESTKIT_ENV_FILE}"
           chmod +x bin/testkit scripts/*.sh || true
 
           set_env_value() {
             local key="$1"
             local value="$2"
-            if grep -q "^${key}=" .env.test; then
-              sed -i "s#^${key}=.*#${key}=${value}#" .env.test
+            if grep -q "^${key}=" "${TESTKIT_ENV_FILE}"; then
+              sed -i "s#^${key}=.*#${key}=${value}#" "${TESTKIT_ENV_FILE}"
             else
-              printf '%s=%s\n' "${key}" "${value}" >> .env.test
+              printf '%s=%s\n' "${key}" "${value}" >> "${TESTKIT_ENV_FILE}"
             fi
           }
 
           set_env_value TESTKIT_STACK mysql
           set_env_value TEST_STORE_DRIVER mysql
+          set_env_value TEST_STORE_PROVISION managed
           set_env_value TEST_DB_STRATEGY shared
           set_env_value TEST_JOBS 1
 
       - name: Doctor
         run: |
           set -euo pipefail
-          TESTKIT_STACK=mysql ./bin/testkit doctor --compact
-          TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract
+          ./bin/testkit doctor --compact
+          ./bin/testkit doctor --full --suite back-php
 
       - name: Start MySQL stack
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit up -d
-          TESTKIT_STACK=mysql ./bin/testkit ps | tee ci-artifacts/ci-testkit-ps-after-up.txt
+          ./bin/testkit up -d
+          ./bin/testkit ps | tee ci-artifacts/ci-testkit-ps-after-up.txt
 
       - name: Seed runtime store
         run: |
           set -euo pipefail
-          TESTKIT_STACK=mysql ./scripts/seed.sh
+          ./scripts/seed.sh
 
       - name: Discover runtime tests
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list \
+          ./bin/testkit run --rm testkit php runTest.php --group all --list \
             | tee ci-artifacts/ci-runtest-list.txt
 
       - name: Run runtime tests
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all \
+          ./bin/testkit run --rm testkit php runTest.php --group all \
             | tee ci-artifacts/ci-runtest-all.txt
 
       - name: Inspect latest run
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit inspect latest \
+          ./bin/testkit inspect latest \
             | tee ci-artifacts/ci-inspect-latest.txt
 
       - name: Capture Docker diagnostics
@@ -276,10 +279,10 @@ jobs:
             docker ps -a
             echo
             echo '## testkit ps'
-            TESTKIT_STACK=mysql ./bin/testkit ps
+            ./bin/testkit ps
           } > ci-artifacts/ci-testkit-ps.txt 2>&1 || true
 
-          TESTKIT_STACK=mysql ./bin/testkit logs --no-color --timestamps \
+          ./bin/testkit logs --no-color --timestamps \
             > ci-artifacts/ci-docker-logs.txt 2>&1 || true
 
           exit 0
@@ -287,7 +290,8 @@ jobs:
       - name: Teardown
         if: always()
         run: |
-          TESTKIT_STACK=mysql ./bin/testkit down -vc || true
+          ./bin/testkit down -v --remove-orphans || true
+          rm -f "${TESTKIT_ENV_FILE}"
 
       - name: Upload runtime diagnostics
         if: always()
@@ -298,11 +302,11 @@ jobs:
           retention-days: 14
           path: |
             ci-artifacts/**
-            .testkit/**
-            reports/**
-            coverage/**
-            test/coverage/**
-            test/querylog.jsonl
+            tests/fixtures/runtime-mysql-host/.testkit/**
+            tests/fixtures/runtime-mysql-host/reports/**
+            tests/fixtures/runtime-mysql-host/coverage/**
+            tests/fixtures/runtime-mysql-host/test/coverage/**
+            tests/fixtures/runtime-mysql-host/test/querylog.jsonl
             *.log
             playwright-report/**
             test-results/**
