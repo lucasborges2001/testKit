@@ -55,7 +55,10 @@ function Load-EnvKVSafe([string]$Path) {
       if ($v.Length -ge 2 -and (($v.StartsWith('"') -and $v.EndsWith('"')) -or ($v.StartsWith("'") -and $v.EndsWith("'")))) {
         $v = $v.Substring(1, $v.Length - 2)
       }
-      Set-Item -Path ("Env:{0}" -f $k) -Value $v
+      $envPath = "Env:{0}" -f $k
+      if (-not (Test-Path $envPath)) {
+        Set-Item -Path $envPath -Value $v
+      }
     }
   }
 }
