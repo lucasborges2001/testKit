@@ -5,7 +5,7 @@
 ```text
 ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
-IMPLEMENTACION_BASE: d0c3ffb711fae48d0a2e8a2ead2a4d617456767e
+IMPLEMENTACION_BASE: c812ac3506847bd65ebc27093ddc3a595f6a844f
 PRODUCCION_AUTORIZADA: NO
 ```
 
@@ -50,12 +50,14 @@ El corte incluye:
 - `ParallelGuard` delegando la resolución a `StoreRegistry`;
 - bootstrap, migration suite, back-python, `store_router` y reporting sin fallback `mysql`;
 - `seed.sh`, `seed.ps1`, `db_clean.sh` y `db_clean.ps1` exigiendo la variable canónica;
+- PowerShell validando los valores de forma case-sensitive;
 - doctor Bash/PowerShell rechazando ausencia y aliases antes de ejecutar checks;
-- capability doctor sin resolución por `DB_DRIVER`, `TEST_DB_DRIVER` ni DSN;
+- base/capability doctor sin resolución por `DB_DRIVER`, `TEST_DB_DRIVER` ni DSN;
 - `ConfigSchema` v6 con `TEST_STORE_DRIVER` requerido y sin `DB_DRIVER` como variable de selección;
 - `.env.test.example` declarando explícitamente `TEST_STORE_DRIVER=mysql`;
+- `SUPPORT_MATRIX.md`, troubleshooting y documentación CI alineados al contrato;
 - CI MySQL configurando `TEST_STORE_DRIVER=mysql`;
-- self-test `tests/framework/test_store_driver_contract.php` registrado en el runner.
+- self-test `tests/framework/test_store_driver_contract.php` registrado en el runner y con gate anti-regresión sobre las superficies relevantes.
 
 ## Gate 1 — baseline
 
@@ -65,7 +67,7 @@ cd ~/Escritorio/Pruebas/submodules/Base/testkit
 git branch --show-current
 git rev-parse HEAD
 git status --short
-git log --oneline -10
+git log --oneline -15
 ```
 
 Esperado: rama `main`, working tree limpio y HEAD que contenga este corte.
@@ -88,7 +90,8 @@ El test debe demostrar que:
 - `mysql`, `pgsql` y `none` son aceptados sin normalización;
 - ausencia de `TEST_STORE_DRIVER` falla con `TEST_STORE_DRIVER_REQUIRED`;
 - `pg`, `postgres`, `postgresql`, mayúsculas y valores con espacios fallan con `TEST_STORE_DRIVER_INVALID`;
-- `DB_DRIVER`, `TEST_DB_DRIVER`, DSN o variables PostgreSQL no sustituyen la variable canónica.
+- `DB_DRIVER`, `TEST_DB_DRIVER`, DSN o variables PostgreSQL no sustituyen la variable canónica;
+- no reaparecen resolvers legacy en runtime, doctor, scripts, schema o CI.
 
 ## Gate 3 — self-tests
 
@@ -102,6 +105,7 @@ Criterio:
 - `Store driver explicit contract` aparece en PASS;
 - `Seed state canonical contract` permanece PASS;
 - `Store resource lock` permanece PASS;
+- `Failure classification contracts` permanece PASS usando `TEST_STORE_DRIVER`;
 - doctor rechaza driver ausente y `postgres`;
 - no aparecen regresiones nuevas.
 
@@ -198,7 +202,7 @@ Es FAIL si:
 
 - cualquier alias o inferencia selecciona un store;
 - `TEST_STORE_DRIVER` ausente termina usando MySQL;
-- `pg`/`postgres`/`postgresql` son normalizados a `pgsql`;
+- `pg`/`postgres`/`postgresql`, mayúsculas o valores con espacios son normalizados;
 - doctor/schema/runtime difieren;
 - reporting reconstruye silenciosamente `mysql`;
 - CI o self-tests muestran una regresión del corte.
