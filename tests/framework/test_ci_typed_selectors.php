@@ -148,6 +148,11 @@ $assert(
     'runtime-mysql must not use migration-contract without a snapshot fixture'
 );
 
+$assert(
+    substr_count($workflow, 'php tests/framework/run.php') === 1,
+    'full PHP framework self-tests must run exactly once in the dedicated framework-self-tests job'
+);
+
 $positionalRunPattern = '/runTest\.php\s+(all|back|front|public_html|back-php|back-py|back-python|python|py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|security|slow|migration-contract|migration|migrations)(?=\s|\\\\|$)/m';
 $assert(
     preg_match($positionalRunPattern, $workflow) !== 1,
