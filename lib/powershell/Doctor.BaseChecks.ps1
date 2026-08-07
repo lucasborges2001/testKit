@@ -80,12 +80,11 @@ function Invoke-TestkitDoctorBaseChecks {
     Add-TestkitDoctorCheck 'base' 'PASS' 'STORE_PROVISION_DECLARED' "TEST_STORE_PROVISION=$provisionMode"
   }
 
-  $storeDriver = Normalize-TestkitDoctorToken $env:TEST_STORE_DRIVER
-  if ([string]::IsNullOrWhiteSpace($storeDriver)) { $storeDriver = 'mysql' }
+  $storeDriver = $env:TEST_STORE_DRIVER
 
-  if ($storeDriver -eq 'none') {
+  if ($storeDriver -ceq 'none') {
     Add-TestkitDoctorCheck 'base' 'PASS' 'STORE_DRIVER_NONE' 'proyecto sin store runtime: TEST_STORE_DRIVER=none'
-  } elseif ($storeDriver -eq 'mysql') {
+  } elseif ($storeDriver -ceq 'mysql') {
     if (Test-TestkitDoctorEnvPresentAny @('DB_HOST','TEST_MYSQL_HOST','MYSQL_HOST')) {
       Add-TestkitDoctorCheck 'base' 'PASS' 'MYSQL_HOST_PRESENT' 'host MySQL visible'
     } else {
@@ -138,7 +137,13 @@ function Invoke-TestkitDoctorBaseChecks {
     } else {
       Add-TestkitDoctorCheck 'base' 'PASS' 'EXTERNAL_PROVISION_PATH' 'TEST_STORE_PROVISION=external: no se exigen credenciales admin MySQL'
     }
+  } elseif ($storeDriver -ceq 'pgsql') {
+    Add-TestkitDoctorCheck 'base' 'WARN' 'NON_MYSQL_BASE_CHECKS_PARTIAL' 'doctor base no cierra validación de credenciales específicas para driver=pgsql' 'Completá checks específicos del motor si querés endurecer este path.'
+  } elseif ([string]::IsNullOrEmpty($storeDriver)) {
+    Add-TestkitDoctorCheck 'base' 'FAIL' 'STORE_DRIVER_REQUIRED' 'TEST_STORE_DRIVER es obligatorio' 'Usá exactamente mysql, pgsql o none.'
+    $Ok.Value = $false
   } else {
-    Add-TestkitDoctorCheck 'base' 'WARN' 'NON_MYSQL_BASE_CHECKS_PARTIAL' "doctor base no cierra validación de credenciales específicas para driver=$storeDriver" 'Completá checks específicos del motor si querés endurecer este path.'
+    Add-TestkitDoctorCheck 'base' 'FAIL' 'INVALID_STORE_DRIVER' "TEST_STORE_DRIVER=$storeDriver no pertenece al contrato" 'Usá exactamente mysql, pgsql o none.'
+    $Ok.Value = $false
   }
 }

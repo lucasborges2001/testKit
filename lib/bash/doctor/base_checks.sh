@@ -77,11 +77,7 @@ testkit_doctor_run_base_checks() {
     testkit_doctor_add_check base PASS STORE_PROVISION_DECLARED "TEST_STORE_PROVISION=${provision_mode}"
   fi
 
-  local store_driver
-  store_driver="$(testkit_doctor_normalize_token "${TEST_STORE_DRIVER:-mysql}")"
-  if [[ -z "${store_driver}" ]]; then
-    store_driver="mysql"
-  fi
+  local store_driver="${TEST_STORE_DRIVER:-}"
 
   if [[ "${store_driver}" == "none" ]]; then
     testkit_doctor_add_check base PASS STORE_DRIVER_NONE \
@@ -149,9 +145,19 @@ testkit_doctor_run_base_checks() {
       testkit_doctor_add_check base PASS EXTERNAL_PROVISION_PATH \
         "TEST_STORE_PROVISION=external: no se exigen credenciales admin MySQL"
     fi
-  else
+  elif [[ "${store_driver}" == "pgsql" ]]; then
     testkit_doctor_add_check base WARN NON_MYSQL_BASE_CHECKS_PARTIAL \
-      "doctor base no cierra validación de credenciales específicas para driver=${store_driver}" \
+      "doctor base no cierra validación de credenciales específicas para driver=pgsql" \
       "Completá checks específicos del motor si querés endurecer este path."
+  elif [[ -z "${store_driver}" ]]; then
+    testkit_doctor_add_check base FAIL STORE_DRIVER_REQUIRED \
+      "TEST_STORE_DRIVER es obligatorio" \
+      "Usá exactamente mysql, pgsql o none."
+    ok_ref=0
+  else
+    testkit_doctor_add_check base FAIL INVALID_STORE_DRIVER \
+      "TEST_STORE_DRIVER=${store_driver} no pertenece al contrato" \
+      "Usá exactamente mysql, pgsql o none."
+    ok_ref=0
   fi
 }
