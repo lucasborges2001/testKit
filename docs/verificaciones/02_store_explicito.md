@@ -5,9 +5,9 @@
 ```text
 ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
-IMPLEMENTACION_BASE: f7945e04ff7dc9feeb889450db57e4e8a73755f8
-ULTIMA_VALIDACION_LOCAL: 11885891174e9c390e9e9cdcc2ab112765b96e10
-ULTIMO_RESULTADO: PARCIAL_LOCAL_PASS_RUNTIME_CI_PENDIENTES
+IMPLEMENTACION_BASE: cc2e02f50a25d34f8124298377a9028c94e39131
+ULTIMA_VALIDACION_LOCAL: c408cee90797f12597425a4433002b87c62be576
+ULTIMO_RESULTADO: NEGATIVOS_PASS_RUNTIME_FAIL_CORREGIDO_PENDIENTE_DE_REVALIDAR
 POWERSHELL_LOCAL: BLOCKED_PWSH_NO_DISPONIBLE
 PRODUCCION_AUTORIZADA: NO
 ```
@@ -47,45 +47,62 @@ TEST_STORE_DRIVER_INVALID
 
 ### Primera ejecución — `70f604e4842eadd56354847b71cd937fad6f79bb`
 
-Resultado:
-
 - contrato focal: PASS;
 - framework: `40 passed, 3 failed`;
 - `doctor_modes`: 2 casos FAIL;
 - `pwsh`: no disponible.
 
-Causas corregidas posteriormente:
-
-1. fixture de clasificación importaba `ParallelGuard` sin cargar `StoreRegistry`;
-2. fixture BackPython no declaraba `TEST_STORE_DRIVER=none`;
-3. fixture SQL observability no declaraba `TEST_STORE_DRIVER=mysql`;
-4. `doctor_modes` conservaba selectores posicionales heredados de I1;
-5. seis archivos habían cambiado accidentalmente de modo `100644` a `100755`.
+Se corrigieron fixtures que no declaraban/cargaban el nuevo contrato, deuda I1 de selectores posicionales y ruido de modos de archivo.
 
 ### Segunda ejecución — `56ba333f778071485d3ac17b8ed4754d0468bcb1`
 
-Resultado:
-
 - contrato focal I2: PASS;
-- `Failure classification contracts`: PASS;
-- `BackPythonSuite trace coverage contract`: PASS;
-- `SQL observability public exit code 5`: PASS;
+- regresiones focales: PASS;
 - framework completo: `43 passed, 0 failed`;
 - `doctor_modes`: `5/7` PASS, `2/7` FAIL;
 - `pwsh`: no disponible.
 
-Los dos fallos de doctor eran del harness: fabricaba un `TESTKIT_ROOT` incompleto que no contenía `scripts/contract.php`. Se corrigió para usar el repositorio TestKit real como root, manteniendo proyecto/env/Docker stub temporales.
+Los dos fallos restantes provenían de un harness que construía `TESTKIT_ROOT` incompleto. Se corrigió para usar el repositorio real de testkit.
 
 ### Tercera ejecución — `11885891174e9c390e9e9cdcc2ab112765b96e10`
 
-Resultado:
-
 - `doctor_modes`: PASS — `7 case executions`;
-- PowerShell: SKIP/BLOCKED porque `pwsh` no está disponible en PATH;
-- sintaxis PHP de todo el repositorio excluyendo `vendor/`: PASS;
-- sintaxis Bash sobre `bin`, `scripts` y `lib`: PASS.
+- sintaxis PHP: PASS;
+- sintaxis Bash: PASS;
+- PowerShell: BLOCKED porque `pwsh` no está disponible.
 
-Combinando esta ejecución con la segunda, los gates locales de contrato, self-tests, doctor y sintaxis quedan PASS. PowerShell local permanece BLOCKED por entorno y no se interpreta como PASS.
+### Cuarta ejecución — `c408cee90797f12597425a4433002b87c62be576`
+
+Negativos públicos:
+
+```text
+[TEST_STORE_DRIVER_REQUIRED] ...
+RC_MISSING=1
+[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='postgres' ...
+RC_INVALID=1
+```
+
+Resultado Gate 6: PASS. No hubo fallback a MySQL ni normalización de `postgres`.
+
+Runtime MySQL:
+
+- `docker compose up` levantó MySQL sano;
+- `--group all --list` terminó PASSED y publicó selección válida;
+- ejecución real `--group all` falló en bootstrap antes de tests;
+- causa 1: `.env.test.example` declaraba `TEST_STORE_PROVISION=managed` de forma implícita y `TEST_MYSQL_ROOT_PASSWORD`, pero no `TEST_MYSQL_ADMIN_USER`;
+- causa 2: `scripts/seed.sh` estaba en modo `100644`, por lo que el comando documentado `./scripts/seed.sh` devolvió `Permiso denegado`;
+- `doctor --full --suite migration-contract` también reportó `MIGRATION_CONTRACT_NEEDS_SNAPSHOT`; esto es esperado por el contrato de esa suite y demuestra que no es un gate válido para el env genérico I2;
+- apareció un orphan `testkit-redis_test-1`; debe limpiarse y no se atribuye a I2 sin evidencia adicional.
+
+Correcciones publicadas después de esta ejecución:
+
+1. `.env.test.example` declara explícitamente `TEST_STORE_PROVISION=managed` y `TEST_MYSQL_ADMIN_USER=root`;
+2. `docs/examples/.env.test.example` declara `TEST_STORE_DRIVER=mysql` y mantiene el path managed completo;
+3. el test focal protege ambos ejemplos para evitar regresión;
+4. `scripts/seed.sh` y `scripts/db_clean.sh` recuperan modo ejecutable `100755`;
+5. el gate runtime usa `doctor --full --suite back-php`, no `migration-contract`.
+
+La verificación permanece PENDIENTE hasta repetir runtime sobre `cc2e02f` o posterior y revisar CI real.
 
 ## Gate 1 — baseline
 
@@ -98,104 +115,79 @@ git rev-parse HEAD
 git status --short
 ```
 
-Esperado: rama `main`, working tree limpio y HEAD igual o posterior al commit que contiene esta verificación.
+Esperado: rama `main`, working tree limpio y HEAD `cc2e02f` o posterior.
 
-## Gate 2 — contrato focalizado — PASS
+## Gate 2 — contrato focalizado — PASS previo, reejecutar tras cambios de ejemplos
 
-Evidencia obtenida:
+```bash
+php -l tests/framework/test_store_driver_contract.php
+php tests/framework/test_store_driver_contract.php
+```
+
+Esperado:
 
 ```text
-No syntax errors detected in tests/framework/test_store_driver_contract.php
 Store driver explicit contract PASS
 ```
 
 ## Gate 3 — self-tests — PASS
 
-Evidencia obtenida:
+Evidencia previa:
 
 ```text
 43 passed, 0 failed
 Doctor mode self-tests passed: 7 case executions
 ```
 
-También PASS individual:
-
-```text
-Failure classification contracts PASS
-BackPythonSuite trace coverage contract PASS
-OK SQL observability public exit code 5
-```
+No hubo cambios de runtime PHP desde esa evidencia salvo el self-test de ejemplos y documentación/configuración del env.
 
 ## Gate 4 — sintaxis — PASS / PowerShell BLOCKED
 
-PHP:
-
 ```text
-PASS
+PHP: PASS
+Bash: PASS
+PowerShell local: BLOCKED — pwsh no disponible en PATH
 ```
 
-Bash:
+## Gate 5 — runtime MySQL — FAIL CORREGIDO / REVALIDAR
 
-```text
-PASS
-```
-
-PowerShell local:
-
-```text
-BLOCKED: pwsh no disponible en PATH
-```
-
-Debe validarse en Windows/CI antes del cierre definitivo.
-
-## Gate 5 — runtime MySQL — PENDIENTE
-
-Usar un env descartable derivado de `.env.test.example`.
+Usar un env temporal dentro del repo para que el wrapper pueda montarlo sin tocar `.env.test` real.
 
 ```bash
-cp .env.test.example .env.test
+cp .env.test.example .env.i2-runtime
+export TESTKIT_PROJECT_ROOT="$PWD"
+export TESTKIT_ENV_FILE="$PWD/.env.i2-runtime"
+export TESTKIT_STACK=mysql
 
-TESTKIT_STACK=mysql ./bin/testkit doctor --compact
-TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract
-TESTKIT_STACK=mysql ./bin/testkit up -d
-TESTKIT_STACK=mysql ./bin/testkit ps
-TESTKIT_STACK=mysql ./scripts/seed.sh
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all
-TESTKIT_STACK=mysql ./bin/testkit inspect latest
+./bin/testkit doctor --compact
+./bin/testkit doctor --full --suite back-php
+./bin/testkit up -d
+./bin/testkit ps
+./scripts/seed.sh
+./bin/testkit run --rm testkit php runTest.php --group all --list
+./bin/testkit run --rm testkit php runTest.php --group all
+./bin/testkit inspect latest
 ```
 
 Teardown obligatorio:
 
 ```bash
-TESTKIT_STACK=mysql ./bin/testkit down -vc
-rm -f .env.test
+./bin/testkit down -v --remove-orphans
+unset TESTKIT_PROJECT_ROOT TESTKIT_ENV_FILE TESTKIT_STACK
+rm -f .env.i2-runtime
+git status --short
 ```
 
 No declarar PASS si falla doctor, bootstrap, seed, ejecución, reporting o teardown sin clasificar.
 
-## Gate 6 — negativos públicos — PENDIENTE
+## Gate 6 — negativos públicos — PASS
 
-```bash
-cp .env.test.example /tmp/testkit-i2.env
-sed -i '/^TEST_STORE_DRIVER=/d' /tmp/testkit-i2.env
-TESTKIT_ENV_FILE=/tmp/testkit-i2.env ./bin/testkit doctor --compact; test $? -ne 0
-
-cp .env.test.example /tmp/testkit-i2.env
-sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=postgres/' /tmp/testkit-i2.env
-TESTKIT_ENV_FILE=/tmp/testkit-i2.env ./bin/testkit doctor --compact; test $? -ne 0
-
-rm -f /tmp/testkit-i2.env
-```
-
-Esperado:
+Evidencia local obtenida en `c408cee`:
 
 ```text
-TEST_STORE_DRIVER_REQUIRED
-TEST_STORE_DRIVER_INVALID
+TEST_STORE_DRIVER_REQUIRED / RC_MISSING=1
+TEST_STORE_DRIVER_INVALID / RC_INVALID=1
 ```
-
-Ningún caso debe caer a MySQL ni normalizar `postgres` a `pgsql`.
 
 ## Gate 7 — CI real — PENDIENTE
 
@@ -223,8 +215,8 @@ I2 queda verificado solo si:
 - sintaxis PHP/Bash PASS;
 - PowerShell validado en entorno disponible o CI real;
 - runtime MySQL PASS;
-- negativos demuestran ausencia de aliases/fallback;
-- CI no presenta fallos introducidos por I2.
+- negativos PASS;
+- CI sin fallos introducidos por I2.
 
 ## FAIL
 
@@ -232,7 +224,7 @@ Es FAIL si:
 
 - cualquier alias o inferencia selecciona un store;
 - `TEST_STORE_DRIVER` ausente usa MySQL;
-- `pg`, `postgres`, `postgresql`, mayúsculas o valores con espacios son normalizados;
+- aliases/valores no exactos se normalizan;
 - doctor/schema/runtime difieren;
 - reporting reconstruye silenciosamente `mysql`;
 - runtime o CI muestran una regresión I2.
