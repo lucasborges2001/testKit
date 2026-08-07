@@ -228,7 +228,7 @@ jobs:
         run: |
           set -euo pipefail
           TESTKIT_STACK=mysql ./bin/testkit doctor --compact
-          TESTKIT_STACK=mysql ./bin/testkit doctor --full migration-contract
+          TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract
 
       - name: Start MySQL stack
         run: |
@@ -246,14 +246,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --list \
+          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list \
             | tee ci-artifacts/ci-runtest-list.txt
 
       - name: Run runtime tests
         run: |
           set -euo pipefail
           mkdir -p ci-artifacts
-          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php all \
+          TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all \
             | tee ci-artifacts/ci-runtest-all.txt
 
       - name: Inspect latest run
