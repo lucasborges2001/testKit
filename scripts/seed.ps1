@@ -59,7 +59,7 @@ if ([string]::IsNullOrEmpty($driver)) {
   [Console]::Error.WriteLine("[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none.")
   exit 2
 }
-if ($driver -notin @('mysql','pgsql','none')) {
+if ($driver -cnotin @('mysql','pgsql','none')) {
   [Console]::Error.WriteLine("[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none.")
   exit 2
 }
