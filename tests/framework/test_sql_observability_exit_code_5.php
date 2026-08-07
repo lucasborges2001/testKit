@@ -68,6 +68,7 @@ $process = proc_open(
         'PATH' => (string)getenv('PATH'),
         'HOME' => (string)getenv('HOME'),
         'TESTKIT_PROJECT_ROOT' => $fixture,
+        'TEST_STORE_DRIVER' => 'mysql',
         'TEST_RUN_ID' => $runId,
         'TESTKIT_SQL_OBSERVABILITY_CONFIG' => 'config/sql-observability/host.json',
         'TESTKIT_SQL_OBSERVABILITY_SCENARIO' => 'blocked-gate',
