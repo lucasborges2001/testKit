@@ -48,30 +48,11 @@ try {
   foreach ($script in @($seedScript, $cleanScript)) {
     $name = Split-Path -Leaf $script
 
-    Assert-Case \
-      "${name} missing driver" \
-      $script \
-      @('TESTKIT_STACK=mysql') \
-      $null \
-      2 \
-      'TEST_STORE_DRIVER_REQUIRED'
-
-    Assert-Case \
-      "${name} invalid driver" \
-      $script \
-      @('TEST_STORE_DRIVER=postgres') \
-      $null \
-      2 \
-      'TEST_STORE_DRIVER_INVALID'
+    Assert-Case -Label "${name} missing driver" -Script $script -EnvLines @('TESTKIT_STACK=mysql') -ExplicitDriver $null -ExpectedExit 2 -ExpectedText 'TEST_STORE_DRIVER_REQUIRED'
+    Assert-Case -Label "${name} invalid driver" -Script $script -EnvLines @('TEST_STORE_DRIVER=postgres') -ExplicitDriver $null -ExpectedExit 2 -ExpectedText 'TEST_STORE_DRIVER_INVALID'
 
     $noneText = if ($name -eq 'seed.ps1') { 'bootstrap estructural no aplica' } else { 'limpieza estructural no aplica' }
-    Assert-Case \
-      "${name} exported driver wins over env file" \
-      $script \
-      @('TEST_STORE_DRIVER=mysql') \
-      'none' \
-      0 \
-      $noneText
+    Assert-Case -Label "${name} exported driver wins over env file" -Script $script -EnvLines @('TEST_STORE_DRIVER=mysql') -ExplicitDriver 'none' -ExpectedExit 0 -ExpectedText $noneText
   }
 
   Write-Host 'PowerShell store driver explicit contract PASS'
