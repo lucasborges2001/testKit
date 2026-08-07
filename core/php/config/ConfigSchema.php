@@ -9,7 +9,7 @@ final class ConfigSchema
     public static function inspectPayload(): array
     {
         return [
-            'schema_version' => 5,
+            'schema_version' => 6,
             'support_contract_version' => 1,
             'commands' => [
                 ['command' => 'php runTest.php --help', 'purpose' => 'mostrar ayuda del runner'],
@@ -160,16 +160,12 @@ final class ConfigSchema
                     'migration-contract exige snapshot.',
                     'snapshot cerrado actualmente solo en la ruta MySQL.',
                 ]),
-                self::env('TEST_STORE_DRIVER', 'string', 'mysql', ['mysql', 'pgsql', 'none'], ['suite', 'meta'], [
-                    'mysql es la ruta principal cerrada.',
-                    'pgsql es parcial: runtime/provision/reset básico; sin snapshot/clone cerrado.',
+                self::env('TEST_STORE_DRIVER', 'string', null, ['mysql', 'pgsql', 'none'], ['wrapper', 'doctor', 'suite', 'meta'], [
+                    'Variable obligatoria y única para seleccionar el store estructural.',
+                    'Los valores son exactos: mysql, pgsql o none; no se normalizan aliases ni mayúsculas.',
+                    'No se infiere desde DB_DRIVER, TEST_DB_DRIVER, TEST_DB_DSN, credenciales, nombres de DB ni TESTKIT_STACK.',
                     'none declara proyecto sin store runtime; no se exige env DB ni bootstrap estructural.',
-                    'redis e influx no son store drivers principales.',
-                ]),
-                self::env('DB_DRIVER', 'string', 'mysql', ['mysql', 'pgsql'], ['suite', 'meta'], [
-                    'Alias runtime para resolver driver de store.',
-                    'No convierte pgsql en ruta cerrada de snapshot/clone.',
-                ]),
+                ], ['pg', 'postgres', 'postgresql', 'MYSQL', 'PGSQL']),
                 self::env('TESTKIT_STACK', 'csv', 'mysql,redis', ['mysql', 'pg', 'redis', 'influx'], ['wrapper', 'doctor'], [
                     'mysql describe el servicio principal cerrado.',
                     'pg describe infraestructura parcial.',
@@ -201,6 +197,7 @@ final class ConfigSchema
                 'TEST_MATCH_FILE > TEST_MATCH_LIST > TEST_MATCH.',
                 'TEST_RERUN_FAILED_ISOLATED no ejecuta concurrencia top-level: reusa la suite actual y corre los fallidos uno por uno.',
                 'migration-contract exige snapshot + shared + mysql + TEST_JOBS=1.',
+                'TEST_STORE_DRIVER es obligatorio y no tiene aliases ni inferencia.',
                 'UNKNOWN en doctor/config no es PASS implícito.',
             ],
         ];
