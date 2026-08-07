@@ -7,6 +7,9 @@ $docsPath = $root . '/docs/CI.md';
 $windowsDocsPath = $root . '/docs/WINDOWS.md';
 $dockerfilePath = $root . '/docker/Dockerfile';
 $composePath = $root . '/compose.yaml';
+$envExamplePath = $root . '/.env.test.example';
+$gitignorePath = $root . '/.gitignore';
+$sqlObservabilityFixtureEnvPath = $root . '/tests/fixtures/sql-observability/blocked-host/test/.env.test';
 
 $errors = [];
 $assert = static function (bool $condition, string $message) use (&$errors): void {
@@ -30,6 +33,9 @@ $docs = $read($docsPath);
 $windowsDocs = $read($windowsDocsPath);
 $dockerfile = $read($dockerfilePath);
 $compose = $read($composePath);
+$envExample = $read($envExamplePath);
+$gitignore = $read($gitignorePath);
+$sqlObservabilityFixtureEnv = $read($sqlObservabilityFixtureEnvPath);
 
 $requiredWorkflow = [
     'uses: actions/checkout@v7',
@@ -78,6 +84,11 @@ foreach ($requiredWindowsDocs as $fragment) {
 $assert(str_contains($dockerfile, 'ARG NODE_VERSION=24'), 'docker/Dockerfile must default to Node 24');
 $assert(str_contains($dockerfile, 'ARG PLAYWRIGHT_VERSION=1.61.0'), 'docker/Dockerfile must pin Playwright 1.61.0');
 $assert(str_contains($compose, 'NODE_VERSION: ${TESTKIT_NODE_VERSION:-24}'), 'compose.yaml must default TESTKIT_NODE_VERSION to 24');
+$assert(str_contains($envExample, 'TESTKIT_NODE_VERSION=24'), '.env.test.example must pin TESTKIT_NODE_VERSION=24');
+$assert(!str_contains($envExample, 'TESTKIT_NODE_VERSION=20'), '.env.test.example must not pin Node 20');
+$assert(str_contains($sqlObservabilityFixtureEnv, 'TESTKIT_NODE_VERSION=24'), 'SQL observability fixture must pin TESTKIT_NODE_VERSION=24');
+$assert(!str_contains($sqlObservabilityFixtureEnv, 'TESTKIT_NODE_VERSION=20'), 'SQL observability fixture must not pin Node 20');
+$assert(str_contains($gitignore, '/tests/fixtures/browser/test-results/'), '.gitignore must ignore browser fixture runtime artifacts');
 
 $forbiddenWorkflowFragments = [
     'actions/checkout@v4',
