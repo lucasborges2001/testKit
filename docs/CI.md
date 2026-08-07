@@ -25,6 +25,20 @@ Los jobs usan `ubuntu-24.04` en vez de `ubuntu-latest` para reducir variabilidad
 
 `shivammathur/setup-php@v2` se usa solo en los jobs host que necesitan PHP sin levantar Docker. Esto mantiene `static` y `framework-self-tests` rápidos y evita usar una imagen Docker solo para lint/self-tests. La acción no requiere secrets y el workflow conserva `contents: read` como único permiso.
 
+## Contrato de selectores en CI
+
+Toda invocación de `runTest.php` desde CI debe declarar exactamente uno de:
+
+```text
+--suite
+--group
+--category
+```
+
+No se aceptan targets posicionales, `TEST_TARGET`, `TESTKIT_TARGET_*` ni `doctor --target`.
+
+El gate `tests/framework/test_ci_typed_selectors.php`, ejecutado por `php tests/framework/run.php`, falla si el workflow vuelve a introducir esas superficies legacy o si pierde los comandos tipados esperados del runtime MySQL.
+
 ## Jobs blocking
 
 ### `static`
@@ -57,7 +71,7 @@ php tests/framework/run.php
 
 Depende de `static`.
 
-Este job no requiere Docker. Su objetivo es validar contratos internos como concurrencia, locks, reporting, selección de suites, contratos de seed state y contratos de ejecución.
+Este job no requiere Docker. Su objetivo es validar contratos internos como concurrencia, locks, reporting, selección de suites, contratos de seed state, contratos de ejecución y ausencia de selectores legacy en el workflow.
 
 ### `windows-static`
 
@@ -109,12 +123,12 @@ Secuencia principal:
 
 ```bash
 TESTKIT_STACK=mysql ./bin/testkit doctor --compact
-TESTKIT_STACK=mysql ./bin/testkit doctor --full migration-contract
+TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract
 TESTKIT_STACK=mysql ./bin/testkit up -d
 TESTKIT_STACK=mysql ./bin/testkit ps
 TESTKIT_STACK=mysql ./scripts/seed.sh
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --list
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php all
+TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list
+TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all
 TESTKIT_STACK=mysql ./bin/testkit inspect latest
 TESTKIT_STACK=mysql ./bin/testkit down -vc
 ```
@@ -189,6 +203,7 @@ find .github/workflows -maxdepth 1 -type f -print -exec sed -n '1,280p' {} \;
 php -v
 node --version
 
+php tests/framework/test_ci_typed_selectors.php
 php tests/framework/run.php
 
 find . -type f -name '*.php' \
@@ -237,12 +252,12 @@ sed -i 's/^TEST_DB_STRATEGY=.*/TEST_DB_STRATEGY=shared/' .env.test
 sed -i 's/^TEST_JOBS=.*/TEST_JOBS=1/' .env.test
 
 TESTKIT_STACK=mysql ./bin/testkit doctor --compact
-TESTKIT_STACK=mysql ./bin/testkit doctor --full migration-contract
+TESTKIT_STACK=mysql ./bin/testkit doctor --full --suite migration-contract
 TESTKIT_STACK=mysql ./bin/testkit up -d
 TESTKIT_STACK=mysql ./bin/testkit ps
 TESTKIT_STACK=mysql ./scripts/seed.sh
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --list
-TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php all
+TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all --list
+TESTKIT_STACK=mysql ./bin/testkit run --rm testkit php runTest.php --group all
 TESTKIT_STACK=mysql ./bin/testkit inspect latest
 TESTKIT_STACK=mysql ./bin/testkit down -vc
 ```
@@ -299,7 +314,7 @@ mkdir -p test-results/browser
 ```bash
 git status --short
 
-git diff -- .github/workflows/ci.yml docs/CI.md tests/fixtures/browser
+git diff -- .github/workflows/ci.yml docs/CI.md tests/framework/run.php tests/framework/test_ci_typed_selectors.php
 ```
 
 No debería aparecer ningún cambio fuera de esas rutas, salvo artifacts locales generados por las pruebas.
@@ -338,8 +353,8 @@ Revisar:
 
 ## Riesgos conocidos
 
-- `runtime-mysql` usa `runTest.php all` como validación final. Si `all` incluye una suite experimental o inestable, conviene ajustar el contrato del runner o documentar un target cerrado más específico antes de relajar el CI.
-- `doctor --full migration-contract` puede reportar estado no completamente cerrado si no hay snapshot visible en `.env.test`; se mantiene para exponer el contrato.
+- `runtime-mysql` usa `--group all` como validación final. Si el grupo incorpora una suite experimental o inestable, debe cambiarse el registro contractual o el alcance explícito del job; no volver a un target posicional.
+- `doctor --full --suite migration-contract` puede reportar estado no completamente cerrado si no hay snapshot visible en `.env.test`; se mantiene para exponer el contrato.
 - El smoke browser depende de la imagen Docker de `testkit`, porque Playwright y Chromium están instalados dentro del contenedor.
 - El workflow no hace obligatorios PostgreSQL, Redis ni Influx. Agregarlos como blocking sin contrato cerrado aumentaría falsos negativos.
-- La validación local del paquete no ejecuta GitHub Actions real. El resultado final debe confirmarse con una corrida real después de aplicar el paquete al repo.
+- La validación local no sustituye una corrida real de GitHub Actions; el cierre requiere revisar el workflow ejecutado sobre el SHA candidato.
