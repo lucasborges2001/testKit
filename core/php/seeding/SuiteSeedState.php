@@ -14,10 +14,7 @@ require_once __DIR__ . '/MigrationCatalog.php';
 
 final class SuiteSeedState
 {
-    /**
-     * @param array<string,mixed> $report
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @return array<string,mixed> */
     public static function attachToReport(array $report, string $repoRoot): array
     {
         $seedState = $report['seed_state'] ?? null;
@@ -34,10 +31,7 @@ final class SuiteSeedState
         }
 
         if (!is_array($seedState) || $seedState === []) {
-            $seedState = self::unavailableState(
-                'not_applicable',
-                'Seed/bootstrap no aplica para esta corrida.'
-            );
+            $seedState = self::unavailableState('not_applicable', 'Seed/bootstrap no aplica para esta corrida.');
         }
 
         $seedState = self::normalizeSeedState($seedState);
@@ -45,13 +39,11 @@ final class SuiteSeedState
         return self::mirrorTopLevelFields($report, $seedState);
     }
 
-    /**
-     * @return array<string,mixed>|null
-     */
+    /** @return array<string,mixed>|null */
     public static function capture(string $repoRoot): ?array
     {
         $repoRoot = Paths::normalize($repoRoot);
-        $driver = self::safeDetectDriver();
+        $driver = self::detectDriver();
         $strategy = self::normalizeStrategy(Env::string('TEST_DB_STRATEGY', 'shared'));
 
         [$explicitManifestPath, $explicitSourceKind] = self::explicitManifestSource();
@@ -84,10 +76,7 @@ final class SuiteSeedState
         return self::fromManifest($repoRoot, $driver, $baseDb, $strategy, $manifestPath, $sourceKind, $manifest);
     }
 
-    /**
-     * @param array<string,mixed> $manifest
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $manifest @return array<string,mixed> */
     private static function fromManifest(
         string $repoRoot,
         string $driver,
@@ -107,9 +96,7 @@ final class SuiteSeedState
         $migrationState = $manifest['migration_state'] ?? ($manifest['plan']['migration_state'] ?? null);
         $migrationState = is_array($migrationState) ? $migrationState : null;
 
-        $requestedRaw = self::arrayOfStrings(
-            $manifest['plan']['requested_migrations'] ?? ($manifest['requested_migrations'] ?? [])
-        );
+        $requestedRaw = self::arrayOfStrings($manifest['plan']['requested_migrations'] ?? ($manifest['requested_migrations'] ?? []));
         $requestedOptIns = self::optionalOnly($requestedRaw, $catalog);
 
         $resolvedSnapshot = $manifest['resolved_snapshot'] ?? ($manifest['plan']['resolved_snapshot'] ?? null);
@@ -152,11 +139,7 @@ final class SuiteSeedState
         ]);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     * @param array<string,mixed> $seedState
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed> $report @param array<string,mixed> $seedState @return array<string,mixed> */
     private static function mirrorTopLevelFields(array $report, array $seedState): array
     {
         $report['baseline_mode'] = (string)($seedState['baseline_mode'] ?? $report['baseline_mode'] ?? '');
@@ -181,13 +164,9 @@ final class SuiteSeedState
         return $override === '' ? ['', ''] : [Paths::normalize($override), 'explicit_manifest'];
     }
 
-    private static function safeDetectDriver(): string
+    private static function detectDriver(): string
     {
-        try {
-            return StoreRegistry::detectDriver('mysql');
-        } catch (Throwable) {
-            return 'mysql';
-        }
+        return StoreRegistry::detectDriver();
     }
 
     private static function resolveDatabaseNameFromEnv(string $driver): string
@@ -359,13 +338,7 @@ final class SuiteSeedState
         ];
     }
 
-    /**
-     * @param array<string,mixed>|null $state
-     * @param array<int,string> $fallbackApplied
-     * @param array<int,string> $fallbackPending
-     * @param array<string,mixed> $catalog
-     * @return array<string,mixed>
-     */
+    /** @param array<string,mixed>|null $state @param array<int,string> $fallbackApplied @param array<int,string> $fallbackPending @param array<string,mixed> $catalog @return array<string,mixed> */
     private static function normalizeMigrationState(?array $state, string $source, array $fallbackApplied, array $fallbackPending, array $catalog): array
     {
         $state = is_array($state) ? $state : [];
