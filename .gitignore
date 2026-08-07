@@ -42,6 +42,7 @@
 /test/coverage/
 /test/querylog.jsonl
 /test/_out/
+/tests/fixtures/browser/test-results/
 
 
 # ------------------------------------------------------------------------------
