@@ -48,4 +48,4 @@ Después de un `FAIL` reproducible:
 
 ## Inventario
 
-No hay verificaciones pendientes registradas en este corte.
+- `02_store_explicito.md`: cierre de I2; valida store explícito sin aliases, inferencias ni fallback de driver.

@@ -27,23 +27,6 @@ No reutilizar SHAs históricos como baseline operativo.
 
 Completar la normalización interna del repositorio sin aliases, fallbacks silenciosos ni contratos duales.
 
-## Fase I2 — Store explícito
-
-### Evidencia
-
-`StoreRegistry` y configuración relacionada mantienen inferencias y aliases de driver.
-
-### Objetivo
-
-Una sola variable propietaria y valores canónicos cerrados para el store.
-
-### Criterio PASS
-
-- no se infiere driver por DSN, credenciales o prefijos;
-- valor ausente o desconocido falla con código contractual;
-- doctor, schema, ejemplo de env y runtime coinciden;
-- no existe compatibilidad silenciosa.
-
 ## Fase I3 — Stack estricto
 
 ### Objetivo
@@ -156,7 +139,6 @@ Eliminar drift entre registro, ayuda, schema, doctor y documentación.
 ## Orden recomendado
 
 ```text
-I2 store
 I3 stack
 I4 selección
 I5 coverage
@@ -166,7 +148,7 @@ I8 reportes
 I9 gates/documentación
 ```
 
-No adelantar I6-I9 para ocultar aliases todavía activos en I2-I5.
+No adelantar I6-I9 para ocultar aliases todavía activos en I3-I5.
 
 ## Validación mínima por fase
 
