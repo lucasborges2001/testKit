@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# =============================================================================
-# /testkit/scripts/db_clean.sh
-# Limpieza de datos por store dentro del contenedor TestKit.
-# =============================================================================
-
-cd "$(dirname "${BASH_SOURCE[0]}")/.."  # <testkit>
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 find_testkit() {
   local override="${TESTKIT_BIN:-}"
@@ -43,24 +38,32 @@ ENV_FILE="$(pick_env_file || true)"
 [[ -z "${ENV_FILE:-}" ]] && { echo "Falta env de tests." >&2; exit 1; }
 load_env_kv_safe "$ENV_FILE" || true
 
+DRIVER="${TEST_STORE_DRIVER:-}"
+if [[ -z "$DRIVER" ]]; then
+  echo "[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none." >&2
+  exit 2
+fi
+case "$DRIVER" in
+  mysql|pgsql) ;;
+  none)
+    echo "==> TEST_STORE_DRIVER=none: limpieza estructural no aplica."
+    exit 0
+    ;;
+  *)
+    echo "[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$DRIVER' no es válido. Valores exactos: mysql|pgsql|none." >&2
+    exit 2
+    ;;
+esac
+
 STRATEGY="${TEST_DB_STRATEGY:-shared}"
 JOBS="${TEST_JOBS:-1}"
-DRIVER="${TEST_DB_DRIVER:-${DB_DRIVER:-}}"
-if [[ -z "$DRIVER" ]]; then
-  if [[ -n "${TEST_PG_DB:-${PG_DB:-}}" && -z "${TEST_MYSQL_DB:-}" ]]; then
-    DRIVER="pgsql"
-  else
-    DRIVER="mysql"
-  fi
-fi
-[[ "$DRIVER" =~ ^pg ]] && DRIVER="pgsql"
-BASE_DB="${TEST_MYSQL_DB:-app_test}"
+BASE_DB="${TEST_MYSQL_DB:-${DB_NAME:-app_test}}"
 if [[ "$DRIVER" == "pgsql" ]]; then
   BASE_DB="${TEST_PG_DB:-${PG_DB:-app_test}}"
 fi
 SUFFIX_FMT="${TEST_DB_WORKER_SUFFIX_FORMAT:-_w%02d}"
 
-MODE="base"   # base|worker|all
+MODE="base"
 WORKER="1"
 if [[ "${1:-}" == "--worker" && -n "${2:-}" ]]; then MODE="worker"; WORKER="$2"; shift 2
 elif [[ "${1:-}" == "--all" ]]; then MODE="all"; shift; fi
@@ -71,11 +74,11 @@ clean_db() {
   local db="$1"
   echo "==> Cleaning ${DRIVER} DB: ${db}"
 
-  local env_args=()
+  local env_args=(-e "TEST_STORE_DRIVER=$DRIVER")
   if [[ "$DRIVER" == "pgsql" ]]; then
-    env_args=(-e PG_DB="$db" -e TEST_PG_DB="$db")
+    env_args+=(-e PG_DB="$db" -e TEST_PG_DB="$db")
   else
-    env_args=(-e DB_NAME="$db" -e TEST_MYSQL_DB="$db")
+    env_args+=(-e DB_NAME="$db" -e TEST_MYSQL_DB="$db")
   fi
 
   "$TK" run --rm "${env_args[@]}" testkit php /workspace/testkit/scripts/store_router.php clean "$DRIVER"

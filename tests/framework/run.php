@@ -1,14 +1,5 @@
 #!/usr/bin/env php
 <?php
-/**
- * Testkit framework self-test runner.
- *
- * Usage:  php tests/framework/run.php
- * Exit:   0 if all pass, 1 if any fail.
- *
- * Each test file is a standalone PHP script that exits 0 on success, non-zero on failure.
- * Output from failing tests is printed to help diagnose the problem.
- */
 declare(strict_types=1);
 
 $tests = [
@@ -24,6 +15,7 @@ $tests = [
     'Failure classification contracts'      => __DIR__ . '/test_failure_classification_contracts.php',
     'Seed state canonical contract'         => __DIR__ . '/test_seed_state_contract.php',
     'Engine support contract'               => __DIR__ . '/test_engine_support_contract.php',
+    'Store driver explicit contract'        => __DIR__ . '/test_store_driver_contract.php',
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
     'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
     'Contract registry parity'              => __DIR__ . '/test_contract_registry.php',

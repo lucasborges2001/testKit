@@ -1,11 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# =============================================================================
-# /testkit/scripts/db_clean.ps1
-# Limpieza de datos por store dentro del contenedor TestKit.
-# =============================================================================
-
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TestRoot = Resolve-Path (Join-Path $Here "..")
 $ProjectRoot = if ($env:TESTKIT_PROJECT_ROOT) { Resolve-Path $env:TESTKIT_PROJECT_ROOT } else { Resolve-Path (Join-Path $TestRoot "..") }
@@ -30,10 +25,7 @@ function Resolve-Testkit {
 
 function Test-IsWindowsHost {
   $isWindowsVar = Get-Variable -Name IsWindows -ErrorAction SilentlyContinue
-  if ($null -ne $isWindowsVar) {
-    return [bool]$isWindowsVar.Value
-  }
-
+  if ($null -ne $isWindowsVar) { return [bool]$isWindowsVar.Value }
   return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
 }
 
@@ -41,10 +33,8 @@ $Testkit = Resolve-Testkit
 if ((Test-IsWindowsHost) -and -not $Testkit.ToLowerInvariant().EndsWith(".ps1")) {
   throw "En Windows se espera bin/testkit.ps1. Si solo tenés bin/testkit (bash), usá los .sh."
 }
-
 Set-Location $TestRoot
 
-# Env (opcional)
 function Pick-EnvFile {
   if ($env:TESTKIT_ENV_FILE -and (Test-Path $env:TESTKIT_ENV_FILE)) { return (Resolve-Path $env:TESTKIT_ENV_FILE).Path }
   $a = Join-Path $ProjectRoot "test\.env.test"
@@ -73,19 +63,26 @@ function Load-EnvKVSafe([string]$Path) {
 $envFile = Pick-EnvFile
 if ($envFile) { Load-EnvKVSafe $envFile }
 
-$strategy = $env:TEST_DB_STRATEGY; if (-not $strategy) { $strategy = "shared" }
-$driver = if ($env:TEST_DB_DRIVER) { $env:TEST_DB_DRIVER } else { $env:DB_DRIVER }
-if (-not $driver) {
-  if (($env:TEST_PG_DB -or $env:PG_DB) -and -not $env:TEST_MYSQL_DB) { $driver = "pgsql" }
-  else { $driver = "mysql" }
+$driver = $env:TEST_STORE_DRIVER
+if ([string]::IsNullOrEmpty($driver)) {
+  Write-Error "[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none."
+  exit 2
 }
-if ($driver.ToLower().StartsWith("pg")) { $driver = "pgsql" } else { $driver = "mysql" }
+if ($driver -notin @('mysql','pgsql','none')) {
+  Write-Error "[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none."
+  exit 2
+}
+if ($driver -eq 'none') {
+  Write-Host '==> TEST_STORE_DRIVER=none: limpieza estructural no aplica.'
+  exit 0
+}
 
+$strategy = $env:TEST_DB_STRATEGY; if (-not $strategy) { $strategy = "shared" }
 $jobs = 1
 if ($env:TEST_JOBS) { [int]::TryParse($env:TEST_JOBS, [ref]$jobs) | Out-Null }
 if ($jobs -lt 1) { $jobs = 1 }
 
-$baseDb = $env:TEST_MYSQL_DB; if (-not $baseDb) { $baseDb = "app_test" }
+$baseDb = $env:TEST_MYSQL_DB; if (-not $baseDb) { $baseDb = $env:DB_NAME }; if (-not $baseDb) { $baseDb = "app_test" }
 if ($driver -eq "pgsql") {
   $baseDb = $env:TEST_PG_DB
   if (-not $baseDb) { $baseDb = $env:PG_DB }
@@ -111,12 +108,11 @@ function Mk-DbName([int]$w) {
 
 function Clean-Db([string]$db) {
   Write-Host ("==> Cleaning {0} DB: {1}" -f $driver, $db)
-
   if ($driver -eq "pgsql") {
-    & $Testkit run --rm -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean pgsql
+    & $Testkit run --rm -e TEST_STORE_DRIVER=pgsql -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean pgsql
   }
   else {
-    & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean mysql
+    & $Testkit run --rm -e TEST_STORE_DRIVER=mysql -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php clean mysql
   }
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
@@ -125,12 +121,8 @@ if ($strategy -eq "per_worker") {
   if ($mode -eq "all") {
     for ($i = 1; $i -le $jobs; $i++) { Clean-Db (Mk-DbName $i) }
   }
-  elseif ($mode -eq "worker") {
-    Clean-Db (Mk-DbName $worker)
-  }
-  else {
-    Clean-Db (Mk-DbName 1)
-  }
+  elseif ($mode -eq "worker") { Clean-Db (Mk-DbName $worker) }
+  else { Clean-Db (Mk-DbName 1) }
 }
 else {
   Clean-Db $baseDb

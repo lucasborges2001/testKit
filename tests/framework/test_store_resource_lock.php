@@ -9,7 +9,7 @@ $repoRoot = dirname(__DIR__, 2);
 $suiteIds = ['back_php', 'front_php'];
 $errors = [];
 
-putenv('DB_DRIVER=mysql');
+putenv('TEST_STORE_DRIVER=mysql');
 putenv('DB_NAME=testkit_lock_' . getmypid());
 putenv('TEST_RUN_ID=selftest_run_a_' . getmypid());
 putenv('TEST_META_RUN_ID=selftest_meta_a_' . getmypid());
@@ -33,20 +33,19 @@ $admission = ParallelGuard::rejectedByRunLockState($policy);
 if (($admission['reason'] ?? null) !== 'store_resource_locked') {
     $errors[] = 'FAIL: expected rejectedByRunLockState reason=store_resource_locked';
 }
-
 if (($admission['resource'] ?? '') === '') {
     $errors[] = 'FAIL: expected resource label in rejected admission';
 }
-
 if (($admission['lock_scope'] ?? '') !== 'run') {
     $errors[] = 'FAIL: expected lock_scope=run in rejected admission';
 }
-
 if (($admission['lock_owner_run_id'] ?? null) !== 'selftest_run_a_' . getmypid()) {
     $errors[] = 'FAIL: expected owner run id from first lease';
 }
 
 $lease->release();
+putenv('TEST_STORE_DRIVER');
+putenv('DB_NAME');
 
 if ($errors !== []) {
     foreach ($errors as $error) {

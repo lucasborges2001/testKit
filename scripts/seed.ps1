@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 # /testkit/scripts/seed.ps1
 # Aplica la base estructural del proyecto por store dentro del contenedor TestKit.
-# Lifecycle: bootstrap(store) -> reset -> schema -> base -> migrations -> validations.
+# TEST_STORE_DRIVER es el único selector de store.
 # =============================================================================
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -54,6 +54,20 @@ $envFile = Pick-EnvFile
 if (-not $envFile) { throw "Falta env de tests del proyecto." }
 Load-EnvKVSafe $envFile
 
+$driver = $env:TEST_STORE_DRIVER
+if ([string]::IsNullOrEmpty($driver)) {
+  Write-Error "[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none."
+  exit 2
+}
+if ($driver -notin @('mysql','pgsql','none')) {
+  Write-Error "[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none."
+  exit 2
+}
+if ($driver -eq 'none') {
+  Write-Host '==> TEST_STORE_DRIVER=none: bootstrap estructural no aplica.'
+  exit 0
+}
+
 $strategy = $env:TEST_DB_STRATEGY; if (-not $strategy) { $strategy = "shared" }
 $jobs = 1
 if ($env:TEST_JOBS) { [int]::TryParse($env:TEST_JOBS, [ref]$jobs) | Out-Null }
@@ -61,8 +75,6 @@ if ($jobs -lt 1) { $jobs = 1 }
 $baseMysqlDb = $env:TEST_MYSQL_DB; if (-not $baseMysqlDb) { $baseMysqlDb = "app_test" }
 $basePgDb = $env:TEST_PG_DB; if (-not $basePgDb) { $basePgDb = "app_test" }
 $fmt = $env:TEST_DB_WORKER_SUFFIX_FORMAT; if (-not $fmt) { $fmt = "_w%02d" }
-$services = & $Testkit ps --services 2>$null
-$serviceNames = @($services -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
 
 function Mk-DbName([string]$baseName, [int]$w) {
   if ($fmt -match '%0(\d+)d') {
@@ -78,14 +90,8 @@ function Assert-SafeDbName([string]$db) {
   }
 }
 
-function Normalize-Driver([string]$driver) {
-  if (-not $driver) { return "mysql" }
-  if ($driver.ToLower().StartsWith("pg")) { return "pgsql" }
-  return "mysql"
-}
-
-function Driver-BaseDb([string]$driver) {
-  if ($driver -eq "pgsql") {
+function Driver-BaseDb([string]$storeDriver) {
+  if ($storeDriver -eq "pgsql") {
     if ($env:TEST_PG_DB) { return $env:TEST_PG_DB }
     if ($env:PG_DB) { return $env:PG_DB }
     return $basePgDb
@@ -94,47 +100,34 @@ function Driver-BaseDb([string]$driver) {
   return $baseMysqlDb
 }
 
-function Bootstrap-StoreShared([string]$driver) {
-  Write-Host ("==> Bootstrapping store: {0} (shared)" -f $driver)
-  & $Testkit run --rm testkit php /workspace/testkit/scripts/store_router.php bootstrap $driver
+function Bootstrap-StoreShared([string]$storeDriver) {
+  Write-Host ("==> Bootstrapping store: {0} (shared)" -f $storeDriver)
+  & $Testkit run --rm -e TEST_STORE_DRIVER=$storeDriver testkit php /workspace/testkit/scripts/store_router.php bootstrap $storeDriver
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Bootstrap-StoreDb([string]$driver, [string]$db) {
-  Write-Host ("==> Bootstrapping store: {0} / db={1}" -f $driver, $db)
+function Bootstrap-StoreDb([string]$storeDriver, [string]$db) {
+  Write-Host ("==> Bootstrapping store: {0} / db={1}" -f $storeDriver, $db)
   Assert-SafeDbName $db
-  if ($driver -eq "pgsql") {
-    & $Testkit run --rm -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap pgsql
+  if ($storeDriver -eq "pgsql") {
+    & $Testkit run --rm -e TEST_STORE_DRIVER=pgsql -e PG_DB=$db -e TEST_PG_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap pgsql
   }
   else {
-    & $Testkit run --rm -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap mysql
+    & $Testkit run --rm -e TEST_STORE_DRIVER=mysql -e DB_NAME=$db -e TEST_MYSQL_DB=$db testkit php /workspace/testkit/scripts/store_router.php bootstrap mysql
   }
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Bootstrap-Driver([string]$driver) {
-  $baseDb = Driver-BaseDb $driver
+function Bootstrap-Driver([string]$storeDriver) {
+  $baseDb = Driver-BaseDb $storeDriver
   if ($strategy -eq "per_worker") {
     for ($i = 1; $i -le $jobs; $i++) {
-      Bootstrap-StoreDb $driver (Mk-DbName $baseDb $i)
+      Bootstrap-StoreDb $storeDriver (Mk-DbName $baseDb $i)
     }
     return
   }
 
-  Bootstrap-StoreShared $driver
+  Bootstrap-StoreShared $storeDriver
 }
 
-$configuredDriver = if ($env:TEST_DB_DRIVER) { $env:TEST_DB_DRIVER } else { $env:DB_DRIVER }
-if ($configuredDriver) {
-  Bootstrap-Driver (Normalize-Driver $configuredDriver)
-  exit 0
-}
-
-$drivers = New-Object System.Collections.Generic.List[string]
-if ($serviceNames -contains 'mysql_test') { $drivers.Add('mysql') }
-if ($serviceNames -contains 'postgres_test') { $drivers.Add('pgsql') }
-if ($drivers.Count -eq 0) { $drivers.Add('mysql') }
-
-foreach ($driver in $drivers) {
-  Bootstrap-Driver $driver
-}
+Bootstrap-Driver $driver
