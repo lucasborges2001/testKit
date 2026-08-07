@@ -9,15 +9,16 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
 $tests = [ordered]@{
-  'Path containment (Test-TestkitPathUnderRoot)'    = Join-Path $root 'test_path_containment.ps1'
-  'Stack resolution (Convert-TestkitStack)'         = Join-Path $root 'test_stack_resolution.ps1'
+  'Path containment (Test-TestkitPathUnderRoot)'     = Join-Path $root 'test_path_containment.ps1'
+  'Stack resolution (Convert-TestkitStack)'          = Join-Path $root 'test_stack_resolution.ps1'
   'Compose file selection (Get-TestkitComposeFiles)' = Join-Path $root 'test_compose_files.ps1'
-  'Env file resolution and container path mapping'  = Join-Path $root 'test_env_resolution.ps1'
-  'Run command rewrite (Convert-TestkitRunArgs)'    = Join-Path $root 'test_command_rewrite.ps1'
-  'PowerShell UI typed selectors'                   = Join-Path $root 'test_ui_typed_selectors.ps1'
-  'Doctor no-store accepts empty stack'             = Join-Path $root 'test_doctor_no_store.ps1'
-  'Doctor --readonly does not write to disk'        = Join-Path $root 'test_doctor_readonly.ps1'
-  'External process exit code propagation'          = Join-Path $root 'test_exit_code_propagation.ps1'
+  'Env file resolution and container path mapping'   = Join-Path $root 'test_env_resolution.ps1'
+  'Run command rewrite (Convert-TestkitRunArgs)'     = Join-Path $root 'test_command_rewrite.ps1'
+  'PowerShell UI typed selectors'                    = Join-Path $root 'test_ui_typed_selectors.ps1'
+  'Store driver explicit contract'                   = Join-Path $root 'test_store_driver_contract.ps1'
+  'Doctor no-store accepts empty stack'              = Join-Path $root 'test_doctor_no_store.ps1'
+  'Doctor --readonly does not write to disk'         = Join-Path $root 'test_doctor_readonly.ps1'
+  'External process exit code propagation'           = Join-Path $root 'test_exit_code_propagation.ps1'
 }
 
 $pass = 0
