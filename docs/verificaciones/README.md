@@ -48,4 +48,4 @@ Después de un `FAIL` reproducible:
 
 ## Inventario
 
-- `01_ci_selectores_tipados.md`: cierre de I1 sobre CI, selectores tipados y gate anti-regresión.
+No hay verificaciones pendientes registradas en este corte.
