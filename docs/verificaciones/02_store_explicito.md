@@ -6,9 +6,10 @@
 ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
 IMPLEMENTACION_BASE: 2f8f34c33a25c8bbdd036d3cfccece9cda976c32
-ULTIMA_VALIDACION_LOCAL: 8370b7f2ef28e7f231f8e8da74af4b6b4a7896fe
-ULTIMO_RESULTADO: RUNTIME_MYSQL_PASS_SELFTEST_CI_EXPECTATION_CORREGIDA_PENDIENTE_REVALIDAR_CI
+ULTIMA_VALIDACION_LOCAL: 0e8479e02dee039adb1f78e2b710ea832fec44a8
+ULTIMO_RESULTADO: LOCAL_PASS_RUNTIME_PASS_CI_WINDOWS_PENDIENTES
 POWERSHELL_LOCAL: BLOCKED_PWSH_NO_DISPONIBLE
+CI_STATUS_CONNECTOR: NO_EVIDENCIA_DISPONIBLE
 PRODUCCION_AUTORIZADA: NO
 ```
 
@@ -45,7 +46,7 @@ TEST_STORE_DRIVER_INVALID
 
 ## Evidencia acumulada
 
-### Contrato, doctor y sintaxis
+### Contrato, doctor y sintaxis — PASS
 
 Confirmado localmente:
 
@@ -68,9 +69,9 @@ TEST_STORE_DRIVER_INVALID / RC_INVALID=1
 
 No hubo fallback a MySQL ni normalización de `postgres`.
 
-### Runtime MySQL — PASS sobre `8370b7f2ef28e7f231f8e8da74af4b6b4a7896fe`
+### Runtime MySQL — PASS
 
-Host fixture usado:
+Validado sobre `8370b7f2ef28e7f231f8e8da74af4b6b4a7896fe` usando el host fixture:
 
 ```text
 tests/fixtures/runtime-mysql-host
@@ -92,66 +93,26 @@ Working tree: limpio
 
 El test runtime abrió PDO contra MySQL y verificó el valor `marker='seeded'` creado por el seed del fixture. Esto demuestra bootstrap, seed, conexión y persistencia real.
 
-### Self-tests después del fixture — 42/43, causa corregida
+### Framework final — PASS
 
-En la misma validación sobre `8370b7f`:
-
-```text
-42 passed, 1 failed
-```
-
-Único fallo:
+Después de corregir el self-test de selectores CI para el host fixture vigente, se revalidó sobre:
 
 ```text
-CI typed selector contract
+0e8479e02dee039adb1f78e2b710ea832fec44a8
 ```
 
-No era un fallo del runtime ni del contrato de store. `tests/framework/test_ci_typed_selectors.php` seguía exigiendo literalmente el workflow anterior:
-
-- `doctor --full --suite migration-contract`;
-- comandos prefijados inline con `TESTKIT_STACK=mysql`;
-- host implícito igual a la raíz de TestKit.
-
-El workflow ya usa el contrato correcto:
-
-```text
-TESTKIT_PROJECT_ROOT=tests/fixtures/runtime-mysql-host
-TESTKIT_ENV_FILE=tests/fixtures/runtime-mysql-host/.env.test
-doctor --full --suite back-php
-runTest.php --group all
-```
-
-Se corrigieron:
-
-```text
-tests/framework/test_ci_typed_selectors.php
-docs/CI.md
-```
-
-El gate ahora valida selectores tipados y el host fixture sin acoplarse al gate snapshot anterior. `docs/CI.md` quedó alineado con la reproducción runtime vigente.
-
-## Gate local final — REVALIDAR
-
-Después de actualizar `main`:
-
-```bash
-php -l tests/framework/test_ci_typed_selectors.php
-php tests/framework/test_ci_typed_selectors.php
-php tests/framework/test_store_driver_contract.php
-php tests/framework/run.php
-```
-
-Esperado:
+Resultado:
 
 ```text
 OK CI typed selectors
 Store driver explicit contract PASS
 43 passed, 0 failed
+Working tree: limpio
 ```
 
-No hace falta repetir runtime MySQL si estos cambios permanecen limitados al self-test y documentación.
+Los cambios posteriores al runtime MySQL quedaron limitados al self-test de CI y documentación; no se modificó el runtime ya validado.
 
-## CI real — PENDIENTE
+## CI real — PENDIENTE / NO VERIFICADO
 
 Jobs bloqueantes esperados:
 
@@ -163,7 +124,38 @@ runtime-mysql
 browser-runner-smoke
 ```
 
+La consulta disponible para el SHA `0e8479e02dee039adb1f78e2b710ea832fec44a8` no devolvió workflow runs ni statuses asociados. Esto no se interpreta como PASS ni FAIL.
+
 `windows-static` debe aportar la evidencia PowerShell que no pudo obtenerse localmente.
+
+### Verificación reproducible con GitHub CLI
+
+Desde un checkout autenticado con acceso a Actions:
+
+```bash
+gh run list \
+  --repo lucasborges2001/testKit \
+  --workflow CI \
+  --commit 0e8479e02dee039adb1f78e2b710ea832fec44a8 \
+  --limit 10
+```
+
+Para el run correspondiente:
+
+```bash
+gh run view <RUN_ID> \
+  --repo lucasborges2001/testKit
+```
+
+PASS requiere que los jobs bloqueantes terminen correctamente, en particular:
+
+```text
+windows-static
+framework-self-tests
+runtime-mysql
+```
+
+Si no existe run para el SHA candidato, la verificación permanece PENDIENTE; no inventar evidencia.
 
 ## PASS
 
@@ -177,6 +169,8 @@ I2 se cierra solo si:
 - runtime MySQL fixture PASS;
 - CI sin regresiones I2;
 - PowerShell demostrado por `windows-static` o entorno equivalente.
+
+Actualmente todos los criterios locales y runtime están PASS; faltan CI real y PowerShell/Windows.
 
 ## Fuera de este gate
 
