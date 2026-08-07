@@ -26,7 +26,7 @@ final class MigrationContractSuite
         Paths::ensureDir($reportRoot);
         Paths::recordSuiteReportRoot($reportRoot, 'migration_contract');
 
-        $driver = StoreRegistry::detectDriver('mysql');
+        $driver = StoreRegistry::detectDriver();
         $startedAt = gmdate('Y-m-d\TH:i:s\Z');
         $startMs = self::nowMs();
         $manifestPath = '';
@@ -122,9 +122,7 @@ final class MigrationContractSuite
         }
     }
 
-    /**
-     * @return array<string,mixed>
-     */
+    /** @return array<string,mixed> */
     private static function buildReport(
         string $suiteStatus,
         string $reportRoot,
@@ -214,9 +212,7 @@ final class MigrationContractSuite
         return BaselineManifest::pathFor($repoRoot, $driver, $database);
     }
 
-    /**
-     * @param array<string,mixed> $report
-     */
+    /** @param array<string,mixed> $report */
     private static function writeReport(string $reportRoot, array $report): void
     {
         $report['report_root'] = $reportRoot;

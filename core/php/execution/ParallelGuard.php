@@ -9,6 +9,7 @@ use Testkit\Core\Common\LockLease;
 use Testkit\Core\Common\ProjectEnv;
 use Testkit\Core\Config\SuiteContractRegistry;
 use Testkit\Core\Reporting\StructuredWarnings;
+use Testkit\Core\Store\StoreRegistry;
 
 final class ParallelGuard
 {
@@ -347,11 +348,14 @@ final class ParallelGuard
 
     private static function hasDbRuntimeContract(): bool
     {
-        if (strtolower(trim((string)(getenv('TEST_STORE_DRIVER') ?: ''))) === 'none') {
+        $driver = StoreRegistry::detectDriver();
+        if ($driver === 'none') {
             return false;
         }
 
-        $candidates = ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE', 'PG_DB', 'TEST_PG_DB', 'TEST_DB_DSN'];
+        $candidates = $driver === 'pgsql'
+            ? ['PG_DB', 'TEST_PG_DB']
+            : ['DB_NAME', 'TEST_MYSQL_DB', 'MYSQL_DATABASE', 'TEST_DB_DSN'];
         foreach ($candidates as $key) {
             $value = trim((string)(getenv($key) ?: ''));
             if ($value !== '') {
@@ -374,26 +378,14 @@ final class ParallelGuard
 
     private static function detectDriver(): string
     {
-        $driver = strtolower(trim((string)(getenv('TEST_STORE_DRIVER') ?: getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '')));
-        if ($driver === '') {
-            $dsn = trim((string)(getenv('TEST_DB_DSN') ?: ''));
-            if ($dsn !== '') {
-                $driver = strtolower((string)strtok($dsn, ':'));
-            }
-        }
-
-        if (str_starts_with($driver, 'pg')) {
-            return 'pgsql';
-        }
-        if ($driver === 'none') {
-            return 'none';
-        }
-
-        return 'mysql';
+        return StoreRegistry::detectDriver();
     }
 
     private static function resolveBaseDatabaseName(string $driver): string
     {
+        if ($driver === 'none') {
+            return '';
+        }
         if ($driver === 'pgsql') {
             return trim((string)(getenv('PG_DB') ?: getenv('TEST_PG_DB') ?: ''));
         }

@@ -21,7 +21,7 @@ final class ContractWorldBootstrap
      * Punto de entrada canónico para el lifecycle de bootstrap.
      * Owner de la política operativa: strategy, naming de DB, per-worker loop, baseline clone.
      *
-     * @param string|null $driver          Si se pasa, se usa directamente; si no, se detecta del entorno.
+     * @param string|null $driver          Si se pasa, se usa directamente; si no, se resuelve únicamente desde TEST_STORE_DRIVER.
      * @param bool        $respectSkipEnv  Si es true (default, contexto suite), honora TESTKIT_SKIP_STORE_BOOTSTRAP.
      *                                     Si es false (contexto CLI explícito), el bootstrap siempre corre sin importar
      *                                     el valor de TESTKIT_SKIP_STORE_BOOTSTRAP.
@@ -37,7 +37,7 @@ final class ContractWorldBootstrap
             return;
         }
 
-        $driver = $driver ?? StoreRegistry::detectDriver('mysql');
+        $driver = $driver !== null ? StoreRegistry::normalizeDriver($driver) : StoreRegistry::detectDriver();
         $strategy = self::normalizeStrategy(Env::string('TEST_DB_STRATEGY', 'shared'));
 
         if ($strategy === 'clean') {

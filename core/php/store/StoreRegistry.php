@@ -3,44 +3,49 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Store;
 
-final class StoreRegistry
+final class StoreDriverContractException extends \RuntimeException
 {
-    public static function normalizeDriver(string $driver): string
-    {
-        $driver = strtolower(trim($driver));
-        if (str_starts_with($driver, 'pg')) {
-            return 'pgsql';
-        }
-
-        if ($driver === 'mysql' || $driver === '') {
-            return 'mysql';
-        }
-        if ($driver === 'none') {
-            return 'none';
-        }
-
-        throw new \RuntimeException('Driver inválido. Usá mysql|pgsql|none');
+    public function __construct(
+        private readonly string $contractCode,
+        string $message
+    ) {
+        parent::__construct('[' . $contractCode . '] ' . $message);
     }
 
-    public static function detectDriver(string $fallback = 'mysql'): string
+    public function contractCode(): string
     {
-        $driver = (string)(getenv('TEST_STORE_DRIVER') ?: getenv('DB_DRIVER') ?: getenv('TEST_DB_DRIVER') ?: '');
-        if ($driver === '') {
-            $dsn = trim((string)(getenv('TEST_DB_DSN') ?: ''));
-            if ($dsn !== '') {
-                $driver = (string)strtok($dsn, ':');
-            }
+        return $this->contractCode;
+    }
+}
+
+final class StoreRegistry
+{
+    public const DRIVER_ENV = 'TEST_STORE_DRIVER';
+    public const ALLOWED_DRIVERS = ['mysql', 'pgsql', 'none'];
+
+    public static function normalizeDriver(string $driver): string
+    {
+        if (!in_array($driver, self::ALLOWED_DRIVERS, true)) {
+            throw new StoreDriverContractException(
+                'TEST_STORE_DRIVER_INVALID',
+                "Driver inválido '{$driver}'. Valores válidos exactos: mysql|pgsql|none."
+            );
         }
 
-        if ($driver === '') {
-            if ((string)(getenv('PG_DB') ?: getenv('TEST_PG_DB') ?: '') !== '') {
-                $driver = 'pgsql';
-            } else {
-                $driver = $fallback;
-            }
+        return $driver;
+    }
+
+    public static function detectDriver(): string
+    {
+        $driver = getenv(self::DRIVER_ENV);
+        if ($driver === false || $driver === '') {
+            throw new StoreDriverContractException(
+                'TEST_STORE_DRIVER_REQUIRED',
+                'TEST_STORE_DRIVER es obligatorio. Declaralo explícitamente como mysql|pgsql|none.'
+            );
         }
 
-        return self::normalizeDriver($driver);
+        return self::normalizeDriver((string)$driver);
     }
 
     public static function fromDriver(string $driver): StoreAdapter

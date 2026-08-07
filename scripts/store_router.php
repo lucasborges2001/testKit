@@ -18,8 +18,15 @@ use Testkit\Core\Suites\ContractWorldBootstrap;
 
 $action = strtolower(trim((string)($argv[1] ?? 'seed')));
 $driverArg = (string)($argv[2] ?? '');
-$driver = $driverArg !== '' ? StoreRegistry::normalizeDriver($driverArg) : StoreRegistry::detectDriver('mysql');
+$driver = $driverArg !== '' ? StoreRegistry::normalizeDriver($driverArg) : StoreRegistry::detectDriver();
 $projectRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: getenv('TESTKIT_PROJECT_ROOT') ?: '/workspace/project'), "/\\");
+
+if ($driver === 'none') {
+    if (in_array($action, ['seed', 'bootstrap', 'prepare-baseline'], true)) {
+        exit(0);
+    }
+    throw new RuntimeException('TEST_STORE_DRIVER=none no admite acciones estructurales de store.');
+}
 
 $adapter = StoreRegistry::fromDriver($driver);
 $dbName = 'default';
