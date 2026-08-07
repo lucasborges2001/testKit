@@ -43,6 +43,7 @@ No conservar en esta carpeta documentos cuyo único paso restante sea ejecutar u
 
 - `normalizacion-contratos/pendiente-interno-testkit.md`: normalización interna todavía no implementada;
 - `normalizacion-contratos/pendiente-integraciones-externas.md`: cambios/evidencia requeridos fuera de testKit;
-- `external-runtime-executor.md`: executor genérico para runtimes externos todavía no implementado.
+- `external-runtime-executor.md`: executor genérico para runtimes externos todavía no implementado;
+- `processrunner-timeout-windows.md`: terminación/timeout de procesos PHP nativos en Windows todavía no implementada de forma verificable.
 
 Los documentos antiguos de fases implementadas dentro de `normalizacion-contratos/` son deuda documental heredada y deben retirarse o consolidarse cuando se audite su evidencia; no son autoridad sobre el backlog actual.
