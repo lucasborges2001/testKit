@@ -41,6 +41,7 @@ final class BackPythonSuite
         if ((bool)$config['coverage']) {
             @mkdir((string)$config['coverage_dir'], 0777, true);
             @unlink((string)$config['coverage_dir'] . '/trace_counts.dat');
+            // trace accumula en un archivo; para evitar corrupción, forzamos secuencial.
             $config['jobs'] = 1;
         }
 
@@ -115,7 +116,17 @@ final class BackPythonSuite
         return ['cmd' => $cmd, 'env' => $env];
     }
 
-    /** @return array<int,string> */
+    /**
+     * Build the per-test Python trace accumulation command.
+     *
+     * Important: Python trace only persists --file counts from write_results().
+     * Using --no-report would suppress trace_counts.dat on supported Python
+     * versions, so the per-test count phase is redirected with --coverdir
+     * instead. That keeps annotated *.cover files inside TestKit artifacts while
+     * preserving the consolidated trace_counts.dat report source.
+     *
+     * @return array<int,string>
+     */
     private static function buildCoverageCountCommand(
         string $python,
         string $traceFile,
@@ -135,7 +146,11 @@ final class BackPythonSuite
         ];
     }
 
-    /** @return array<int,string> */
+    /**
+     * Build the consolidated Python trace report command.
+     *
+     * @return array<int,string>
+     */
     private static function buildCoverageReportCommand(string $python, string $traceFile, string $coverageDir): array
     {
         return [

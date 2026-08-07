@@ -1,5 +1,14 @@
 #!/usr/bin/env php
 <?php
+/**
+ * Testkit framework self-test runner.
+ *
+ * Usage:  php tests/framework/run.php
+ * Exit:   0 if all pass, 1 if any fail.
+ *
+ * Each test file is a standalone PHP script that exits 0 on success, non-zero on failure.
+ * Output from failing tests is printed to help diagnose the problem.
+ */
 declare(strict_types=1);
 
 $tests = [

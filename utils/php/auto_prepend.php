@@ -3,11 +3,26 @@ declare(strict_types=1);
 
 /**
  * TestKit — auto-prepend universal
+ *
+ * Se ejecuta ANTES de cada test PHP (back y front) via:
+ *   php -d auto_prepend_file=testkit/utils/php/auto_prepend.php <testfile>
+ *
+ * Responsabilidades:
+ * - Cargar el env declarado por DB_ENV_PATH (KEY=VALUE, parse seguro) para que los tests sean autosuficientes.
+ * - Aplicar defaults deterministas (APP_ENV, APP_DEBUG, mt_srand, timezone opcional).
+ * - Resolver paths configurables (TK_BACK_DIR / TK_PUBLIC_DIR) y exponer helpers.
+ * - Bootstrapping configurable por proyecto (autoload/boot file), sin hardcodes.
+ * - (Opcional) DB per-worker (TEST_DB_STRATEGY=per_worker + TEST_WORKER_ID).
+ * - (Opcional) DB clean por test (TEST_DB_STRATEGY=clean + flags).
+ * - (Opcional) Coverage por proceso (TEST_COVERAGE=1 + Xdebug).
  */
 
 require_once __DIR__ . '/../../core/php/store/bootstrap.php';
 require_once __DIR__ . '/../../core/php/coverage/CoverageFilter.php';
 
+// --- helpers internos --------------------------------------------------------
+
+/** @return string */
 function tk__env(string $k, string $default = ''): string {
   $v = getenv($k);
   if ($v === false) return $default;
@@ -15,6 +30,7 @@ function tk__env(string $k, string $default = ''): string {
   return $v === '' ? $default : $v;
 }
 
+/** @return string absolute path */
 function tk__abs_path(string $repoRoot, string $p): string {
   $p = trim($p);
   if ($p === '') return '';
@@ -22,11 +38,14 @@ function tk__abs_path(string $repoRoot, string $p): string {
   return rtrim($repoRoot, '/\\') . DIRECTORY_SEPARATOR . ltrim($p, '/\\');
 }
 
+/** Ajusta DSN mysql:...;dbname=XXX;... -> dbname=<new> */
 function tk__dsn_set_dbname(string $dsn, string $dbName): string {
   if ($dsn === '') return $dsn;
   $out = preg_replace('/(dbname=)[^;]+/i', '${1}' . $dbName, $dsn, 1);
   return is_string($out) ? $out : $dsn;
 }
+
+// --- repo + env -------------------------------------------------------------
 
 $repoRoot = tk__env('TK_REPO_ROOT', '');
 if ($repoRoot === '') {
@@ -59,6 +78,8 @@ $backDir = tk__env('TK_BACK_DIR', 'back');
 $publicDir = tk__env('TK_PUBLIC_DIR', 'public_html');
 putenv('TK_BACK_DIR=' . $backDir);
 putenv('TK_PUBLIC_DIR=' . $publicDir);
+
+// --- DB strategy (opcional) -------------------------------------------------
 
 $strategy = strtolower(tk__env('TEST_DB_STRATEGY', 'shared'));
 if (!in_array($strategy, ['shared','clean','per_worker'], true)) {
@@ -100,9 +121,12 @@ if ($strategy === 'per_worker' && tk__env('TEST_DB_WORKER_APPLIED', '0') !== '1'
   putenv('TEST_DB_WORKER_APPLIED=1');
 }
 
+// --- Bootstrapping (configurable por proyecto) ------------------------------
+
 $requireBootstrap = tk__env('TK_REQUIRE_BOOTSTRAP', '0') === '1';
 $suite = tk__env('TEST_SUITE', '');
 
+/** @return void */
 function tk__require_if_exists(string $path, bool $required, string $label): void {
   if ($path === '') {
     if ($required) throw new RuntimeException("Falta {$label} (ruta vacía)");
@@ -142,6 +166,9 @@ try {
   }
 }
 
+// --- DB clean (opcional; explícito) -----------------------------------------
+
+/** @return void */
 function tk__store_clean_if_enabled(): void {
   $strategy = strtolower((string)(getenv('TEST_DB_STRATEGY') ?: 'shared'));
   if ($strategy !== 'clean') return;
@@ -169,7 +196,10 @@ function tk__store_clean_if_enabled(): void {
 
 tk__store_clean_if_enabled();
 
+// --- Coverage por proceso (opcional) ----------------------------------------
+
 if ((getenv('TEST_COVERAGE') ?: '0') === '1' && function_exists('xdebug_start_code_coverage')) {
+  /** @phpstan-ignore-next-line */
   xdebug_start_code_coverage(XDEBUG_CC_UNUSED | XDEBUG_CC_DEAD_CODE);
 
   register_shutdown_function(function () use ($repoRoot) {
@@ -194,10 +224,16 @@ if ((getenv('TEST_COVERAGE') ?: '0') === '1' && function_exists('xdebug_start_co
   });
 }
 
+// --- Helpers públicos para tests --------------------------------------------
+
+/** @return string */
 function tk_repo_root(): string { return (string)(getenv('TK_REPO_ROOT') ?: dirname(__DIR__, 3)); }
+/** @return string */
 function tk_back_dir(): string { return (string)(getenv('TK_BACK_DIR') ?: 'back'); }
+/** @return string */
 function tk_public_dir(): string { return (string)(getenv('TK_PUBLIC_DIR') ?: 'public_html'); }
 
+/** @return int unix timestamp */
 function tk_now(): int {
   $s = getenv('TEST_NOW');
   if ($s !== false && (string)$s !== '') {
