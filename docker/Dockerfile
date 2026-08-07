@@ -1,9 +1,9 @@
 # test/docker/Dockerfile
 # TestKit Runner: PHP + Xdebug + Node (pinned)
 
-ARG NODE_VERSION=20
+ARG NODE_VERSION=24
 ARG PHP_VERSION=8.4
-ARG PLAYWRIGHT_VERSION=1.45.0
+ARG PLAYWRIGHT_VERSION=1.61.0
 
 FROM node:${NODE_VERSION}-bookworm-slim AS node
 FROM php:${PHP_VERSION}-cli-bookworm
