@@ -283,7 +283,7 @@ try {
 
     $unsafeSharedPolicy = with_env_failure_contract([
         'TEST_DB_STRATEGY' => 'shared',
-        'DB_DRIVER' => 'mysql',
+        'TEST_STORE_DRIVER' => 'mysql',
         'DB_NAME' => 'tk_contract',
         'DB_ENV_PATH' => '',
     ], static fn(): array => ParallelGuard::evaluate($dbSensitiveTests, $guardConfig, sys_get_temp_dir()));
@@ -295,7 +295,7 @@ try {
 
     $unsafeCleanPolicy = with_env_failure_contract([
         'TEST_DB_STRATEGY' => 'clean',
-        'DB_DRIVER' => 'mysql',
+        'TEST_STORE_DRIVER' => 'mysql',
         'DB_NAME' => 'tk_contract',
         'DB_ENV_PATH' => '',
     ], static fn(): array => ParallelGuard::evaluate($dbSensitiveTests, $guardConfig, sys_get_temp_dir()));
