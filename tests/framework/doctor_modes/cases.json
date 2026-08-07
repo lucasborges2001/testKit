@@ -4,73 +4,31 @@
     "args": ["--full"],
     "env": {},
     "expect_exit": 0,
-    "require_strings": [
-      "[INFO] mode=full",
-      "== BASE CHECKS ==",
-      "Base doctor: PASS",
-      "== CAPABILITY DOCTOR ==",
-      "Capability doctor: PASS",
-      "Doctor: OK"
-    ],
-    "forbid_strings": [
-      "Problemas relevantes:",
-      "Base: status=PASS"
-    ]
+    "require_strings": ["[INFO] mode=full", "== BASE CHECKS ==", "Base doctor: PASS", "== CAPABILITY DOCTOR ==", "Capability doctor: PASS", "Doctor: OK"],
+    "forbid_strings": ["Problemas relevantes:", "Base: status=PASS"]
   },
   {
     "id": "compact_generic",
     "args": ["--compact"],
     "env": {},
     "expect_exit": 0,
-    "require_strings": [
-      "[INFO] mode=compact target=generic",
-      "Base: status=PASS",
-      "Capability: status=PASS",
-      "Problemas relevantes:",
-      "[PASS] NO_RELEVANT_WARNINGS",
-      "Doctor: OK"
-    ],
-    "forbid_strings": [
-      "== BASE CHECKS ==",
-      "== CAPABILITY DOCTOR =="
-    ]
+    "require_strings": ["[INFO] mode=compact target=generic", "Base: status=PASS", "Capability: status=PASS", "Problemas relevantes:", "[PASS] NO_RELEVANT_WARNINGS", "Doctor: OK"],
+    "forbid_strings": ["== BASE CHECKS ==", "== CAPABILITY DOCTOR =="]
   },
   {
     "id": "env_default_overridden_by_cli",
     "args": ["--full"],
-    "env": {
-      "TESTKIT_DOCTOR_MODE": "compact"
-    },
+    "env": {"TESTKIT_DOCTOR_MODE": "compact"},
     "expect_exit": 0,
-    "require_strings": [
-      "[INFO] mode=full",
-      "== BASE CHECKS ==",
-      "Doctor: OK"
-    ],
-    "forbid_strings": [
-      "[INFO] mode=compact target=generic"
-    ]
+    "require_strings": ["[INFO] mode=full", "== BASE CHECKS ==", "Doctor: OK"],
+    "forbid_strings": ["[INFO] mode=compact target=generic"]
   },
   {
     "id": "full_target_dump",
     "args": ["--dump", "--full", "migration-contract"],
-    "env": {
-      "TEST_BASELINE_MODE": "snapshot",
-      "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz",
-      "TEST_DB_STRATEGY": "shared",
-      "TEST_JOBS": "1",
-      "TEST_STORE_DRIVER": "mysql"
-    },
+    "env": {"TEST_BASELINE_MODE": "snapshot", "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz", "TEST_DB_STRATEGY": "shared", "TEST_JOBS": "1", "TEST_STORE_DRIVER": "mysql"},
     "expect_exit": 0,
-    "require_strings": [
-      "[INFO] mode=full",
-      "[INFO] target=migration-contract",
-      "Capability doctor: PASS",
-      "TESTKIT_DOCTOR_MODE: full",
-      "TESTKIT_DOCTOR_TARGET: migration-contract",
-      "TESTKIT_CAPABILITY_STATUS: PASS",
-      "TESTKIT_CAPABILITY_CHECK_COUNT:"
-    ],
+    "require_strings": ["[INFO] mode=full", "[INFO] target=migration-contract", "Capability doctor: PASS", "TESTKIT_DOCTOR_MODE: full", "TESTKIT_DOCTOR_TARGET: migration-contract", "TESTKIT_CAPABILITY_STATUS: PASS", "TESTKIT_CAPABILITY_CHECK_COUNT:"],
     "forbid_strings": []
   },
   {
@@ -78,14 +36,23 @@
     "args": ["--compact", "back-php"],
     "env": {},
     "expect_exit": 0,
-    "require_strings": [
-      "[INFO] mode=compact target=back-php",
-      "Capability: status=PASS",
-      "NO_RELEVANT_WARNINGS",
-      "Doctor: OK"
-    ],
-    "forbid_strings": [
-      "== BASE CHECKS =="
-    ]
+    "require_strings": ["[INFO] mode=compact target=back-php", "Capability: status=PASS", "NO_RELEVANT_WARNINGS", "Doctor: OK"],
+    "forbid_strings": ["== BASE CHECKS =="]
+  },
+  {
+    "id": "store_driver_required",
+    "args": ["--compact"],
+    "env": {"TEST_STORE_DRIVER": ""},
+    "expect_exit": 1,
+    "require_strings": ["TEST_STORE_DRIVER_REQUIRED"],
+    "forbid_strings": ["Doctor: OK"]
+  },
+  {
+    "id": "store_driver_alias_rejected",
+    "args": ["--compact"],
+    "env": {"TEST_STORE_DRIVER": "postgres"},
+    "expect_exit": 1,
+    "require_strings": ["TEST_STORE_DRIVER_INVALID"],
+    "forbid_strings": ["Doctor: OK"]
   }
 ]

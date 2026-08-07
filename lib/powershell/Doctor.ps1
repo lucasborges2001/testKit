@@ -10,6 +10,19 @@ $doctorRender = Join-Path $PSScriptRoot 'Doctor.Render.ps1'
 . $doctorContractRegistry
 . $doctorRender
 
+function Test-TestkitDoctorStoreDriverContract {
+  $driver = $env:TEST_STORE_DRIVER
+  if ([string]::IsNullOrEmpty($driver)) {
+    Write-Error '[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Valores exactos: mysql|pgsql|none.'
+    return $false
+  }
+  if (@('mysql','pgsql','none') -cnotcontains $driver) {
+    Write-Error "[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none."
+    return $false
+  }
+  return $true
+}
+
 function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
   Reset-TestkitDoctorState
 
@@ -22,6 +35,10 @@ function Invoke-TestkitDoctor([string[]]$DoctorArgs) {
     $context = Parse-TestkitDoctorArgs $DoctorArgs
   } catch {
     Write-Error $_
+    return 1
+  }
+
+  if ($envFile -and -not (Test-TestkitDoctorStoreDriverContract)) {
     return 1
   }
 
