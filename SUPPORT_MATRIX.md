@@ -117,11 +117,12 @@ Limits:
 
 | Key | Supported values | Rejected values | Notes |
 |---|---|---|---|
-| `TEST_STORE_DRIVER` | `mysql`, `pgsql`, `none` | `redis`, `influx` | `mysql` is closed primary. `pgsql` is partial. `none` means no runtime store. Redis and Influx are not primary store drivers. |
-| `DB_DRIVER` | `mysql`, `pgsql` | `redis`, `influx` | Runtime alias. It does not upgrade `pgsql` to closed snapshot/clone support. |
+| `TEST_STORE_DRIVER` | `mysql`, `pgsql`, `none` | vacío, `pg`, `postgres`, `postgresql`, mayúsculas, espacios, `redis`, `influx` | Obligatorio y único selector de store. Los valores son exactos. `mysql` es closed primary, `pgsql` es parcial y `none` significa no runtime store. |
 | `TEST_DB_STRATEGY` | `shared`, `per_worker` | `clean` | `clean` is known but not implemented. |
 | `TEST_BASELINE_MODE` | `layered`, `snapshot` | — | `snapshot` is closed only in the MySQL path. |
-| `TESTKIT_STACK` | `mysql`, `pg`, `redis`, `influx` | — | Stack entries describe services to start, not full framework support. |
+| `TESTKIT_STACK` | `mysql`, `pg`, `redis`, `influx` | — | Stack entries describe services to start, not full framework support and never select `TEST_STORE_DRIVER`. |
+
+`DB_DRIVER`, `TEST_DB_DRIVER`, `TEST_DB_DSN`, DB names and credentials are not aliases for `TEST_STORE_DRIVER`. Connection variables may still describe the selected engine after `TEST_STORE_DRIVER` has been resolved.
 
 ## No-store projects
 
@@ -141,6 +142,7 @@ In this mode MySQL credentials are not required, the default effective stack is 
 Closed requirements in this phase:
 
 - engine: MySQL
+- `TEST_STORE_DRIVER=mysql`
 - `TEST_BASELINE_MODE=snapshot`
 - `TEST_DB_STRATEGY=shared`
 - `TEST_JOBS=1`

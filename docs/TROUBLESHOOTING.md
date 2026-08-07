@@ -69,9 +69,36 @@ Lectura correcta:
 Qué hacer:
 
 - dejalos en `TESTKIT_STACK` como servicios auxiliares si los necesitás
-- mantené `TEST_STORE_DRIVER` / `DB_DRIVER` en un motor estructural soportado
+- declarÁ `TEST_STORE_DRIVER=mysql`, `TEST_STORE_DRIVER=pgsql` o `TEST_STORE_DRIVER=none` según corresponda
 
-### 7) `doctor` marca `CLEAN_STRATEGY_UNSUPPORTED`
+`DB_DRIVER`, `TEST_DB_DRIVER`, DSN, credenciales y `TESTKIT_STACK` no seleccionan el store.
+
+### 7) `doctor` marca `TEST_STORE_DRIVER_REQUIRED`
+
+Lectura correcta:
+
+- el env de tests no declara el selector canónico de store
+- testKit no infiere MySQL ni PostgreSQL desde otras variables
+
+Qué hacer:
+
+- declarar exactamente uno de:
+  - `TEST_STORE_DRIVER=mysql`
+  - `TEST_STORE_DRIVER=pgsql`
+  - `TEST_STORE_DRIVER=none`
+
+### 8) `doctor` marca `TEST_STORE_DRIVER_INVALID`
+
+Lectura correcta:
+
+- `TEST_STORE_DRIVER` existe, pero no coincide exactamente con un valor soportado
+- no se normalizan `pg`, `postgres`, `postgresql`, mayúsculas ni espacios
+
+Qué hacer:
+
+- usar exactamente `mysql`, `pgsql` o `none`
+
+### 9) `doctor` marca `CLEAN_STRATEGY_UNSUPPORTED`
 
 Lectura correcta:
 
@@ -81,7 +108,7 @@ Qué hacer:
 
 - usar `shared` o `per_worker`
 
-### 8) Necesito ver el esquema soportado real
+### 10) Necesito ver el esquema soportado real
 
 Usá:
 
