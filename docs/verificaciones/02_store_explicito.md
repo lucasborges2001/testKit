@@ -7,9 +7,9 @@ ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
 IMPLEMENTACION_BASE: 2f8f34c33a25c8bbdd036d3cfccece9cda976c32
 ULTIMA_VALIDACION_LOCAL: 0e8479e02dee039adb1f78e2b710ea832fec44a8
-ULTIMO_RESULTADO: LOCAL_PASS_RUNTIME_PASS_CI_WINDOWS_PENDIENTES
+ULTIMO_RESULTADO: LOCAL_RUNTIME_PASS_CI_NORMALIZADO_PENDIENTE_REVALIDAR_Y_REACTIVAR
 POWERSHELL_LOCAL: BLOCKED_PWSH_NO_DISPONIBLE
-CI_STATUS_CONNECTOR: NO_EVIDENCIA_DISPONIBLE
+WORKFLOW_REMOTE_STATE: DISABLED_MANUALLY
 PRODUCCION_AUTORIZADA: NO
 ```
 
@@ -44,34 +44,22 @@ TEST_STORE_DRIVER_REQUIRED
 TEST_STORE_DRIVER_INVALID
 ```
 
-## Evidencia acumulada
+## Evidencia local ya cerrada
 
-### Contrato, doctor y sintaxis — PASS
-
-Confirmado localmente:
+Confirmado antes de normalizar CI:
 
 ```text
 Store driver explicit contract PASS
 Doctor mode self-tests passed: 7 case executions
 PHP syntax: PASS
 Bash syntax: PASS
-PowerShell local: BLOCKED — pwsh no disponible
+Negativos públicos: PASS
+Runtime MySQL fixture: PASS
+Framework: 43 passed, 0 failed
+Working tree: limpio
 ```
 
-### Negativos públicos — PASS
-
-Sobre `c408cee90797f12597425a4433002b87c62be576`:
-
-```text
-TEST_STORE_DRIVER_REQUIRED / RC_MISSING=1
-TEST_STORE_DRIVER_INVALID / RC_INVALID=1
-```
-
-No hubo fallback a MySQL ni normalización de `postgres`.
-
-### Runtime MySQL — PASS
-
-Validado sobre `8370b7f2ef28e7f231f8e8da74af4b6b4a7896fe` usando el host fixture:
+Runtime MySQL real validado con:
 
 ```text
 tests/fixtures/runtime-mysql-host
@@ -80,101 +68,165 @@ tests/fixtures/runtime-mysql-host
 Evidencia:
 
 ```text
-Doctor compact: PASS
-Doctor --suite back-php: PASS
-MySQL: healthy
+MySQL healthy
 Seeds aplicadas: 1
-Listado: test/back/runtime_mysql_store.test.php descubierto
-Run: PASS=1 FAIL=0
+runtime_mysql_store.test.php descubierto
+PASS=1 FAIL=0
 inspect latest: evidence_valid=true
-Teardown: PASS
-Working tree: limpio
+teardown: PASS
 ```
 
-El test runtime abrió PDO contra MySQL y verificó el valor `marker='seeded'` creado por el seed del fixture. Esto demuestra bootstrap, seed, conexión y persistencia real.
+## Auditoría del CI deshabilitado
 
-### Framework final — PASS
-
-Después de corregir el self-test de selectores CI para el host fixture vigente, se revalidó sobre:
+GitHub reportó:
 
 ```text
-0e8479e02dee039adb1f78e2b710ea832fec44a8
+CI    disabled_manually    workflow_id=237398346
 ```
 
-Resultado:
+Actions del repositorio están habilitadas globalmente; el workflow individual es el que permanece deshabilitado. Los runs visibles son históricos y no sirven como evidencia del baseline I2 actual.
+
+### Deuda encontrada
+
+1. `actions/checkout@v4`, `actions/setup-node@v4` y `actions/upload-artifact@v4` estaban varios majors detrás del baseline vigente.
+2. El job estático fijaba Node `20`, ya EOL.
+3. La imagen Docker reusable también fijaba Node `20` y Playwright `1.45.0`.
+4. `windows-static` usaba `windows-latest`, sujeto a cambio de imagen.
+5. `browser-runner-smoke` usaba la raíz de TestKit como host implícito en vez de un `TESTKIT_PROJECT_ROOT` separado.
+6. `docs/WINDOWS.md` todavía publicaba selectores posicionales y `migration-contract` como preflight genérico.
+7. No existía un test PowerShell ejecutable que comprobara `TEST_STORE_DRIVER_REQUIRED`, `TEST_STORE_DRIVER_INVALID` y la precedencia del env en `seed.ps1`/`db_clean.ps1`.
+
+## Normalización publicada
+
+Baseline candidato posterior a la auditoría: `main` igual o posterior al commit que contiene este documento.
+
+Cambios intencionales:
 
 ```text
-OK CI typed selectors
-Store driver explicit contract PASS
-43 passed, 0 failed
-Working tree: limpio
+.github/workflows/ci.yml
+docker/Dockerfile
+compose.yaml
+docs/CI.md
+docs/WINDOWS.md
+tests/framework/test_ci_typed_selectors.php
+tests/powershell/run.ps1
+tests/powershell/test_store_driver_contract.ps1
 ```
 
-Los cambios posteriores al runtime MySQL quedaron limitados al self-test de CI y documentación; no se modificó el runtime ya validado.
-
-## CI real — PENDIENTE / NO VERIFICADO
-
-Jobs bloqueantes esperados:
+Contrato nuevo del CI:
 
 ```text
-static
-windows-static
-framework-self-tests
-runtime-mysql
-browser-runner-smoke
+Ubuntu: ubuntu-24.04
+Windows: windows-2025
+Node host: 24 LTS
+Node Docker: 24
+Playwright Docker: 1.61.0
+checkout: v7
+setup-node: v7
+upload-artifact: v7
 ```
 
-La consulta disponible para el SHA `0e8479e02dee039adb1f78e2b710ea832fec44a8` no devolvió workflow runs ni statuses asociados. Esto no se interpreta como PASS ni FAIL.
+`runtime-mysql` mantiene su host fixture dedicado.
 
-`windows-static` debe aportar la evidencia PowerShell que no pudo obtenerse localmente.
+`browser-runner-smoke` ahora usa:
 
-### Verificación reproducible con GitHub CLI
+```text
+TESTKIT_PROJECT_ROOT=tests/fixtures/browser
+TESTKIT_ENV_FILE=tests/fixtures/browser/.env.test
+TEST_STORE_DRIVER=none
+TEST_STORE_PROVISION=external
+```
 
-Desde un checkout autenticado con acceso a Actions:
+El harness PowerShell incorpora `Store driver explicit contract` y valida `seed.ps1` y `db_clean.ps1` sin Docker:
+
+```text
+missing -> TEST_STORE_DRIVER_REQUIRED / exit 2
+invalid -> TEST_STORE_DRIVER_INVALID / exit 2
+exported none overrides env-file mysql -> exit 0 sin runtime
+```
+
+## Gate local antes de reactivar Actions
+
+Linux:
 
 ```bash
-gh run list \
-  --repo lucasborges2001/testKit \
-  --workflow CI \
-  --commit 0e8479e02dee039adb1f78e2b710ea832fec44a8 \
-  --limit 10
+php -l tests/framework/test_ci_typed_selectors.php
+php tests/framework/test_ci_typed_selectors.php
+php tests/framework/test_store_driver_contract.php
+php tests/framework/run.php
+
+bash -n scripts/seed.sh
+bash -n scripts/db_clean.sh
 ```
 
-Para el run correspondiente:
+Docker/browser, porque cambió Node/Playwright:
 
 ```bash
-gh run view <RUN_ID> \
-  --repo lucasborges2001/testKit
+ROOT="$PWD"
+FIXTURE="$ROOT/tests/fixtures/browser"
+
+cp .env.test.example "$FIXTURE/.env.test"
+sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=/' "$FIXTURE/.env.test"
+sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=none/' "$FIXTURE/.env.test"
+sed -i 's/^TEST_STORE_PROVISION=.*/TEST_STORE_PROVISION=external/' "$FIXTURE/.env.test"
+
+export TESTKIT_PROJECT_ROOT="$FIXTURE"
+export TESTKIT_ENV_FILE="$FIXTURE/.env.test"
+export TESTKIT_STACK=
+
+./bin/testkit run --rm \
+  -e TESTKIT_BROWSER_BASE_URL=http://127.0.0.1:4173 \
+  -e TESTKIT_BROWSER_HEADLESS=1 \
+  -e TESTKIT_BROWSER_TRACE=retain-on-failure \
+  -e TESTKIT_BROWSER_SCREENSHOT=only-on-failure \
+  -e TESTKIT_BROWSER_VIDEO=off \
+  -e TESTKIT_BROWSER_TIMEOUT_MS=10000 \
+  -e TESTKIT_BROWSER_ARTIFACTS_DIR=/workspace/project/test-results/browser \
+  testkit bash -lc '
+    set -euo pipefail
+    mkdir -p /workspace/project/test-results/browser
+    php -S 127.0.0.1:4173 -t /workspace/project/public > /workspace/project/test-results/browser/fixture-server.log 2>&1 &
+    server_pid="$!"
+    trap "kill ${server_pid} >/dev/null 2>&1 || true" EXIT
+    for i in $(seq 1 50); do
+      if curl -fsS http://127.0.0.1:4173/health.json >/dev/null; then break; fi
+      sleep 0.2
+    done
+    node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs
+  '
+
+unset TESTKIT_PROJECT_ROOT TESTKIT_ENV_FILE TESTKIT_STACK
+rm -f "$FIXTURE/.env.test"
 ```
 
-PASS requiere que los jobs bloqueantes terminen correctamente, en particular:
+PowerShell local puede seguir BLOCKED si `pwsh` no está disponible en Ubuntu. La evidencia real debe venir de `windows-static` tras reactivar el workflow.
+
+## Reactivación — NO EJECUTADA
+
+La reactivación es una acción remota separada y no forma parte de esta normalización.
+
+Cuando los gates locales anteriores pasen y exista autorización:
+
+```bash
+gh workflow enable ci.yml --repo lucasborges2001/testKit
+gh workflow run ci.yml --repo lucasborges2001/testKit --ref main
+```
+
+PASS remoto requiere observar:
 
 ```text
-windows-static
-framework-self-tests
-runtime-mysql
+static                 success
+windows-static         success
+framework-self-tests   success
+runtime-mysql          success
+browser-runner-smoke   success
 ```
 
-Si no existe run para el SHA candidato, la verificación permanece PENDIENTE; no inventar evidencia.
+## Deuda fuera de este cambio
 
-## PASS
+El inventario detectó documentación histórica adicional con ejemplos posicionales, entre otros `README.md`, `docs/USO.md` y documentos de profiling. No se corrigió aquí para evitar mezclar la normalización de CI/I2 con una limpieza documental transversal.
 
-I2 se cierra solo si:
-
-- contrato focal PASS;
-- framework `43/43` PASS;
-- doctor modes PASS;
-- sintaxis PHP/Bash PASS;
-- negativos públicos PASS;
-- runtime MySQL fixture PASS;
-- CI sin regresiones I2;
-- PowerShell demostrado por `windows-static` o entorno equivalente.
-
-Actualmente todos los criterios locales y runtime están PASS; faltan CI real y PowerShell/Windows.
-
-## Fuera de este gate
-
-No valida ni modifica:
+Tampoco se modifican:
 
 - I3 stack estricto;
 - I4 selección única;
@@ -183,11 +235,10 @@ No valida ni modifica:
 - consumidores externos;
 - gitlinks de `Base` o `Pruebas`.
 
-## Acción después de PASS
+## Acción después de PASS remoto
 
-1. borrar `docs/verificaciones/02_store_explicito.md`;
-2. quitar su fila de `docs/verificaciones/README.md`;
-3. actualizar `Base/testkit`;
-4. validar `Base`;
-5. actualizar `Pruebas/submodules/Base` en fase separada;
-6. continuar con I3.
+1. cerrar/eliminar esta verificación según la política vigente;
+2. actualizar `Base/testkit`;
+3. validar `Base`;
+4. actualizar `Pruebas/submodules/Base` en fase separada;
+5. continuar con I3.
