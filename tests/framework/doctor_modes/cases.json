@@ -53,7 +53,7 @@
   },
   {
     "id": "full_target_dump",
-    "args": ["--dump", "--full", "migration-contract"],
+    "args": ["--dump", "--full", "--suite", "migration-contract"],
     "env": {
       "TEST_BASELINE_MODE": "snapshot",
       "TEST_BASELINE_SNAPSHOT_FILE": "/tmp/base.sql.gz",
@@ -75,7 +75,7 @@
   },
   {
     "id": "compact_target_concrete",
-    "args": ["--compact", "back-php"],
+    "args": ["--compact", "--suite", "back-php"],
     "env": {},
     "expect_exit": 0,
     "require_strings": [
