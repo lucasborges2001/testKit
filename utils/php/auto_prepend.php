@@ -38,9 +38,12 @@ function tk__abs_path(string $repoRoot, string $p): string {
   return rtrim($repoRoot, '/\\') . DIRECTORY_SEPARATOR . ltrim($p, '/\\');
 }
 
-/** Ajusta DSN mysql:...;dbname=XXX;... -> dbname=<new> */
+/**
+ * Ajusta DSN mysql:...;dbname=XXX;... -> dbname=<new>
+ */
 function tk__dsn_set_dbname(string $dsn, string $dbName): string {
   if ($dsn === '') return $dsn;
+  // solo reemplazamos el primer dbname=...
   $out = preg_replace('/(dbname=)[^;]+/i', '${1}' . $dbName, $dsn, 1);
   return is_string($out) ? $out : $dsn;
 }
@@ -49,19 +52,25 @@ function tk__dsn_set_dbname(string $dsn, string $dbName): string {
 
 $repoRoot = tk__env('TK_REPO_ROOT', '');
 if ($repoRoot === '') {
+  // auto_prepend.php vive en: <testkit>/utils/php/
   $repoRoot = rtrim((string)(getenv('TK_REPO_ROOT') ?: dirname(dirname(dirname(__DIR__)))), '/\\');
 }
 $repoRoot = rtrim($repoRoot, '/\\');
 putenv('TK_REPO_ROOT=' . $repoRoot);
 
+// Cargar env del proyecto delegando en ProjectEnv.
+// Nota: docker compose NO exporta todas las variables del env-file al contenedor;
+// por eso usamos DB_ENV_PATH como fuente de verdad.
 \Testkit\Core\Common\ProjectEnv::hydrateCurrentProcess(
   $repoRoot,
   tk__env('TK_ENV_OVERRIDE', '0') === '1'
 );
 
+// Defaults base
 if (tk__env('APP_ENV', '') === '') putenv('APP_ENV=test');
 if (tk__env('APP_DEBUG', '') === '') putenv('APP_DEBUG=1');
 
+// Determinismo
 $seed = tk__env('TEST_RAND_SEED', '');
 if ($seed !== '') {
   $s = (int)$seed;
@@ -74,6 +83,7 @@ if ($tz !== '') {
   @date_default_timezone_set($tz);
 }
 
+// Paths configurables (sin hardcodes)
 $backDir = tk__env('TK_BACK_DIR', 'back');
 $publicDir = tk__env('TK_PUBLIC_DIR', 'public_html');
 putenv('TK_BACK_DIR=' . $backDir);
@@ -81,17 +91,19 @@ putenv('TK_PUBLIC_DIR=' . $publicDir);
 
 // --- DB strategy (opcional) -------------------------------------------------
 
-$strategy = strtolower(tk__env('TEST_DB_STRATEGY', 'shared'));
+$strategy = strtolower(tk__env('TEST_DB_STRATEGY', 'shared')); // shared|clean|per_worker
 if (!in_array($strategy, ['shared','clean','per_worker'], true)) {
   $strategy = 'shared';
   putenv('TEST_DB_STRATEGY=shared');
 }
 
+// per-worker: suffix para DB_NAME / TEST_MYSQL_DB / TEST_DB_DSN / PG_DB
 if ($strategy === 'per_worker' && tk__env('TEST_DB_WORKER_APPLIED', '0') !== '1') {
   $wid = (int)tk__env('TEST_WORKER_ID', '1');
   if ($wid <= 0) $wid = 1;
 
   $fmt = tk__env('TEST_DB_WORKER_SUFFIX_FORMAT', '_w%02d');
+  // sane: solo permitimos [A-Za-z0-9_%._-] en el formato (evita inyección en nombres)
   if (!preg_match('/^[A-Za-z0-9_%._-]+$/', $fmt)) {
     $fmt = '_w%02d';
   }
@@ -99,6 +111,7 @@ if ($strategy === 'per_worker' && tk__env('TEST_DB_WORKER_APPLIED', '0') !== '1'
   if (!is_string($suffix) || $suffix === '') $suffix = '_w' . $wid;
   if (!preg_match('/^[A-Za-z0-9._-]+$/', $suffix)) $suffix = '_w' . $wid;
 
+  // MySQL
   $baseMy = tk__env('TEST_MYSQL_DB', tk__env('DB_NAME', ''));
   if ($baseMy !== '') {
     $db = $baseMy . $suffix;
@@ -111,6 +124,7 @@ if ($strategy === 'per_worker' && tk__env('TEST_DB_WORKER_APPLIED', '0') !== '1'
     }
   }
 
+  // Postgres
   $basePg = tk__env('TEST_PG_DB', tk__env('PG_DB', ''));
   if ($basePg !== '') {
     $db = $basePg . $suffix;
@@ -124,7 +138,7 @@ if ($strategy === 'per_worker' && tk__env('TEST_DB_WORKER_APPLIED', '0') !== '1'
 // --- Bootstrapping (configurable por proyecto) ------------------------------
 
 $requireBootstrap = tk__env('TK_REQUIRE_BOOTSTRAP', '0') === '1';
-$suite = tk__env('TEST_SUITE', '');
+$suite = tk__env('TEST_SUITE', ''); // back|front_php
 
 /** @return void */
 function tk__require_if_exists(string $path, bool $required, string $label): void {
@@ -143,6 +157,7 @@ try {
   if ($suite === 'back') {
     $autoloadRel = tk__env('TK_BACK_AUTOLOAD', $backDir . '/vendor/autoload.php');
     $autoloadAbs = tk__abs_path($repoRoot, $autoloadRel);
+    // autoload es requerido solo si existe (no forzamos); si querés exigirlo, set TK_REQUIRE_BOOTSTRAP=1.
     tk__require_if_exists($autoloadAbs, false, 'TK_BACK_AUTOLOAD');
 
     $bootRel = tk__env('TK_BACK_BOOTSTRAP', '');
@@ -160,6 +175,8 @@ try {
     tk__require_if_exists($bootAbs, $requireBootstrap && $bootRel !== '', 'TK_PUBLIC_BOOTSTRAP');
   }
 } catch (Throwable $e) {
+  // Si el proyecto configuró TK_REQUIRE_BOOTSTRAP=1, esto corta con error explícito.
+  // Si no, dejamos que falle el test específico que dependa de eso.
   fwrite(STDERR, "BOOTSTRAP ERROR: " . $e->getMessage() . "\n");
   if ($requireBootstrap) {
     exit(defined('PVT_EXIT_ERROR') ? PVT_EXIT_ERROR : 3);
