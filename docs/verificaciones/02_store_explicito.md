@@ -5,7 +5,7 @@
 ```text
 ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
-IMPLEMENTACION_BASE: cc2e02f50a25d34f8124298377a9028c94e39131
+IMPLEMENTACION_BASE: 9a25a715676b19d8ae78ab2554d8754eb3d01109
 ULTIMA_VALIDACION_LOCAL: c408cee90797f12597425a4433002b87c62be576
 ULTIMO_RESULTADO: NEGATIVOS_PASS_RUNTIME_FAIL_CORREGIDO_PENDIENTE_DE_REVALIDAR
 POWERSHELL_LOCAL: BLOCKED_PWSH_NO_DISPONIBLE
@@ -91,7 +91,7 @@ Runtime MySQL:
 - ejecución real `--group all` falló en bootstrap antes de tests;
 - causa 1: `.env.test.example` declaraba `TEST_STORE_PROVISION=managed` de forma implícita y `TEST_MYSQL_ROOT_PASSWORD`, pero no `TEST_MYSQL_ADMIN_USER`;
 - causa 2: `scripts/seed.sh` estaba en modo `100644`, por lo que el comando documentado `./scripts/seed.sh` devolvió `Permiso denegado`;
-- `doctor --full --suite migration-contract` también reportó `MIGRATION_CONTRACT_NEEDS_SNAPSHOT`; esto es esperado por el contrato de esa suite y demuestra que no es un gate válido para el env genérico I2;
+- `doctor --full --suite migration-contract` reportó `MIGRATION_CONTRACT_NEEDS_SNAPSHOT`; esto es esperado por el contrato de esa suite y demuestra que no es un gate válido para el env genérico I2;
 - apareció un orphan `testkit-redis_test-1`; debe limpiarse y no se atribuye a I2 sin evidencia adicional.
 
 Correcciones publicadas después de esta ejecución:
@@ -100,9 +100,10 @@ Correcciones publicadas después de esta ejecución:
 2. `docs/examples/.env.test.example` declara `TEST_STORE_DRIVER=mysql` y mantiene el path managed completo;
 3. el test focal protege ambos ejemplos para evitar regresión;
 4. `scripts/seed.sh` y `scripts/db_clean.sh` recuperan modo ejecutable `100755`;
-5. el gate runtime usa `doctor --full --suite back-php`, no `migration-contract`.
+5. el gate runtime usa `doctor --full --suite back-php`, no `migration-contract`;
+6. `seed.sh`, `db_clean.sh`, `seed.ps1` y `db_clean.ps1` preservan variables ya exportadas, igual que el wrapper principal, para que un override explícito como `TESTKIT_STACK=mysql` no sea reemplazado por el archivo de entorno.
 
-La verificación permanece PENDIENTE hasta repetir runtime sobre `cc2e02f` o posterior y revisar CI real.
+La verificación permanece PENDIENTE hasta repetir runtime sobre `9a25a715` o posterior y revisar CI real.
 
 ## Gate 1 — baseline
 
@@ -115,7 +116,7 @@ git rev-parse HEAD
 git status --short
 ```
 
-Esperado: rama `main`, working tree limpio y HEAD `cc2e02f` o posterior.
+Esperado: rama `main`, working tree limpio y HEAD que contenga `9a25a715` o posterior.
 
 ## Gate 2 — contrato focalizado — PASS previo, reejecutar tras cambios de ejemplos
 
@@ -139,8 +140,6 @@ Evidencia previa:
 Doctor mode self-tests passed: 7 case executions
 ```
 
-No hubo cambios de runtime PHP desde esa evidencia salvo el self-test de ejemplos y documentación/configuración del env.
-
 ## Gate 4 — sintaxis — PASS / PowerShell BLOCKED
 
 ```text
@@ -148,6 +147,8 @@ PHP: PASS
 Bash: PASS
 PowerShell local: BLOCKED — pwsh no disponible en PATH
 ```
+
+Los cuatro entrypoints de seed/clean modificados después de la última sintaxis deben volver a pasar Bash/PowerShell en el entorno disponible antes del cierre.
 
 ## Gate 5 — runtime MySQL — FAIL CORREGIDO / REVALIDAR
 
