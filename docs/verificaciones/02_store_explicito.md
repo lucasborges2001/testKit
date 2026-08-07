@@ -3,11 +3,33 @@
 ## Estado
 
 ```text
-ESTADO: PENDIENTE
+ESTADO: FAIL
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
 IMPLEMENTACION_BASE: c812ac3506847bd65ebc27093ddc3a595f6a844f
+ULTIMA_VALIDACION_LOCAL: 70f604e4842eadd56354847b71cd937fad6f79bb
 PRODUCCION_AUTORIZADA: NO
 ```
+
+## Resultado de la validación local
+
+La primera ejecución local sobre `70f604e4842eadd56354847b71cd937fad6f79bb` confirmó:
+
+- `tests/framework/test_store_driver_contract.php`: PASS;
+- framework self-tests: `40 passed, 3 failed`;
+- `doctor_modes`: `5/7` efectivos, con dos casos legacy posicionales fallando;
+- `pwsh`: no disponible en PATH.
+
+Fallos introducidos por I2 y corregidos después de esa ejecución:
+
+1. `test_failure_classification_contracts.php` importaba `ParallelGuard` sin cargar `StoreRegistry`;
+2. `test_back_python_trace_coverage_contract.php` no declaraba `TEST_STORE_DRIVER=none`;
+3. `test_sql_observability_exit_code_5.php` no declaraba `TEST_STORE_DRIVER=mysql`.
+
+Deuda previa I1 detectada por la misma corrida y corregida:
+
+- `doctor_modes/cases.json` seguía usando selectores posicionales para `migration-contract` y `back-php`; ahora usa `--suite`.
+
+La corrida también mostró cambios de modo `100644 -> 100755` en seis archivos del corte I2. Se restauran a `100644` sin cambiar contenido antes de repetir los gates.
 
 ## Contrato implementado
 
@@ -70,7 +92,7 @@ git status --short
 git log --oneline -15
 ```
 
-Esperado: rama `main`, working tree limpio y HEAD que contenga este corte.
+Esperado: rama `main`, working tree limpio y HEAD que contenga las correcciones posteriores a `70f604e`.
 
 ## Gate 2 — contrato focalizado
 
@@ -106,7 +128,9 @@ Criterio:
 - `Seed state canonical contract` permanece PASS;
 - `Store resource lock` permanece PASS;
 - `Failure classification contracts` permanece PASS usando `TEST_STORE_DRIVER`;
-- doctor rechaza driver ausente y `postgres`;
+- BackPython coverage declara explícitamente `TEST_STORE_DRIVER=none`;
+- SQL observability exit-code-5 declara explícitamente `TEST_STORE_DRIVER=mysql`;
+- doctor usa selectores tipados y rechaza driver ausente y `postgres`;
 - no aparecen regresiones nuevas.
 
 ## Gate 4 — sintaxis
