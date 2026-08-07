@@ -129,6 +129,43 @@ try {
     if (!preg_match('/^TEST_MYSQL_ADMIN_USER=root$/m', $docsEnvExample)) {
         $errors[] = 'docs/examples/.env.test.example managed mysql path must declare TEST_MYSQL_ADMIN_USER=root';
     }
+
+    $fixtureSeed = $root . '/tests/fixtures/runtime-mysql-host/test/seeds/mysql/001_runtime_probe.sql';
+    $fixtureTest = $root . '/tests/fixtures/runtime-mysql-host/test/back/runtime_mysql_store.test.php';
+    if (!is_file($fixtureSeed)) {
+        $errors[] = 'runtime mysql host fixture must include a MySQL seed';
+    } else {
+        $seedSource = (string)file_get_contents($fixtureSeed);
+        if (!str_contains($seedSource, 'testkit_runtime_probe') || !str_contains($seedSource, "'seeded'")) {
+            $errors[] = 'runtime mysql host seed must materialize the probe marker';
+        }
+    }
+    if (!is_file($fixtureTest)) {
+        $errors[] = 'runtime mysql host fixture must include an executable back-php test';
+    } else {
+        $testSource = (string)file_get_contents($fixtureTest);
+        if (!str_contains($testSource, 'SELECT marker FROM testkit_runtime_probe')) {
+            $errors[] = 'runtime mysql host test must verify the seeded probe';
+        }
+    }
+
+    $ciSource = (string)file_get_contents($root . '/.github/workflows/ci.yml');
+    $runtimeStart = strpos($ciSource, "  runtime-mysql:\n");
+    $runtimeEnd = strpos($ciSource, "  browser-runner-smoke:\n");
+    if ($runtimeStart === false || $runtimeEnd === false || $runtimeEnd <= $runtimeStart) {
+        $errors[] = 'CI must expose an isolated runtime-mysql job';
+    } else {
+        $runtimeCi = substr($ciSource, $runtimeStart, $runtimeEnd - $runtimeStart);
+        if (!str_contains($runtimeCi, 'tests/fixtures/runtime-mysql-host')) {
+            $errors[] = 'runtime-mysql CI must mount the dedicated host fixture';
+        }
+        if (!str_contains($runtimeCi, '--suite back-php')) {
+            $errors[] = 'runtime-mysql CI doctor must use a concrete non-snapshot suite';
+        }
+        if (str_contains($runtimeCi, '--suite migration-contract')) {
+            $errors[] = 'runtime-mysql CI must not require migration-contract snapshot semantics';
+        }
+    }
 } finally {
     foreach ($snapshot as $key => $value) {
         if ($value === false) {
