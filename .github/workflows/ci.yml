@@ -220,7 +220,7 @@ jobs:
           }
 
           set_env_value TESTKIT_STACK mysql
-          set_env_value DB_DRIVER mysql
+          set_env_value TEST_STORE_DRIVER mysql
           set_env_value TEST_DB_STRATEGY shared
           set_env_value TEST_JOBS 1
 
