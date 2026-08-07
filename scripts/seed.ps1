@@ -56,11 +56,11 @@ Load-EnvKVSafe $envFile
 
 $driver = $env:TEST_STORE_DRIVER
 if ([string]::IsNullOrEmpty($driver)) {
-  Write-Error "[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none."
+  [Console]::Error.WriteLine("[TEST_STORE_DRIVER_REQUIRED] TEST_STORE_DRIVER es obligatorio. Usá mysql|pgsql|none.")
   exit 2
 }
 if ($driver -notin @('mysql','pgsql','none')) {
-  Write-Error "[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none."
+  [Console]::Error.WriteLine("[TEST_STORE_DRIVER_INVALID] TEST_STORE_DRIVER='$driver' no es válido. Valores exactos: mysql|pgsql|none.")
   exit 2
 }
 if ($driver -eq 'none') {
