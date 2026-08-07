@@ -5,15 +5,17 @@
 ```text
 ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
-IMPLEMENTACION_BASE: b188aed2ac44f3285cf495485ea6c7c79bec38bc
-ULTIMA_VALIDACION_LOCAL: 70f604e4842eadd56354847b71cd937fad6f79bb
-ULTIMO_RESULTADO: FAIL_CORREGIDO_PENDIENTE_DE_REVALIDAR
+IMPLEMENTACION_BASE: f7945e04ff7dc9feeb889450db57e4e8a73755f8
+ULTIMA_VALIDACION_LOCAL: 56ba333f778071485d3ac17b8ed4754d0468bcb1
+ULTIMO_RESULTADO: PARCIAL_43_43_DOCTOR_MODES_FAIL_CORREGIDO_PENDIENTE_DE_REVALIDAR
 PRODUCCION_AUTORIZADA: NO
 ```
 
 ## Resultado de la validación local
 
-La primera ejecución local sobre `70f604e4842eadd56354847b71cd937fad6f79bb` confirmó:
+### Primera ejecución — `70f604e4842eadd56354847b71cd937fad6f79bb`
+
+Confirmó:
 
 - `tests/framework/test_store_driver_contract.php`: PASS;
 - framework self-tests: `40 passed, 3 failed`;
@@ -30,9 +32,27 @@ Deuda previa I1 detectada por la misma corrida y corregida:
 
 - `doctor_modes/cases.json` seguía usando selectores posicionales para `migration-contract` y `back-php`; ahora usa `--suite`.
 
-La corrida también mostró cambios de modo `100644 -> 100755` en seis archivos del corte I2. Se restauran a `100644` sin cambiar contenido antes de repetir los gates.
+La corrida también mostró cambios de modo `100644 -> 100755` en seis archivos del corte I2. Se restauraron a `100644` sin cambiar contenido.
 
-Este documento vuelve a `PENDIENTE` porque las causas observadas ya fueron corregidas y falta demostrar el nuevo baseline. No se considera PASS hasta repetir los gates.
+### Segunda ejecución — `56ba333f778071485d3ac17b8ed4754d0468bcb1`
+
+Confirmó:
+
+- contrato focal I2: PASS;
+- `Failure classification contracts`: PASS;
+- `BackPythonSuite trace coverage contract`: PASS;
+- `SQL observability public exit code 5`: PASS;
+- framework self-tests completos: `43 passed, 0 failed`;
+- `doctor_modes`: `5/7` casos PASS y `2/7` FAIL;
+- `pwsh`: no disponible en PATH.
+
+Los dos fallos restantes de `doctor_modes` no eran rechazo del selector tipado. El harness construía un `TESTKIT_ROOT` temporal incompleto que contenía únicamente `runTest.php`. El doctor valida `--suite` contra `scripts/contract.php` dentro de `TESTKIT_ROOT`, por lo que un selector válido terminaba reportado como no soportado al faltar ese script.
+
+Corrección aplicada después de la segunda ejecución:
+
+- `tests/framework/doctor_modes/run.php` usa el repositorio real de testkit como `TESTKIT_ROOT` y mantiene temporales únicamente el proyecto probado, el env y el stub de Docker.
+
+Este documento permanece `PENDIENTE`: las causas observadas ya fueron corregidas, pero falta revalidar `doctor_modes` sobre `f7945e0` o posterior y completar los gates restantes. No se considera PASS todavía.
 
 ## Contrato implementado
 
@@ -96,7 +116,7 @@ git status --short
 git log --oneline -12
 ```
 
-Esperado: rama `main`, working tree limpio y HEAD posterior a las correcciones sobre `70f604e`.
+Esperado: rama `main`, working tree limpio y HEAD que contenga `f7945e0` o posterior.
 
 ## Gate 2 — contrato focalizado
 
@@ -135,6 +155,7 @@ Criterio:
 - BackPython coverage declara explícitamente `TEST_STORE_DRIVER=none`;
 - SQL observability exit-code-5 declara explícitamente `TEST_STORE_DRIVER=mysql`;
 - doctor usa selectores tipados y rechaza driver ausente y `postgres`;
+- el harness de doctor usa un `TESTKIT_ROOT` completo;
 - no aparecen regresiones nuevas.
 
 ## Gate 4 — sintaxis
