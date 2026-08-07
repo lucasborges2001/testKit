@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP 8.4
         uses: shivammathur/setup-php@v2
@@ -31,10 +31,11 @@ jobs:
           coverage: none
           tools: none
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node 24 LTS
+        uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Verify required tooling
         run: |
@@ -82,12 +83,12 @@ jobs:
 
   windows-static:
     name: windows-static
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP 8.4
         uses: shivammathur/setup-php@v2
@@ -126,7 +127,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $failed = $false
-          Get-ChildItem bin,lib,ui,tests\powershell -Recurse -Include *.ps1,*.psm1 | ForEach-Object {
+          Get-ChildItem bin,lib,ui,scripts,tests\powershell -Recurse -Include *.ps1,*.psm1 | ForEach-Object {
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors) | Out-Null
             if ($parseErrors.Count -gt 0) {
@@ -176,7 +177,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP 8.4
         uses: shivammathur/setup-php@v2
@@ -203,7 +204,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Prepare test environment
         run: |
@@ -295,7 +296,7 @@ jobs:
 
       - name: Upload runtime diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: runtime-mysql-diagnostics
           if-no-files-found: ignore
@@ -316,24 +317,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [static, framework-self-tests]
+    env:
+      TESTKIT_STACK: ""
+      TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/browser
+      TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/browser/.env.test
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Prepare no-store test environment
         run: |
           set -euo pipefail
-          cp .env.test.example .env.test
+          cp .env.test.example "${TESTKIT_ENV_FILE}"
           chmod +x bin/testkit scripts/*.sh || true
 
           set_env_value() {
             local key="$1"
             local value="$2"
-            if grep -q "^${key}=" .env.test; then
-              sed -i "s#^${key}=.*#${key}=${value}#" .env.test
+            if grep -q "^${key}=" "${TESTKIT_ENV_FILE}"; then
+              sed -i "s#^${key}=.*#${key}=${value}#" "${TESTKIT_ENV_FILE}"
             else
-              printf '%s=%s\n' "${key}" "${value}" >> .env.test
+              printf '%s=%s\n' "${key}" "${value}" >> "${TESTKIT_ENV_FILE}"
             fi
           }
 
@@ -344,7 +349,7 @@ jobs:
       - name: Run browser runner fixture
         run: |
           set -euo pipefail
-          mkdir -p test-results/browser
+          mkdir -p tests/fixtures/browser/test-results/browser
           ./bin/testkit run --rm \
             -e TESTKIT_BROWSER_BASE_URL=http://127.0.0.1:4173 \
             -e TESTKIT_BROWSER_HEADLESS=1 \
@@ -356,7 +361,7 @@ jobs:
             testkit bash -lc '
               set -euo pipefail
               mkdir -p /workspace/project/test-results/browser
-              php -S 127.0.0.1:4173 -t tests/fixtures/browser/public \
+              php -S 127.0.0.1:4173 -t /workspace/project/public \
                 > /workspace/project/test-results/browser/fixture-server.log 2>&1 &
               server_pid="$!"
               trap "kill ${server_pid} >/dev/null 2>&1 || true" EXIT
@@ -368,16 +373,20 @@ jobs:
                 sleep 0.2
               done
 
-              node /workspace/testkit/runners/runBrowserE2e.mjs tests/fixtures/browser/smoke.spec.mjs
+              node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs
             '
+
+      - name: Cleanup browser fixture
+        if: always()
+        run: rm -f "${TESTKIT_ENV_FILE}"
 
       - name: Upload browser diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-runner-smoke-diagnostics
           if-no-files-found: ignore
           retention-days: 14
           path: |
-            test-results/**
-            playwright-report/**
+            tests/fixtures/browser/test-results/**
+            tests/fixtures/browser/playwright-report/**
