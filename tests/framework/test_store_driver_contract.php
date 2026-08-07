@@ -109,8 +109,25 @@ try {
     if (!preg_match('/^TEST_STORE_DRIVER=mysql$/m', $envExample)) {
         $errors[] = '.env.test.example must declare TEST_STORE_DRIVER=mysql';
     }
+    if (!preg_match('/^TEST_STORE_PROVISION=managed$/m', $envExample)) {
+        $errors[] = '.env.test.example must declare TEST_STORE_PROVISION=managed';
+    }
+    if (!preg_match('/^TEST_MYSQL_ADMIN_USER=root$/m', $envExample)) {
+        $errors[] = '.env.test.example managed mysql path must declare TEST_MYSQL_ADMIN_USER=root';
+    }
     if (preg_match('/^DB_DRIVER=/m', $envExample)) {
         $errors[] = '.env.test.example must not declare DB_DRIVER as driver selector';
+    }
+
+    $docsEnvExample = (string)file_get_contents($root . '/docs/examples/.env.test.example');
+    if (!preg_match('/^TEST_STORE_DRIVER=mysql$/m', $docsEnvExample)) {
+        $errors[] = 'docs/examples/.env.test.example must declare TEST_STORE_DRIVER=mysql';
+    }
+    if (!preg_match('/^TEST_STORE_PROVISION=managed$/m', $docsEnvExample)) {
+        $errors[] = 'docs/examples/.env.test.example must declare TEST_STORE_PROVISION=managed';
+    }
+    if (!preg_match('/^TEST_MYSQL_ADMIN_USER=root$/m', $docsEnvExample)) {
+        $errors[] = 'docs/examples/.env.test.example managed mysql path must declare TEST_MYSQL_ADMIN_USER=root';
     }
 } finally {
     foreach ($snapshot as $key => $value) {
