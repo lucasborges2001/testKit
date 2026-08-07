@@ -3,10 +3,11 @@
 ## Estado
 
 ```text
-ESTADO: FAIL
+ESTADO: PENDIENTE
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
-IMPLEMENTACION_BASE: c812ac3506847bd65ebc27093ddc3a595f6a844f
+IMPLEMENTACION_BASE: b188aed2ac44f3285cf495485ea6c7c79bec38bc
 ULTIMA_VALIDACION_LOCAL: 70f604e4842eadd56354847b71cd937fad6f79bb
+ULTIMO_RESULTADO: FAIL_CORREGIDO_PENDIENTE_DE_REVALIDAR
 PRODUCCION_AUTORIZADA: NO
 ```
 
@@ -16,7 +17,7 @@ La primera ejecución local sobre `70f604e4842eadd56354847b71cd937fad6f79bb` con
 
 - `tests/framework/test_store_driver_contract.php`: PASS;
 - framework self-tests: `40 passed, 3 failed`;
-- `doctor_modes`: `5/7` efectivos, con dos casos legacy posicionales fallando;
+- `doctor_modes`: dos casos legacy posicionales fallaron;
 - `pwsh`: no disponible en PATH.
 
 Fallos introducidos por I2 y corregidos después de esa ejecución:
@@ -30,6 +31,8 @@ Deuda previa I1 detectada por la misma corrida y corregida:
 - `doctor_modes/cases.json` seguía usando selectores posicionales para `migration-contract` y `back-php`; ahora usa `--suite`.
 
 La corrida también mostró cambios de modo `100644 -> 100755` en seis archivos del corte I2. Se restauran a `100644` sin cambiar contenido antes de repetir los gates.
+
+Este documento vuelve a `PENDIENTE` porque las causas observadas ya fueron corregidas y falta demostrar el nuevo baseline. No se considera PASS hasta repetir los gates.
 
 ## Contrato implementado
 
@@ -86,13 +89,14 @@ El corte incluye:
 ```bash
 cd ~/Escritorio/Pruebas/submodules/Base/testkit
 
+git pull --ff-only
 git branch --show-current
 git rev-parse HEAD
 git status --short
-git log --oneline -15
+git log --oneline -12
 ```
 
-Esperado: rama `main`, working tree limpio y HEAD que contenga las correcciones posteriores a `70f604e`.
+Esperado: rama `main`, working tree limpio y HEAD posterior a las correcciones sobre `70f604e`.
 
 ## Gate 2 — contrato focalizado
 
