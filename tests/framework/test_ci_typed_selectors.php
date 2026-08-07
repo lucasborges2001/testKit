@@ -10,6 +10,7 @@ $composePath = $root . '/compose.yaml';
 $envExamplePath = $root . '/.env.test.example';
 $gitignorePath = $root . '/.gitignore';
 $sqlObservabilityFixtureEnvPath = $root . '/tests/fixtures/sql-observability/blocked-host/test/.env.test';
+$seedAndTestPsPath = $root . '/scripts/seed_and_test.ps1';
 
 $errors = [];
 $assert = static function (bool $condition, string $message) use (&$errors): void {
@@ -36,6 +37,7 @@ $compose = $read($composePath);
 $envExample = $read($envExamplePath);
 $gitignore = $read($gitignorePath);
 $sqlObservabilityFixtureEnv = $read($sqlObservabilityFixtureEnvPath);
+$seedAndTestPs = $read($seedAndTestPsPath);
 
 $requiredWorkflow = [
     'uses: actions/checkout@v7',
@@ -89,6 +91,31 @@ $assert(!str_contains($envExample, 'TESTKIT_NODE_VERSION=20'), '.env.test.exampl
 $assert(str_contains($sqlObservabilityFixtureEnv, 'TESTKIT_NODE_VERSION=24'), 'SQL observability fixture must pin TESTKIT_NODE_VERSION=24');
 $assert(!str_contains($sqlObservabilityFixtureEnv, 'TESTKIT_NODE_VERSION=20'), 'SQL observability fixture must not pin Node 20');
 $assert(str_contains($gitignore, '/tests/fixtures/browser/test-results/'), '.gitignore must ignore browser fixture runtime artifacts');
+
+$requiredSeedAndTestFragments = [
+    '[string]$Suite =',
+    '[string]$Group =',
+    '[string]$Category =',
+    "@('--suite', \$Suite)",
+    "@('--group', \$Group)",
+    "@('--category', \$Category)",
+    'Declarar exactamente uno de -Suite, -Group o -Category.',
+    '& $test @SelectorArgs',
+    '& $PhpBin $MetaRunner @SelectorArgs',
+];
+foreach ($requiredSeedAndTestFragments as $fragment) {
+    $assert(str_contains($seedAndTestPs, $fragment), 'scripts/seed_and_test.ps1 missing typed-selector fragment: ' . $fragment);
+}
+
+$forbiddenSeedAndTestFragments = [
+    '[string]$Target',
+    '[Parameter(Position = 0)]',
+    '& $test $Target',
+    '& $PhpBin $MetaRunner $Target',
+];
+foreach ($forbiddenSeedAndTestFragments as $fragment) {
+    $assert(!str_contains($seedAndTestPs, $fragment), 'scripts/seed_and_test.ps1 contains legacy positional selector surface: ' . $fragment);
+}
 
 $forbiddenWorkflowFragments = [
     'actions/checkout@v4',
