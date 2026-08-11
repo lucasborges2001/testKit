@@ -1,11 +1,12 @@
 services:
   testkit:
+    image: testkit-core:v${TESTKIT_RUNNER_VERSION:-2}-php-${TESTKIT_PHP_VERSION:-8.4}
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: core
       args:
         PHP_VERSION: ${TESTKIT_PHP_VERSION:-8.4}
-        NODE_VERSION: ${TESTKIT_NODE_VERSION:-24}
     user: "${TESTKIT_HOST_UID:-0}:${TESTKIT_HOST_GID:-0}"
     working_dir: /workspace/project
     volumes:
@@ -30,5 +31,38 @@ services:
       TESTKIT_INVOKER_RUN_FLAGS: ${TESTKIT_INVOKER_RUN_FLAGS:-}
       # Node: por default es OK si está. Si querés que falte node => FAIL:
       # TEST_JS_REQUIRE_NODE: "1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  testkit-browser:
+    image: testkit-browser:v${TESTKIT_RUNNER_VERSION:-2}-php-${TESTKIT_PHP_VERSION:-8.4}-node-${TESTKIT_NODE_VERSION:-24}-pw-${TESTKIT_PLAYWRIGHT_VERSION:-1.61.0}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: browser
+      args:
+        PHP_VERSION: ${TESTKIT_PHP_VERSION:-8.4}
+        NODE_VERSION: ${TESTKIT_NODE_VERSION:-24}
+        PLAYWRIGHT_VERSION: ${TESTKIT_PLAYWRIGHT_VERSION:-1.61.0}
+    user: "${TESTKIT_HOST_UID:-0}:${TESTKIT_HOST_GID:-0}"
+    working_dir: /workspace/project
+    volumes:
+      - type: bind
+        source: ${TESTKIT_PROJECT_ROOT}
+        target: /workspace/project
+      - type: bind
+        source: ${TESTKIT_ROOT}
+        target: /workspace/testkit
+    environment:
+      APP_ENV: test
+      APP_DEBUG: 1
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      DB_ENV_PATH: ${TESTKIT_DB_ENV_PATH:-/workspace/project/test/.env.test}
+      TESTKIT_ROOT: /workspace/testkit
+      TK_REPO_ROOT: /workspace/project
+      TESTKIT_MODE: ${TESTKIT_MODE:-}
+      TESTKIT_INVOKER: ${TESTKIT_INVOKER:-}
+      TESTKIT_INVOKER_BIN: ${TESTKIT_INVOKER_BIN:-}
+      TESTKIT_INVOKER_RUN_FLAGS: ${TESTKIT_INVOKER_RUN_FLAGS:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

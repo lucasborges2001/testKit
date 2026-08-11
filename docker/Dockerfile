@@ -6,7 +6,7 @@ ARG PHP_VERSION=8.4
 ARG PLAYWRIGHT_VERSION=1.61.0
 
 FROM node:${NODE_VERSION}-bookworm-slim AS node
-FROM php:${PHP_VERSION}-cli-bookworm
+FROM php:${PHP_VERSION}-cli-bookworm AS core
 
 # --- system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && docker-php-ext-enable xdebug \
   && rm -rf /var/lib/apt/lists/*
 
-# --- Node (copiado desde imagen oficial para tener versión fija)
+# Composer belongs to the PHP runner.
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+COPY docker/php.ini /usr/local/etc/php/conf.d/99-testkit.ini
+COPY docker/xdebug.ini /usr/local/etc/php/conf.d/99-xdebug.ini
+
+WORKDIR /app
+
+FROM core AS browser
+
+# Node and Chromium belong only to browser suites.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 ENV NODE_PATH=/usr/local/lib/node_modules
@@ -30,10 +40,5 @@ RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
   && npm install -g @playwright/test@${PLAYWRIGHT_VERSION} \
   && npx playwright install --with-deps chromium \
   && chmod -R a+rX /ms-playwright
-
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-COPY docker/php.ini /usr/local/etc/php/conf.d/99-testkit.ini
-COPY docker/xdebug.ini /usr/local/etc/php/conf.d/99-xdebug.ini
 
 WORKDIR /app

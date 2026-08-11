@@ -62,6 +62,16 @@ function Invoke-TestkitDoctorBaseChecks {
 
   if (Get-Command docker -ErrorAction SilentlyContinue) {
     Add-TestkitDoctorCheck 'base' 'PASS' 'DOCKER_FOUND' 'docker está disponible en PATH'
+    & docker buildx version *> $null
+    if ($LASTEXITCODE -eq 0) {
+      Add-TestkitDoctorCheck 'base' 'PASS' 'BUILDX_AVAILABLE' 'BUILDX=available'
+      Add-TestkitDoctorCheck 'base' 'PASS' 'BUILD_ENGINE' 'BUILD_ENGINE=buildkit'
+      Add-TestkitDoctorCheck 'base' 'PASS' 'CACHE_EXPECTATION' 'CACHE_EXPECTATION=normal'
+    } else {
+      Add-TestkitDoctorCheck 'base' 'WARN' 'BUILDX_MISSING' 'BUILDX=missing' 'La suite puede usar el builder clásico, pero los builds y el cache pueden rendir peor. Instalá Buildx fuera de TestKit.'
+      Add-TestkitDoctorCheck 'base' 'WARN' 'BUILD_ENGINE' 'BUILD_ENGINE=classic'
+      Add-TestkitDoctorCheck 'base' 'WARN' 'CACHE_EXPECTATION' 'CACHE_EXPECTATION=degraded'
+    }
   } else {
     Add-TestkitDoctorCheck 'base' 'FAIL' 'DOCKER_MISSING' 'docker no está disponible en PATH' 'Instalá Docker o corregí PATH.'
     $Ok.Value = $false

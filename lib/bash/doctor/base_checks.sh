@@ -57,6 +57,16 @@ testkit_doctor_run_base_checks() {
 
   if command -v docker >/dev/null 2>&1; then
     testkit_doctor_add_check base PASS DOCKER_FOUND "docker está disponible en PATH"
+    if docker buildx version >/dev/null 2>&1; then
+      testkit_doctor_add_check base PASS BUILDX_AVAILABLE "BUILDX=available"
+      testkit_doctor_add_check base PASS BUILD_ENGINE "BUILD_ENGINE=buildkit"
+      testkit_doctor_add_check base PASS CACHE_EXPECTATION "CACHE_EXPECTATION=normal"
+    else
+      testkit_doctor_add_check base WARN BUILDX_MISSING "BUILDX=missing" \
+        "La suite puede usar el builder clásico, pero los builds y el cache pueden rendir peor. Instalá Buildx fuera de TestKit."
+      testkit_doctor_add_check base WARN BUILD_ENGINE "BUILD_ENGINE=classic"
+      testkit_doctor_add_check base WARN CACHE_EXPECTATION "CACHE_EXPECTATION=degraded"
+    fi
   else
     testkit_doctor_add_check base FAIL DOCKER_MISSING "docker no está disponible en PATH" \
       "Instalá Docker o corregí PATH."

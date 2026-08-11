@@ -26,6 +26,7 @@ $tests = [
     'Engine support contract'               => __DIR__ . '/test_engine_support_contract.php',
     'Store driver explicit contract'        => __DIR__ . '/test_store_driver_contract.php',
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
+    'Wrapper runtime contract'              => __DIR__ . '/test_wrapper_runtime_contract.sh',
     'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
     'Contract registry parity'              => __DIR__ . '/test_contract_registry.php',
     'Strict run request'                    => __DIR__ . '/test_strict_run_request.php',

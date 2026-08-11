@@ -19,6 +19,8 @@ Do not infer support from Docker service names, optional compose overlays or par
 | Redis | `auxiliary` / auxiliar | optional service | service may be available when the stack starts it | no core PHP structural store lifecycle; no baseline/snapshot/clone participation |
 | Influx | `auxiliary_profiling` / auxiliar/perfilado | profiling/reporting service | profiling/reporting infrastructure where enabled | not a primary store driver; no seed/bootstrap structural lifecycle |
 | `infra_php` | `operational_host_suite` / suite operacional host | PHP tests for host infrastructure | discovers `*.test.php` under `test/infra`, supports category/scope/match filters and suite reports | not equivalent to `back_php`; no structural store bootstrap by default; may require HTTP/Docker runtime |
+| Core runner | `closed_primary` | PHP/Python suites | PHP extensions, Xdebug, Composer, Python and DB clients; no browser payload | browser suites must use wrapper routing |
+| Browser runner | `closed_primary` | `front_js` and aggregates that include it | inherits core and adds pinned Node, Playwright and Chromium | larger image; built only when selected or explicitly requested |
 
 ## Engine contract
 

@@ -3,6 +3,10 @@ services:
     depends_on:
       postgres_test:
         condition: service_healthy
+  testkit-browser:
+    depends_on:
+      postgres_test:
+        condition: service_healthy
 
   postgres_test:
     image: postgres:16

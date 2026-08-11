@@ -39,6 +39,9 @@ Para detalle contractual, leer `SUPPORT_MATRIX.md` y `docs/CONTRATO.md`.
 - Para proyectos sin store runtime usá `TEST_STORE_DRIVER=none` y `TEST_STORE_PROVISION=external`; no agregues credenciales MySQL falsas.
 - No uses `TEST_STORE_DRIVER=redis` ni `TEST_STORE_DRIVER=influx`: son servicios auxiliares, no stores estructurales.
 - No lances varios runners top-level en paralelo sobre el mismo store. Usá una sola suite con `TEST_MATCH_FILE`/`TEST_MATCH_LIST` y, si corresponde, `TEST_JOBS`.
+- Usá `TESTKIT_SKIP_STORE_BOOTSTRAP=1` solo cuando la selección no necesita servicios: el wrapper lo traduce a `docker compose run --no-deps` además de omitir el bootstrap estructural.
+- El wrapper elige el runner browser para `--suite front-js`, `--group all|front` y categorías; las demás suites usan el runner core sin Node, Playwright ni Chromium.
+- Los builds son por ausencia de imagen o por `TESTKIT_RUN_BUILD=1`; una corrida estable no fuerza rebuild.
 
 ## Comandos de referencia
 

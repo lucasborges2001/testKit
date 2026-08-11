@@ -84,6 +84,8 @@ testkit_rewrite_run_command_args() {
   local saw_container=0
   local wrapper_kind="${TESTKIT_WRAPPER_KIND:-bash}"
   local has_build_flag=0
+  local has_no_deps=0
+  local browser_runner=0
 
   for arg in "${args[@]}"; do
     if [[ "${arg}" == "--build" || "${arg}" == "--no-build" ]]; then
@@ -92,13 +94,25 @@ testkit_rewrite_run_command_args() {
     fi
   done
 
+  local joined=" ${args[*]} "
+  if [[ "${joined}" == *" --suite front-js "* || "${joined}" == *" --group all "* \
+      || "${joined}" == *" --group front "* || "${joined}" == *" --category "* \
+      || "${joined}" == *" node "* || "${joined}" == *" npx "* \
+      || "${TESTKIT_RUNNER:-}" == "browser" ]]; then
+    browser_runner=1
+  fi
+  [[ "${joined}" == *" --no-deps "* ]] && has_no_deps=1
+
   local idx=0
   for arg in "${args[@]}"; do
     if [[ $idx -eq 0 && "${arg}" == "run" ]]; then
       rewritten+=("${arg}")
-      if [[ "${TESTKIT_RUN_BUILD:-1}" != "0" && $has_build_flag -eq 0 ]]; then
+      if [[ "${TESTKIT_RUN_BUILD:-0}" == "1" && $has_build_flag -eq 0 ]]; then
         rewritten+=("--build")
       fi
+      case "${TESTKIT_SKIP_STORE_BOOTSTRAP:-0}" in
+        1|true|yes|on) [[ $has_no_deps -eq 0 ]] && rewritten+=("--no-deps") ;;
+      esac
       idx=$((idx + 1))
       continue
     fi
@@ -107,7 +121,11 @@ testkit_rewrite_run_command_args() {
       rewritten+=("-e" "TESTKIT_WRAPPER_KIND=${wrapper_kind}")
       saw_testkit=1
       saw_container=1
-      rewritten+=("${arg}")
+      if [[ $browser_runner -eq 1 ]]; then
+        rewritten+=("testkit-browser")
+      else
+        rewritten+=("${arg}")
+      fi
       idx=$((idx + 1))
       continue
     fi

@@ -183,6 +183,26 @@ TEST_STORE_PROVISION=external
 
 Con ese contrato testkit no exige credenciales MySQL, no arranca `mysql`/`redis` por default cuando `TESTKIT_STACK` no fue declarado, y `runTest.php` puede listar o ejecutar suites sin bootstrap estructural de store. Si el proyecto declara `TESTKIT_STACK` explícitamente, esa decisión se respeta.
 
+## Runners y builds
+
+El wrapper usa dos imágenes versionadas por capacidad:
+
+- `testkit-core:v<runner>-php-<versión>` para PHP, Python, Composer, clientes DB y Xdebug;
+- `testkit-browser:v<runner>-php-<versión>-node-<versión>-pw-<versión>` para suites `front-js` y agregados que las incluyen.
+
+El tag incluye la versión del contrato de imagen y las versiones que cambian sus dependencias. `TESTKIT_RUNNER_VERSION` se incrementa cuando cambia la configuración del runner; evita compartir imágenes incompatibles entre checkouts.
+
+`docker compose run` reutiliza la imagen existente y solo construye cuando falta. TestKit no agrega `--build` por defecto; `TESTKIT_RUN_BUILD=1` conserva el rebuild explícito. Si `TESTKIT_SKIP_STORE_BOOTSTRAP=1`, el wrapper agrega `--no-deps`, porque el mismo contrato que omite el bootstrap lógico también declara que esa corrida no debe iniciar infraestructura.
+
+```bash
+TESTKIT_SKIP_STORE_BOOTSTRAP=1 ./bin/testkit run --rm testkit php runTest.php --suite back-php
+TESTKIT_RUN_BUILD=1 ./bin/testkit run --rm testkit php runTest.php --suite front-js
+```
+
+`doctor` informa `BUILD_ENGINE`, `BUILDX` y `CACHE_EXPECTATION`. La falta de Buildx degrada el rendimiento, pero no bloquea el builder clásico. Su instalación pertenece al host, no al repositorio.
+
+Una imagen preconstruida en GHCR queda como fase opcional: requiere pipeline de publicación, firma/SBOM y tags compatibles con PHP, Node y Playwright. No es necesaria para corregir el rebuild local y no se publica desde este cambio.
+
 ## Artifact ownership
 
 Framework-generated operational artifacts are written inside the host project repository, mainly under `.testkit/`.

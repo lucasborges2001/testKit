@@ -3,6 +3,10 @@ services:
     depends_on:
       mysql_test:
         condition: service_healthy
+  testkit-browser:
+    depends_on:
+      mysql_test:
+        condition: service_healthy
 
   mysql_test:
     image: mysql:8.0

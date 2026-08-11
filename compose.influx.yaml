@@ -3,6 +3,10 @@ services:
     depends_on:
       influx_test:
         condition: service_healthy
+  testkit-browser:
+    depends_on:
+      influx_test:
+        condition: service_healthy
 
   influx_test:
     image: influxdb:2.7

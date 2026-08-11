@@ -3,6 +3,10 @@ services:
     depends_on:
       redis_test:
         condition: service_healthy
+  testkit-browser:
+    depends_on:
+      redis_test:
+        condition: service_healthy
 
   redis_test:
     image: redis:7-alpine

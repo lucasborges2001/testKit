@@ -42,13 +42,25 @@ function Convert-TestkitRunArgs([string[]]$InputArgs) {
   $rewritten = New-Object System.Collections.Generic.List[string]
   $sawTestkit = $false
   $wrapperKind = if ($env:TESTKIT_WRAPPER_KIND) { $env:TESTKIT_WRAPPER_KIND } else { 'powershell' }
+  $joined = ' ' + ($InputArgs -join ' ') + ' '
+  $browserRunner = $joined.Contains(' --suite front-js ') -or $joined.Contains(' --group all ') -or
+    $joined.Contains(' --group front ') -or $joined.Contains(' --category ') -or
+    $joined.Contains(' node ') -or $joined.Contains(' npx ') -or $env:TESTKIT_RUNNER -eq 'browser'
+  $hasBuildFlag = $InputArgs -contains '--build' -or $InputArgs -contains '--no-build'
+  $hasNoDeps = $InputArgs -contains '--no-deps'
+  $skipBootstrap = $env:TESTKIT_SKIP_STORE_BOOTSTRAP -in @('1','true','yes','on')
 
-  :inputArgs foreach ($arg in $InputArgs) {
+  $rewritten.Add('run') | Out-Null
+  if ($env:TESTKIT_RUN_BUILD -eq '1' -and -not $hasBuildFlag) { $rewritten.Add('--build') | Out-Null }
+  if ($skipBootstrap -and -not $hasNoDeps) { $rewritten.Add('--no-deps') | Out-Null }
+
+  $tail = if ($InputArgs.Count -gt 1) { @($InputArgs[1..($InputArgs.Count - 1)]) } else { @() }
+  :inputArgs foreach ($arg in $tail) {
     if ($arg -eq 'testkit' -and -not $sawTestkit) {
       $sawTestkit = $true
       $rewritten.Add('-e') | Out-Null
       $rewritten.Add(("TESTKIT_WRAPPER_KIND={0}" -f $wrapperKind)) | Out-Null
-      $rewritten.Add($arg) | Out-Null
+      $rewritten.Add($(if ($browserRunner) { 'testkit-browser' } else { $arg })) | Out-Null
       continue inputArgs
     }
 

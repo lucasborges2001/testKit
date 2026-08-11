@@ -1,0 +1,10 @@
+.git
+.github
+.testkit
+docs
+tests
+test
+vendor
+node_modules
+playwright-report
+test-results
