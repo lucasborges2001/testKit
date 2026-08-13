@@ -5,8 +5,16 @@ declare(strict_types=1);
  * Generic declarative suite runner for host projects.
  *
  * The project owns the suite config. testkit owns the execution contract:
- * validate suite metadata, run commands from explicit working directories, and
- * return a non-zero exit code when any required command fails.
+ * validate suite metadata, run commands from explicit working directories,
+ * compose suites without shell recursion, and return a non-zero exit code when
+ * any required command fails.
+ *
+ * Optional root config:
+ *   'output' => 'live'|'failures'  (default: live)
+ *
+ * A suite must declare exactly one execution source:
+ *   'commands' => ['...']
+ *   'suites'   => ['child_a', 'child_b']
  */
 
 /**
@@ -50,7 +58,8 @@ function testkit_suite_config_print_help($stream = null): void
     fwrite($stream, "Uso:\n");
     fwrite($stream, "  php runSuiteConfig.php <config.php> [suite]\n");
     fwrite($stream, "  php runSuiteConfig.php <config.php> --list\n\n");
-    fwrite($stream, "La config debe retornar ['suites' => [...]] con key, label, working_directory, commands, required y description.\n");
+    fwrite($stream, "La config debe retornar ['suites' => [...]] y puede declarar output=live|failures.\n");
+    fwrite($stream, "Cada suite usa commands=[...] o suites=[...] para composicion nativa.\n");
 }
 
 function testkit_suite_config_absolute_path(string $path, string $baseDirectory): string
@@ -83,6 +92,13 @@ function testkit_suite_config_load(string $configPath, string $projectRoot): arr
         exit(2);
     }
 
+    $output = (string)($config['output'] ?? 'live');
+    if (!in_array($output, ['live', 'failures'], true)) {
+        fwrite(STDERR, "Config de suites invalida: output debe ser live o failures.\n");
+        exit(2);
+    }
+
+    $config['output'] = $output;
     return $config;
 }
 
@@ -105,19 +121,48 @@ function testkit_suite_config_index_suites(array $config): array
             exit(2);
         }
 
-        foreach (['label', 'working_directory', 'commands', 'required', 'description'] as $field) {
+        foreach (['label', 'working_directory', 'required', 'description'] as $field) {
             if (!array_key_exists($field, $suite)) {
                 fwrite(STDERR, "Suite {$key} invalida: falta {$field}.\n");
                 exit(2);
             }
         }
 
-        if (!is_array($suite['commands'])) {
+        $hasCommands = array_key_exists('commands', $suite);
+        $hasSuites = array_key_exists('suites', $suite);
+        if ($hasCommands === $hasSuites) {
+            fwrite(STDERR, "Suite {$key} invalida: debe declarar exactamente uno de commands o suites.\n");
+            exit(2);
+        }
+
+        if ($hasCommands && !is_array($suite['commands'])) {
             fwrite(STDERR, "Suite {$key} invalida: commands debe ser array.\n");
             exit(2);
         }
 
+        if ($hasSuites && !is_array($suite['suites'])) {
+            fwrite(STDERR, "Suite {$key} invalida: suites debe ser array.\n");
+            exit(2);
+        }
+
+        if (isset($suite['output']) && !in_array((string)$suite['output'], ['live', 'failures'], true)) {
+            fwrite(STDERR, "Suite {$key} invalida: output debe ser live o failures.\n");
+            exit(2);
+        }
+
         $indexed[$key] = $suite;
+    }
+
+    foreach ($indexed as $key => $suite) {
+        if (!isset($suite['suites'])) {
+            continue;
+        }
+        foreach ($suite['suites'] as $childKey) {
+            if (!is_string($childKey) || $childKey === '' || !isset($indexed[$childKey])) {
+                fwrite(STDERR, "Suite {$key} invalida: referencia suite inexistente o invalida.\n");
+                exit(2);
+            }
+        }
     }
 
     return $indexed;
@@ -130,66 +175,296 @@ function testkit_suite_config_list(array $suites): void
 {
     foreach ($suites as $key => $suite) {
         $required = ((bool)$suite['required']) ? 'required' : 'optional';
-        echo "{$key}\t{$required}\t{$suite['label']}\n";
+        $kind = isset($suite['commands']) ? 'commands' : 'composite';
+        echo "{$key}\t{$required}\t{$kind}\t{$suite['label']}\n";
     }
 }
 
 /**
- * @param array<string,mixed> $suite
+ * @return array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * }
  */
-function testkit_suite_config_run_suite(array $suite, string $projectRoot): int
+function testkit_suite_config_empty_result(): array
 {
-    $key = (string)$suite['key'];
-    $label = (string)$suite['label'];
-    $workingDirectory = testkit_suite_config_absolute_path((string)$suite['working_directory'], $projectRoot);
+    return [
+        'suites' => 0,
+        'passed' => 0,
+        'failed' => 0,
+        'commands' => 0,
+        'passed_commands' => 0,
+        'failed_commands' => 0,
+        'required_failures' => 0,
+        'time_ms' => 0,
+    ];
+}
 
-    if (!is_dir($workingDirectory)) {
-        fwrite(STDERR, "Suite {$key}: no existe working_directory {$workingDirectory}\n");
-        return ((bool)$suite['required']) ? 1 : 0;
+/**
+ * @param array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * } $into
+ * @param array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * } $from
+ */
+function testkit_suite_config_merge_result(array &$into, array $from): void
+{
+    foreach (array_keys($into) as $field) {
+        $into[$field] += $from[$field];
     }
+}
 
-    echo "==> {$label} [{$key}]\n";
+/**
+ * @return array{exit_code:int,stdout:string,stderr:string,time_ms:int}
+ */
+function testkit_suite_config_run_command(
+    string $command,
+    string $workingDirectory,
+    string $projectRoot,
+    string $outputMode
+): array {
+    $env = $_ENV;
+    $env['TESTKIT_PROJECT_ROOT'] = $projectRoot;
+    $startedAt = microtime(true);
 
-    $failed = 0;
-    foreach ($suite['commands'] as $command) {
-        if (!is_string($command) || trim($command) === '') {
-            fwrite(STDERR, "Suite {$key}: comando invalido.\n");
-            $failed++;
-            continue;
-        }
-
-        echo "    $ {$command}\n";
+    if ($outputMode === 'live') {
         $descriptorSpec = [
             0 => STDIN,
             1 => STDOUT,
             2 => STDERR,
         ];
-        $env = $_ENV;
-        $env['TESTKIT_PROJECT_ROOT'] = $projectRoot;
-
         $process = proc_open($command, $descriptorSpec, $pipes, $workingDirectory, $env);
         if (!is_resource($process)) {
-            fwrite(STDERR, "Suite {$key}: no se pudo iniciar comando.\n");
-            $failed++;
-            continue;
+            return ['exit_code' => 127, 'stdout' => '', 'stderr' => 'no se pudo iniciar comando', 'time_ms' => 0];
         }
-
         $exitCode = proc_close($process);
-        if ($exitCode !== 0) {
-            fwrite(STDERR, "Suite {$key}: comando fallo con codigo {$exitCode}: {$command}\n");
-            $failed++;
+        return [
+            'exit_code' => $exitCode,
+            'stdout' => '',
+            'stderr' => '',
+            'time_ms' => (int)round((microtime(true) - $startedAt) * 1000),
+        ];
+    }
+
+    $stdoutPath = tempnam(sys_get_temp_dir(), 'testkit-suite-out-');
+    $stderrPath = tempnam(sys_get_temp_dir(), 'testkit-suite-err-');
+    if ($stdoutPath === false || $stderrPath === false) {
+        if (is_string($stdoutPath)) {
+            @unlink($stdoutPath);
+        }
+        if (is_string($stderrPath)) {
+            @unlink($stderrPath);
+        }
+        return ['exit_code' => 127, 'stdout' => '', 'stderr' => 'no se pudo crear captura temporal', 'time_ms' => 0];
+    }
+
+    $descriptorSpec = [
+        0 => STDIN,
+        1 => ['file', $stdoutPath, 'w'],
+        2 => ['file', $stderrPath, 'w'],
+    ];
+    $process = proc_open($command, $descriptorSpec, $pipes, $workingDirectory, $env);
+    if (!is_resource($process)) {
+        @unlink($stdoutPath);
+        @unlink($stderrPath);
+        return ['exit_code' => 127, 'stdout' => '', 'stderr' => 'no se pudo iniciar comando', 'time_ms' => 0];
+    }
+
+    $exitCode = proc_close($process);
+    $stdout = (string)@file_get_contents($stdoutPath);
+    $stderr = (string)@file_get_contents($stderrPath);
+    @unlink($stdoutPath);
+    @unlink($stderrPath);
+
+    return [
+        'exit_code' => $exitCode,
+        'stdout' => $stdout,
+        'stderr' => $stderr,
+        'time_ms' => (int)round((microtime(true) - $startedAt) * 1000),
+    ];
+}
+
+function testkit_suite_config_print_failure_output(string $stdout, string $stderr): void
+{
+    $stdout = rtrim($stdout, "\r\n");
+    $stderr = rtrim($stderr, "\r\n");
+
+    if ($stdout !== '') {
+        fwrite(STDERR, $stdout . PHP_EOL);
+    }
+    if ($stderr !== '') {
+        fwrite(STDERR, $stderr . PHP_EOL);
+    }
+}
+
+/**
+ * @param array<string,mixed> $suite
+ * @return array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * }
+ */
+function testkit_suite_config_run_command_suite(
+    array $suite,
+    string $projectRoot,
+    string $defaultOutputMode
+): array {
+    $key = (string)$suite['key'];
+    $label = (string)$suite['label'];
+    $workingDirectory = testkit_suite_config_absolute_path((string)$suite['working_directory'], $projectRoot);
+    $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
+    $result = testkit_suite_config_empty_result();
+    $result['suites'] = 1;
+
+    if (!is_dir($workingDirectory)) {
+        fwrite(STDERR, "FAIL {$key}: no existe working_directory {$workingDirectory}\n");
+        $result['failed'] = 1;
+        $result['required_failures'] = ((bool)$suite['required']) ? 1 : 0;
+        return $result;
+    }
+
+    if ($outputMode === 'live') {
+        echo "==> {$label} [{$key}]\n";
+    }
+
+    $startedAt = microtime(true);
+    foreach ($suite['commands'] as $command) {
+        if (!is_string($command) || trim($command) === '') {
+            fwrite(STDERR, "FAIL {$key}: comando invalido.\n");
+            $result['commands']++;
+            $result['failed_commands']++;
             if ((bool)($suite['fail_fast'] ?? true)) {
                 break;
             }
+            continue;
+        }
+
+        if ($outputMode === 'live') {
+            echo "    $ {$command}\n";
+        }
+
+        $commandResult = testkit_suite_config_run_command($command, $workingDirectory, $projectRoot, $outputMode);
+        $result['commands']++;
+        if ($commandResult['exit_code'] === 0) {
+            $result['passed_commands']++;
+            continue;
+        }
+
+        $result['failed_commands']++;
+        fwrite(STDERR, "FAIL {$key}\n");
+        fwrite(STDERR, "  command: {$command}\n");
+        fwrite(STDERR, "  exit_code: {$commandResult['exit_code']}\n");
+        testkit_suite_config_print_failure_output($commandResult['stdout'], $commandResult['stderr']);
+
+        if ((bool)($suite['fail_fast'] ?? true)) {
+            break;
         }
     }
 
-    if ($failed === 0) {
-        echo "OK {$key}\n";
-        return 0;
+    $result['time_ms'] = (int)round((microtime(true) - $startedAt) * 1000);
+    if ($result['failed_commands'] === 0) {
+        $result['passed'] = 1;
+        if ($outputMode === 'live') {
+            echo "OK {$key}\n";
+        }
+        return $result;
     }
 
-    return ((bool)$suite['required']) ? 1 : 0;
+    $result['failed'] = 1;
+    $result['required_failures'] = ((bool)$suite['required']) ? 1 : 0;
+    return $result;
+}
+
+/**
+ * @param array<string,array<string,mixed>> $suites
+ * @param array<int,string> $stack
+ * @return array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * }
+ */
+function testkit_suite_config_run_named_suite(
+    string $suiteKey,
+    array $suites,
+    string $projectRoot,
+    string $defaultOutputMode,
+    array $stack = []
+): array {
+    if (in_array($suiteKey, $stack, true)) {
+        $path = implode(' -> ', array_merge($stack, [$suiteKey]));
+        fwrite(STDERR, "Suite composition cycle: {$path}\n");
+        $result = testkit_suite_config_empty_result();
+        $result['required_failures'] = 1;
+        return $result;
+    }
+
+    $suite = $suites[$suiteKey];
+    if (isset($suite['commands'])) {
+        return testkit_suite_config_run_command_suite($suite, $projectRoot, $defaultOutputMode);
+    }
+
+    $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
+    if ($outputMode === 'live') {
+        echo "==> {$suite['label']} [{$suiteKey}]\n";
+    }
+
+    $result = testkit_suite_config_empty_result();
+    $startedAt = microtime(true);
+    $stack[] = $suiteKey;
+
+    foreach ($suite['suites'] as $childKey) {
+        $childResult = testkit_suite_config_run_named_suite(
+            (string)$childKey,
+            $suites,
+            $projectRoot,
+            $outputMode,
+            $stack
+        );
+        testkit_suite_config_merge_result($result, $childResult);
+
+        if ($childResult['required_failures'] > 0 && (bool)($suite['fail_fast'] ?? true)) {
+            break;
+        }
+    }
+
+    $result['time_ms'] = (int)round((microtime(true) - $startedAt) * 1000);
+    if (!(bool)$suite['required']) {
+        $result['required_failures'] = 0;
+    }
+
+    if ($outputMode === 'live' && $result['required_failures'] === 0) {
+        echo "OK {$suiteKey}\n";
+    }
+
+    return $result;
+}
+
+/**
+ * @param array{
+ *   suites:int,passed:int,failed:int,commands:int,passed_commands:int,
+ *   failed_commands:int,required_failures:int,time_ms:int
+ * } $result
+ */
+function testkit_suite_config_print_summary(string $suiteKey, array $result): void
+{
+    echo "\nSummary: "
+        . "suites={$result['suites']} "
+        . "passed={$result['passed']} "
+        . "failed={$result['failed']} "
+        . "commands={$result['commands']} "
+        . "passed_commands={$result['passed_commands']} "
+        . "failed_commands={$result['failed_commands']} "
+        . "time_ms={$result['time_ms']}\n";
+
+    if ($result['required_failures'] === 0) {
+        echo "OK {$suiteKey}\n";
+        return;
+    }
+
+    echo "FAIL {$suiteKey}\n";
 }
 
 $parsed = testkit_suite_config_parse_args($argv);
@@ -214,5 +489,13 @@ if (!isset($suites[$suiteKey])) {
     exit(2);
 }
 
-$exitCode = testkit_suite_config_run_suite($suites[$suiteKey], $projectRoot);
-exit($exitCode);
+$result = testkit_suite_config_run_named_suite(
+    $suiteKey,
+    $suites,
+    $projectRoot,
+    (string)$config['output']
+);
+if ((string)$config['output'] === 'failures') {
+    testkit_suite_config_print_summary($suiteKey, $result);
+}
+exit($result['required_failures'] === 0 ? 0 : 1);
