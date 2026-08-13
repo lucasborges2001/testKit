@@ -72,7 +72,7 @@ try {
             'key' => 'pass',
             'label' => 'passing suite',
             'working_directory' => '.',
-            'commands' => ["php -r 'echo \"PASS_NOISE\\n\";'"],
+            'commands' => ["php -r 'echo \"PASS_NOISE\\n\"; fwrite(STDERR, \"PASS_WARNING\\n\");'"],
             'required' => true,
             'description' => 'fixture pass',
         ],
@@ -103,6 +103,7 @@ try {
     $failed = run_runner($runner, $root, 'failures.php', 'all');
     assert_test($failed['code'] === 1, 'composite returns non-zero when required child fails');
     assert_test(!str_contains($failed['output'], 'PASS_NOISE'), 'successful child stdout is hidden');
+    assert_test(!str_contains($failed['output'], 'PASS_WARNING'), 'successful child stderr stays hidden by default');
     assert_test(str_contains($failed['output'], 'FAIL fail'), 'failed suite is identified');
     assert_test(str_contains($failed['output'], 'FAIL_DETAIL'), 'failed child output is preserved');
     assert_test(str_contains($failed['output'], 'Summary:'), 'failure mode prints summary');
@@ -120,8 +121,55 @@ try {
     $passed = run_runner($runner, $root, 'pass.php', 'all');
     assert_test($passed['code'] === 0, 'passing composite returns zero');
     assert_test(!str_contains($passed['output'], 'PASS_NOISE'), 'passing stdout stays hidden');
+    assert_test(!str_contains($passed['output'], 'PASS_WARNING'), 'passing stderr stays hidden by default');
     assert_test(str_contains($passed['output'], 'Summary: suites=1 passed=1 failed=0'), 'passing summary is emitted');
     assert_test(str_contains($passed['output'], 'OK all'), 'passing composite closes with OK');
+
+    write_config($root . '/show-success-stderr.php', [
+        'output' => 'failures',
+        'success_stderr' => 'show',
+        'suites' => $passSuites,
+    ]);
+
+    $showSuccessStderr = run_runner($runner, $root, 'show-success-stderr.php', 'all');
+    assert_test($showSuccessStderr['code'] === 0, 'success_stderr=show preserves successful exit code');
+    assert_test(!str_contains($showSuccessStderr['output'], 'PASS_NOISE'), 'success_stderr=show still hides successful stdout');
+    assert_test(str_contains($showSuccessStderr['output'], 'PASS_WARNING'), 'success_stderr=show preserves successful stderr');
+    assert_test(str_contains($showSuccessStderr['output'], 'Summary: suites=1 passed=1 failed=0'), 'success_stderr=show keeps compact summary');
+    assert_test(str_contains($showSuccessStderr['output'], 'OK all'), 'success_stderr=show keeps aggregate PASS');
+
+    $compositeOverrideSuites = $passSuites;
+    $compositeOverrideSuites[2]['success_stderr'] = 'show';
+    write_config($root . '/composite-override.php', [
+        'output' => 'failures',
+        'success_stderr' => 'hide',
+        'suites' => $compositeOverrideSuites,
+    ]);
+
+    $compositeOverride = run_runner($runner, $root, 'composite-override.php', 'all');
+    assert_test($compositeOverride['code'] === 0, 'composite success_stderr override preserves successful exit');
+    assert_test(str_contains($compositeOverride['output'], 'PASS_WARNING'), 'composite success_stderr override is inherited by child suites');
+
+    write_config($root . '/invalid-root-success-stderr.php', [
+        'output' => 'failures',
+        'success_stderr' => 'invalid',
+        'suites' => [$baseSuites[0]],
+    ]);
+
+    $invalidRoot = run_runner($runner, $root, 'invalid-root-success-stderr.php', 'pass');
+    assert_test($invalidRoot['code'] === 2, 'invalid root success_stderr returns config error');
+    assert_test(str_contains($invalidRoot['output'], 'success_stderr debe ser hide o show'), 'invalid root success_stderr explains allowed values');
+
+    $invalidSuite = $baseSuites[0];
+    $invalidSuite['success_stderr'] = 'invalid';
+    write_config($root . '/invalid-suite-success-stderr.php', [
+        'output' => 'failures',
+        'suites' => [$invalidSuite],
+    ]);
+
+    $invalidSuiteResult = run_runner($runner, $root, 'invalid-suite-success-stderr.php', 'pass');
+    assert_test($invalidSuiteResult['code'] === 2, 'invalid suite success_stderr returns config error');
+    assert_test(str_contains($invalidSuiteResult['output'], 'success_stderr debe ser hide o show'), 'invalid suite success_stderr explains allowed values');
 
     write_config($root . '/live.php', [
         'suites' => [$baseSuites[0]],
@@ -129,6 +177,7 @@ try {
     $live = run_runner($runner, $root, 'live.php', 'pass');
     assert_test($live['code'] === 0, 'legacy live mode returns zero');
     assert_test(str_contains($live['output'], 'PASS_NOISE'), 'legacy live mode preserves child stdout');
+    assert_test(str_contains($live['output'], 'PASS_WARNING'), 'legacy live mode preserves child stderr');
     assert_test(str_contains($live['output'], 'OK pass'), 'legacy live mode preserves suite OK');
     assert_test(!str_contains($live['output'], 'Summary:'), 'legacy live mode does not add summary noise');
 } finally {
