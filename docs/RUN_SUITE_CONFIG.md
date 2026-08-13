@@ -62,6 +62,14 @@ This option is backward compatible by default and does not alter command exit co
 
 A suite may override the inherited policy with `success_stderr => 'hide'` or `success_stderr => 'show'`. Composite overrides are inherited by child suites unless a child declares its own value.
 
+## Child process environment
+
+Commands executed by the declarative runner inherit the current process environment, including values such as `PATH`, CI variables and host-provided runtime settings. TestKit then sets `TESTKIT_PROJECT_ROOT` explicitly to the resolved host root for the child command.
+
+The runner does not rely only on PHP's `$_ENV`, because that superglobal may be empty when `variables_order` omits `E`. Environment inheritance therefore remains stable for child PHP and Python processes even in that configuration.
+
+This restores normal child-process semantics; it does not add new environment variables or print inherited values.
+
 ## Native suite composition
 
 A suite declares exactly one execution source: `commands` or `suites`.
