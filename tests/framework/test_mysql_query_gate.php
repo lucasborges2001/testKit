@@ -143,6 +143,113 @@ function gate_active_allowlist_fixture(string $source, string $target): string
     return $target;
 }
 
+/**
+ * Creates a temporary active copy of an evidence manifest and its comparison
+ * artifacts so self-tests do not age out as wall-clock time advances.
+ */
+function gate_active_evidence_fixture(string $source, string $targetDir): string
+{
+    $manifest = gate_json($source);
+
+    if (!is_dir($targetDir)
+        && !mkdir($targetDir, 0777, true)
+        && !is_dir($targetDir)) {
+        throw new RuntimeException(
+            'Unable to create active evidence directory: ' . $targetDir
+        );
+    }
+
+    $sourceRoot = dirname($source);
+    $baseTime = time() - 3600;
+
+    foreach ((array)($manifest['artifacts'] ?? []) as $index => $artifact) {
+        if (!is_array($artifact)) {
+            continue;
+        }
+
+        $relative = trim((string)($artifact['path'] ?? ''));
+        if ($relative === '') {
+            continue;
+        }
+
+        $sourceArtifact = $sourceRoot . '/' . $relative;
+        $payload = gate_json($sourceArtifact);
+
+        $payload['generated_at'] = gmdate(
+            'Y-m-d\TH:i:s\Z',
+            $baseTime - ((int)$index * 60)
+        );
+
+        $targetArtifact = $targetDir . '/' . $relative;
+        $parent = dirname($targetArtifact);
+
+        if (!is_dir($parent)
+            && !mkdir($parent, 0777, true)
+            && !is_dir($parent)) {
+            throw new RuntimeException(
+                'Unable to create active evidence artifact directory: ' . $parent
+            );
+        }
+
+        $encoded = json_encode(
+            $payload,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        );
+
+        if (file_put_contents($targetArtifact, $encoded . PHP_EOL) === false) {
+            throw new RuntimeException(
+                'Unable to write active evidence artifact: ' . $targetArtifact
+            );
+        }
+
+        $hash = hash_file('sha256', $targetArtifact);
+        if (!is_string($hash) || $hash === '') {
+            throw new RuntimeException(
+                'Unable to hash active evidence artifact: ' . $targetArtifact
+            );
+        }
+
+        $manifest['artifacts'][$index]['sha256'] = $hash;
+    }
+
+    $targetManifest = $targetDir . '/' . basename($source);
+    $encoded = json_encode(
+        $manifest,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+    );
+
+    if (file_put_contents($targetManifest, $encoded . PHP_EOL) === false) {
+        throw new RuntimeException(
+            'Unable to write active evidence manifest: ' . $targetManifest
+        );
+    }
+
+    return $targetManifest;
+}
+
+/** @return array<string,mixed> */
+function gate_active_comparison_fixture(string $source, string $target): array
+{
+    $payload = gate_json($source);
+    $payload['generated_at'] = gmdate(
+        'Y-m-d\TH:i:s\Z',
+        time() - 3600
+    );
+
+    $encoded = json_encode(
+        $payload,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+    );
+
+    if (file_put_contents($target, $encoded . PHP_EOL) === false) {
+        throw new RuntimeException(
+            'Unable to write active comparison fixture: ' . $target
+        );
+    }
+
+    return gate_json($target, true);
+}
+
 $fixtures = __DIR__ . '/../fixtures/mysql_query_gate';
 $tmpRoot = sys_get_temp_dir() . '/testkit_mysql_gate_' . getmypid();
 @mkdir($tmpRoot, 0777, true);
@@ -153,6 +260,31 @@ $activeAllowlistPath = gate_active_allowlist_fixture(
 $unusedAllowlistPath = gate_active_allowlist_fixture(
     $fixtures . '/allowlist_unused.json',
     $tmpRoot . '/allowlist_unused_active.json'
+);
+
+$oneRunEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_1_run.json',
+    $tmpRoot . '/evidence_1_run_active'
+);
+$insufficientSamplesEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_insufficient_samples.json',
+    $tmpRoot . '/evidence_insufficient_samples_active'
+);
+$confirmedEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_3_runs_confirmed.json',
+    $tmpRoot . '/evidence_3_runs_confirmed_active'
+);
+$unstableEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_3_runs_unstable.json',
+    $tmpRoot . '/evidence_3_runs_unstable_active'
+);
+$baselineMismatchEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_different_baseline.json',
+    $tmpRoot . '/evidence_different_baseline_active'
+);
+$environmentMismatchEvidencePath = gate_active_evidence_fixture(
+    $fixtures . '/evidence_different_environment.json',
+    $tmpRoot . '/evidence_different_environment_active'
 );
 
 // Safe defaults and strict loader.
@@ -212,7 +344,7 @@ gate_same('block', $modeReports['fail']['findings'][0]['decision_effective'] ?? 
 
 // Stability with explicit evidence.
 $cleanProfile = gate_json($fixtures . '/profile_clean.json');
-$oneRun = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_1_run.json', $tmpRoot . '/one'));
+$oneRun = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $oneRunEvidencePath, $tmpRoot . '/one'));
 $p95One = gate_finding($oneRun, 'baseline.temporal_regression', 'p95_ms');
 gate_same('insufficient_runs', $p95One['stability_status'] ?? null, 'single run pending stability', $errors);
 gate_same(0, $oneRun['decision']['exit_code'] ?? null, 'single temporal run does not block', $errors);
@@ -220,28 +352,34 @@ $expiredEvidence = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
 $p95ExpiredEvidence = gate_finding($expiredEvidence, 'baseline.temporal_regression', 'p95_ms');
 gate_same('insufficient_runs', $p95ExpiredEvidence['stability_status'] ?? null, 'expired evidence excluded by maximum age', $errors);
 gate_same(0, $expiredEvidence['decision']['exit_code'] ?? null, 'expired evidence cannot block', $errors);
-$insufficientSamples = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_insufficient_samples.json', $tmpRoot . '/insufficient-samples'));
+$insufficientSamples = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $insufficientSamplesEvidencePath, $tmpRoot . '/insufficient-samples'));
 $p95InsufficientSamples = gate_finding($insufficientSamples, 'baseline.temporal_regression', 'p95_ms');
 gate_same('insufficient_samples', $p95InsufficientSamples['stability_status'] ?? null, 'minimum sample count enforced', $errors);
 gate_same(0, $insufficientSamples['decision']['exit_code'] ?? null, 'insufficient samples cannot block', $errors);
-$confirmed = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_3_runs_confirmed.json', $tmpRoot . '/confirmed'));
+$confirmed = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $confirmedEvidencePath, $tmpRoot . '/confirmed'));
 $p95Confirmed = gate_finding($confirmed, 'baseline.temporal_regression', 'p95_ms');
 gate_same('confirmed', $p95Confirmed['stability_status'] ?? null, 'three runs confirmed', $errors);
 gate_same(5, $confirmed['decision']['exit_code'] ?? null, 'confirmed temporal regression blocks', $errors);
-$unstable = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_3_runs_unstable.json', $tmpRoot . '/unstable'));
+$unstable = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $unstableEvidencePath, $tmpRoot . '/unstable'));
 gate_same('unstable', gate_finding($unstable, 'baseline.temporal_regression', 'p95_ms')['stability_status'] ?? null, 'unstable evidence visible', $errors);
 gate_same(0, $unstable['decision']['exit_code'] ?? null, 'unstable evidence does not block', $errors);
-$baselineMismatch = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_different_baseline.json', $tmpRoot . '/baseline-mismatch'));
+$baselineMismatch = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $baselineMismatchEvidencePath, $tmpRoot . '/baseline-mismatch'));
 gate_same('incompatible_evidence', gate_finding($baselineMismatch, 'baseline.temporal_regression', 'p95_ms')['stability_status'] ?? null, 'baseline mismatch incompatible', $errors);
-$environmentMismatch = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $fixtures . '/evidence_different_environment.json', $tmpRoot . '/env-mismatch'));
+$environmentMismatch = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', $environmentMismatchEvidencePath, $tmpRoot . '/env-mismatch'));
 gate_same('incompatible_evidence', gate_finding($environmentMismatch, 'baseline.temporal_regression', 'p95_ms')['stability_status'] ?? null, 'environment mismatch incompatible', $errors);
 gate_expect_invalid(fn() => MysqlQueryGateEvidenceLoader::load($fixtures . '/evidence_corrupt_artifact.json', $fixtures), 'invalid_json', '$', 'corrupt evidence artifact', $errors);
-$structuralOnlyComparison = gate_json($fixtures . '/comparison_structural_only_regression.json', true);
+$structuralOnlyComparison = gate_active_comparison_fixture(
+    $fixtures . '/comparison_structural_only_regression.json',
+    $tmpRoot . '/comparison_structural_only_regression_active.json'
+);
 $structuralOnly = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', '', $tmpRoot . '/structural-only'), [], [$structuralOnlyComparison]);
 $structuralFinding = gate_finding($structuralOnly, 'baseline.plan_regression');
 gate_same('confirmed', $structuralFinding['stability_status'] ?? null, 'structural-only finding can be confirmed explicitly', $errors);
 gate_same(5, $structuralOnly['decision']['exit_code'] ?? null, 'allowed structural-only finding blocks', $errors);
-$incompatibleComparison = gate_json($fixtures . '/comparison_incompatible.json', true);
+$incompatibleComparison = gate_active_comparison_fixture(
+    $fixtures . '/comparison_incompatible.json',
+    $tmpRoot . '/comparison_incompatible_active.json'
+);
 $incompatibleGate = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime($fixtures . '/gate_valid_fail.json', 'fail', '', '', $tmpRoot . '/incompatible'), [], [$incompatibleComparison]);
 gate_same(0, $incompatibleGate['decision']['exit_code'] ?? null, 'incompatible comparison does not block', $errors);
 
@@ -252,7 +390,7 @@ gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/al
 gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_too_broad.json'), 'allowlist_selector_too_broad', '$.allowlist.entries[0].selectors', 'broad allowlist', $errors);
 gate_expect_invalid(fn() => MysqlQueryGateAllowlistLoader::load($fixtures . '/allowlist_non_suppressible.json'), 'allowlist_non_suppressible_category', '$.allowlist.entries[0].selectors.category', 'non suppressible allowlist', $errors);
 $suppressed = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
-    $fixtures . '/gate_valid_fail.json', 'fail', $activeAllowlistPath, $fixtures . '/evidence_3_runs_confirmed.json', $tmpRoot . '/suppressed'
+    $fixtures . '/gate_valid_fail.json', 'fail', $activeAllowlistPath, $confirmedEvidencePath, $tmpRoot . '/suppressed'
 ));
 gate_assert(($suppressed['summary']['suppressed'] ?? 0) > 0, 'valid suppression visible', $errors);
 gate_assert(($suppressed['summary']['suppressed_blocking'] ?? 0) > 0, 'suppressed blocking finding counted', $errors);
@@ -261,7 +399,7 @@ $suppressedP95 = gate_finding($suppressed, 'baseline.temporal_regression', 'p95_
 gate_same(true, $suppressedP95['suppressed'] ?? null, 'finding retains suppression marker', $errors);
 gate_same('catalog-p95-temporary', $suppressedP95['suppression']['suppression_id'] ?? null, 'suppression id retained', $errors);
 $expired = MysqlQueryGateReporter::evaluate($cleanProfile, gate_runtime(
-    $fixtures . '/gate_valid_fail.json', 'fail', $fixtures . '/allowlist_expired.json', $fixtures . '/evidence_3_runs_confirmed.json', $tmpRoot . '/expired'
+    $fixtures . '/gate_valid_fail.json', 'fail', $fixtures . '/allowlist_expired.json', $confirmedEvidencePath, $tmpRoot . '/expired'
 ));
 gate_assert(is_array(gate_finding($expired, 'allowlist.expired')), 'expired allowlist generates finding', $errors);
 gate_same(false, gate_finding($expired, 'baseline.temporal_regression', 'p95_ms')['suppressed'] ?? null, 'expired entry does not suppress', $errors);
