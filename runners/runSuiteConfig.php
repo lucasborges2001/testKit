@@ -11,6 +11,7 @@ declare(strict_types=1);
  *
  * Optional root config:
  *   'output' => 'live'|'failures'  (default: live)
+ *   'success_stderr' => 'hide'|'show'  (default: hide)
  *
  * A suite must declare exactly one execution source:
  *   'commands' => ['...']
@@ -59,6 +60,7 @@ function testkit_suite_config_print_help($stream = null): void
     fwrite($stream, "  php runSuiteConfig.php <config.php> [suite]\n");
     fwrite($stream, "  php runSuiteConfig.php <config.php> --list\n\n");
     fwrite($stream, "La config debe retornar ['suites' => [...]] y puede declarar output=live|failures.\n");
+    fwrite($stream, "success_stderr=hide|show controla stderr de comandos exitosos en salida capturada.\n");
     fwrite($stream, "Cada suite usa commands=[...] o suites=[...] para composicion nativa.\n");
 }
 
@@ -98,7 +100,14 @@ function testkit_suite_config_load(string $configPath, string $projectRoot): arr
         exit(2);
     }
 
+    $successStderr = (string)($config['success_stderr'] ?? 'hide');
+    if (!in_array($successStderr, ['hide', 'show'], true)) {
+        fwrite(STDERR, "Config de suites invalida: success_stderr debe ser hide o show.\n");
+        exit(2);
+    }
+
     $config['output'] = $output;
+    $config['success_stderr'] = $successStderr;
     return $config;
 }
 
@@ -147,6 +156,11 @@ function testkit_suite_config_index_suites(array $config): array
 
         if (isset($suite['output']) && !in_array((string)$suite['output'], ['live', 'failures'], true)) {
             fwrite(STDERR, "Suite {$key} invalida: output debe ser live o failures.\n");
+            exit(2);
+        }
+
+        if (isset($suite['success_stderr']) && !in_array((string)$suite['success_stderr'], ['hide', 'show'], true)) {
+            fwrite(STDERR, "Suite {$key} invalida: success_stderr debe ser hide o show.\n");
             exit(2);
         }
 
@@ -300,6 +314,14 @@ function testkit_suite_config_print_failure_output(string $stdout, string $stder
     }
 }
 
+function testkit_suite_config_print_success_stderr(string $stderr): void
+{
+    $stderr = rtrim($stderr, "\r\n");
+    if ($stderr !== '') {
+        fwrite(STDERR, $stderr . PHP_EOL);
+    }
+}
+
 /**
  * @param array<string,mixed> $suite
  * @return array{
@@ -310,12 +332,14 @@ function testkit_suite_config_print_failure_output(string $stdout, string $stder
 function testkit_suite_config_run_command_suite(
     array $suite,
     string $projectRoot,
-    string $defaultOutputMode
+    string $defaultOutputMode,
+    string $defaultSuccessStderr
 ): array {
     $key = (string)$suite['key'];
     $label = (string)$suite['label'];
     $workingDirectory = testkit_suite_config_absolute_path((string)$suite['working_directory'], $projectRoot);
     $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
+    $successStderr = (string)($suite['success_stderr'] ?? $defaultSuccessStderr);
     $result = testkit_suite_config_empty_result();
     $result['suites'] = 1;
 
@@ -350,6 +374,9 @@ function testkit_suite_config_run_command_suite(
         $result['commands']++;
         if ($commandResult['exit_code'] === 0) {
             $result['passed_commands']++;
+            if ($outputMode === 'failures' && $successStderr === 'show') {
+                testkit_suite_config_print_success_stderr($commandResult['stderr']);
+            }
             continue;
         }
 
@@ -391,6 +418,7 @@ function testkit_suite_config_run_named_suite(
     array $suites,
     string $projectRoot,
     string $defaultOutputMode,
+    string $defaultSuccessStderr,
     array $stack = []
 ): array {
     if (in_array($suiteKey, $stack, true)) {
@@ -403,10 +431,16 @@ function testkit_suite_config_run_named_suite(
 
     $suite = $suites[$suiteKey];
     if (isset($suite['commands'])) {
-        return testkit_suite_config_run_command_suite($suite, $projectRoot, $defaultOutputMode);
+        return testkit_suite_config_run_command_suite(
+            $suite,
+            $projectRoot,
+            $defaultOutputMode,
+            $defaultSuccessStderr
+        );
     }
 
     $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
+    $successStderr = (string)($suite['success_stderr'] ?? $defaultSuccessStderr);
     if ($outputMode === 'live') {
         echo "==> {$suite['label']} [{$suiteKey}]\n";
     }
@@ -421,6 +455,7 @@ function testkit_suite_config_run_named_suite(
             $suites,
             $projectRoot,
             $outputMode,
+            $successStderr,
             $stack
         );
         testkit_suite_config_merge_result($result, $childResult);
@@ -493,7 +528,8 @@ $result = testkit_suite_config_run_named_suite(
     $suiteKey,
     $suites,
     $projectRoot,
-    (string)$config['output']
+    (string)$config['output'],
+    (string)$config['success_stderr']
 );
 if ((string)$config['output'] === 'failures') {
     testkit_suite_config_print_summary($suiteKey, $result);
