@@ -20,7 +20,7 @@ return [
 ];
 ```
 
-The default output mode is `live`, which preserves the previous behavior: child stdout/stderr is streamed directly and successful suites print `OK <key>`.
+The default output mode is `live`, which streams child stdout/stderr directly and prints `OK <key>` for successful suites.
 
 ## Failure-only output
 
@@ -35,9 +35,32 @@ return [
 ];
 ```
 
-In `failures` mode TestKit captures each command output. Successful output is discarded. When a command fails, TestKit prints the suite key, command, exit code and the captured stdout/stderr. The selected suite finishes with an aggregate summary containing suite counts, command counts and elapsed time.
+In `failures` mode TestKit captures each command output. By default stdout and stderr from successful commands are discarded. When a command fails, TestKit prints the suite key, command, exit code and captured stdout/stderr. The selected suite finishes with an aggregate summary containing suite counts, command counts and elapsed time.
 
 A suite can override the root policy with `output => 'live'` or `output => 'failures'`.
+
+## Successful stderr
+
+To keep successful runs compact while preserving warnings written to stderr:
+
+```php
+return [
+    'output' => 'failures',
+    'success_stderr' => 'show',
+    'suites' => [
+        // ...
+    ],
+];
+```
+
+`success_stderr` accepts:
+
+- `hide` (default): successful stdout and stderr stay hidden in captured output;
+- `show`: successful stdout stays hidden and successful stderr is emitted after the command finishes.
+
+This option is backward compatible by default and does not alter command exit codes, failure reporting, suite counts or summaries. In `live` mode child stderr is already streamed, so no duplicate output is added.
+
+A suite may override the inherited policy with `success_stderr => 'hide'` or `success_stderr => 'show'`. Composite overrides are inherited by child suites unless a child declares its own value.
 
 ## Native suite composition
 
@@ -46,6 +69,7 @@ A suite declares exactly one execution source: `commands` or `suites`.
 ```php
 return [
     'output' => 'failures',
+    'success_stderr' => 'show',
     'suites' => [
         [
             'key' => 'structure',
@@ -56,18 +80,10 @@ return [
             'description' => 'Structure checks.',
         ],
         [
-            'key' => 'security',
-            'label' => 'security',
-            'working_directory' => '.',
-            'commands' => ['php test/security.php'],
-            'required' => true,
-            'description' => 'Security checks.',
-        ],
-        [
             'key' => 'all',
             'label' => 'all host checks',
             'working_directory' => '.',
-            'suites' => ['structure', 'security'],
+            'suites' => ['structure'],
             'required' => true,
             'description' => 'Aggregate host regression gate.',
             'fail_fast' => false,
@@ -84,4 +100,4 @@ Composition is resolved by TestKit itself; hosts do not need to invoke their Tes
 - exit `1`: at least one required suite failed;
 - exit `2`: invalid CLI arguments or invalid suite configuration.
 
-Optional suite failures remain visible in the aggregate counts but do not make the selected aggregate fail solely because they are optional.
+Optional suite failures remain visible in aggregate counts but do not make the selected aggregate fail solely because they are optional.
