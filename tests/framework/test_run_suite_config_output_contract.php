@@ -18,10 +18,17 @@ function assert_test(bool $condition, string $message): void
 
 /**
  * @param array<string,string> $env
+ * @param array<int,string> $phpArgs
  * @return array{code:int,output:string}
  */
-function run_runner(string $runner, string $root, string $config, string $suite, array $env = []): array
-{
+function run_runner(
+    string $runner,
+    string $root,
+    string $config,
+    string $suite,
+    array $env = [],
+    array $phpArgs = []
+): array {
     $envPrefix = 'TESTKIT_PROJECT_ROOT=' . escapeshellarg($root);
     foreach ($env as $key => $value) {
         if (!preg_match('/^[A-Z_][A-Z0-9_]*$/', $key)) {
@@ -30,8 +37,14 @@ function run_runner(string $runner, string $root, string $config, string $suite,
         $envPrefix .= ' ' . $key . '=' . escapeshellarg($value);
     }
 
+    $phpCommand = 'php';
+    foreach ($phpArgs as $arg) {
+        $phpCommand .= ' ' . escapeshellarg($arg);
+    }
+
     $cmd = $envPrefix
-        . ' php ' . escapeshellarg($runner)
+        . ' ' . $phpCommand
+        . ' ' . escapeshellarg($runner)
         . ' ' . escapeshellarg($config)
         . ' ' . escapeshellarg($suite)
         . ' 2>&1';
@@ -156,6 +169,65 @@ try {
     );
     assert_test($noColorPassed['code'] === 0, 'NO_COLOR preserves passing exit code');
     assert_test(!str_contains($noColorPassed['output'], "\033["), 'NO_COLOR suppresses ANSI sequences');
+
+    $phpProbe = <<<'PHP'
+$marker = getenv('TESTKIT_ENV_INHERIT_MARKER');
+$path = getenv('PATH');
+if ($marker !== 'visible') {
+    fwrite(STDERR, "ENV_MARKER_MISSING\n");
+    exit(11);
+}
+if (!is_string($path) || $path === '') {
+    fwrite(STDERR, "PATH_MISSING\n");
+    exit(12);
+}
+if (PHP_BINARY === '') {
+    fwrite(STDERR, "PHP_BINARY_MISSING\n");
+    exit(13);
+}
+PHP;
+
+    $pythonProbe = <<<'PY'
+import os
+import sys
+if os.environ.get('TESTKIT_ENV_INHERIT_MARKER') != 'visible':
+    print('PY_ENV_MARKER_MISSING', file=sys.stderr)
+    raise SystemExit(21)
+if not os.environ.get('PATH'):
+    print('PY_PATH_MISSING', file=sys.stderr)
+    raise SystemExit(22)
+if not sys.executable:
+    print('PY_EXECUTABLE_MISSING', file=sys.stderr)
+    raise SystemExit(23)
+PY;
+
+    write_config($root . '/environment.php', [
+        'output' => 'failures',
+        'suites' => [[
+            'key' => 'environment',
+            'label' => 'child environment contract',
+            'working_directory' => '.',
+            'commands' => [
+                'php -r ' . escapeshellarg($phpProbe),
+                'python3 -c ' . escapeshellarg($pythonProbe),
+            ],
+            'required' => true,
+            'description' => 'fixture for inherited environment',
+            'fail_fast' => false,
+        ]],
+    ]);
+
+    $environment = run_runner(
+        $runner,
+        $root,
+        'environment.php',
+        'environment',
+        ['TESTKIT_ENV_INHERIT_MARKER' => 'visible'],
+        ['-d', 'variables_order=GPCS']
+    );
+    assert_test($environment['code'] === 0, 'child environment is inherited when $_ENV is empty: ' . $environment['output']);
+    assert_test(str_contains($environment['output'], 'Summary: suites=1 passed=1 failed=0 commands=2 passed_commands=2 failed_commands=0'), 'environment probe summary is green');
+    assert_test(str_contains($environment['output'], 'OK environment'), 'environment probe closes with OK');
 
     write_config($root . '/show-success-stderr.php', [
         'output' => 'failures',
