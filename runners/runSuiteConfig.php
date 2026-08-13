@@ -242,7 +242,8 @@ function testkit_suite_config_run_command(
     string $projectRoot,
     string $outputMode
 ): array {
-    $env = $_ENV;
+    $processEnv = getenv();
+    $env = array_merge($_ENV, is_array($processEnv) ? $processEnv : []);
     $env['TESTKIT_PROJECT_ROOT'] = $projectRoot;
     $startedAt = microtime(true);
 
