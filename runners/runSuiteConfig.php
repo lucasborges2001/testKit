@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__) . '/utils/php/ui.php';
+
 /**
  * Generic declarative suite runner for host projects.
  *
@@ -322,6 +324,11 @@ function testkit_suite_config_print_success_stderr(string $stderr): void
     }
 }
 
+function testkit_suite_config_status(string $status): string
+{
+    return pvt_ui_bold(pvt_ui_status_label($status));
+}
+
 /**
  * @param array<string,mixed> $suite
  * @return array{
@@ -344,20 +351,20 @@ function testkit_suite_config_run_command_suite(
     $result['suites'] = 1;
 
     if (!is_dir($workingDirectory)) {
-        fwrite(STDERR, "FAIL {$key}: no existe working_directory {$workingDirectory}\n");
+        fwrite(STDERR, testkit_suite_config_status('FAIL') . " {$key}: no existe working_directory {$workingDirectory}\n");
         $result['failed'] = 1;
         $result['required_failures'] = ((bool)$suite['required']) ? 1 : 0;
         return $result;
     }
 
     if ($outputMode === 'live') {
-        echo "==> {$label} [{$key}]\n";
+        echo pvt_ui_bold(pvt_ui_cyan('==>')) . " {$label} [" . pvt_ui_gray($key) . "]\n";
     }
 
     $startedAt = microtime(true);
     foreach ($suite['commands'] as $command) {
         if (!is_string($command) || trim($command) === '') {
-            fwrite(STDERR, "FAIL {$key}: comando invalido.\n");
+            fwrite(STDERR, testkit_suite_config_status('FAIL') . " {$key}: comando invalido.\n");
             $result['commands']++;
             $result['failed_commands']++;
             if ((bool)($suite['fail_fast'] ?? true)) {
@@ -367,7 +374,7 @@ function testkit_suite_config_run_command_suite(
         }
 
         if ($outputMode === 'live') {
-            echo "    $ {$command}\n";
+            echo '    ' . pvt_ui_dim('$') . " {$command}\n";
         }
 
         $commandResult = testkit_suite_config_run_command($command, $workingDirectory, $projectRoot, $outputMode);
@@ -381,9 +388,9 @@ function testkit_suite_config_run_command_suite(
         }
 
         $result['failed_commands']++;
-        fwrite(STDERR, "FAIL {$key}\n");
-        fwrite(STDERR, "  command: {$command}\n");
-        fwrite(STDERR, "  exit_code: {$commandResult['exit_code']}\n");
+        fwrite(STDERR, testkit_suite_config_status('FAIL') . " {$key}\n");
+        fwrite(STDERR, '  ' . pvt_ui_gray('command:') . " {$command}\n");
+        fwrite(STDERR, '  ' . pvt_ui_gray('exit_code:') . ' ' . pvt_ui_red((string)$commandResult['exit_code']) . "\n");
         testkit_suite_config_print_failure_output($commandResult['stdout'], $commandResult['stderr']);
 
         if ((bool)($suite['fail_fast'] ?? true)) {
@@ -395,7 +402,7 @@ function testkit_suite_config_run_command_suite(
     if ($result['failed_commands'] === 0) {
         $result['passed'] = 1;
         if ($outputMode === 'live') {
-            echo "OK {$key}\n";
+            echo testkit_suite_config_status('OK') . " {$key}\n";
         }
         return $result;
     }
@@ -442,7 +449,7 @@ function testkit_suite_config_run_named_suite(
     $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
     $successStderr = (string)($suite['success_stderr'] ?? $defaultSuccessStderr);
     if ($outputMode === 'live') {
-        echo "==> {$suite['label']} [{$suiteKey}]\n";
+        echo pvt_ui_bold(pvt_ui_cyan('==>')) . " {$suite['label']} [" . pvt_ui_gray($suiteKey) . "]\n";
     }
 
     $result = testkit_suite_config_empty_result();
@@ -471,7 +478,7 @@ function testkit_suite_config_run_named_suite(
     }
 
     if ($outputMode === 'live' && $result['required_failures'] === 0) {
-        echo "OK {$suiteKey}\n";
+        echo testkit_suite_config_status('OK') . " {$suiteKey}\n";
     }
 
     return $result;
@@ -485,21 +492,32 @@ function testkit_suite_config_run_named_suite(
  */
 function testkit_suite_config_print_summary(string $suiteKey, array $result): void
 {
-    echo "\nSummary: "
+    $summaryLabel = pvt_ui_bold(pvt_ui_cyan('Summary:'));
+    $passed = pvt_ui_green((string)$result['passed']);
+    $failed = $result['failed'] > 0
+        ? pvt_ui_red((string)$result['failed'])
+        : pvt_ui_green('0');
+    $passedCommands = pvt_ui_green((string)$result['passed_commands']);
+    $failedCommands = $result['failed_commands'] > 0
+        ? pvt_ui_red((string)$result['failed_commands'])
+        : pvt_ui_green('0');
+    $time = pvt_ui_dim("time_ms={$result['time_ms']}");
+
+    echo "\n{$summaryLabel} "
         . "suites={$result['suites']} "
-        . "passed={$result['passed']} "
-        . "failed={$result['failed']} "
+        . "passed={$passed} "
+        . "failed={$failed} "
         . "commands={$result['commands']} "
-        . "passed_commands={$result['passed_commands']} "
-        . "failed_commands={$result['failed_commands']} "
-        . "time_ms={$result['time_ms']}\n";
+        . "passed_commands={$passedCommands} "
+        . "failed_commands={$failedCommands} "
+        . "{$time}\n";
 
     if ($result['required_failures'] === 0) {
-        echo "OK {$suiteKey}\n";
+        echo testkit_suite_config_status('OK') . " {$suiteKey}\n";
         return;
     }
 
-    echo "FAIL {$suiteKey}\n";
+    echo testkit_suite_config_status('FAIL') . " {$suiteKey}\n";
 }
 
 $parsed = testkit_suite_config_parse_args($argv);
