@@ -16,10 +16,21 @@ function assert_test(bool $condition, string $message): void
     }
 }
 
-/** @return array{code:int,output:string} */
-function run_runner(string $runner, string $root, string $config, string $suite): array
+/**
+ * @param array<string,string> $env
+ * @return array{code:int,output:string}
+ */
+function run_runner(string $runner, string $root, string $config, string $suite, array $env = []): array
 {
-    $cmd = 'TESTKIT_PROJECT_ROOT=' . escapeshellarg($root)
+    $envPrefix = 'TESTKIT_PROJECT_ROOT=' . escapeshellarg($root);
+    foreach ($env as $key => $value) {
+        if (!preg_match('/^[A-Z_][A-Z0-9_]*$/', $key)) {
+            fail_test('invalid env key for runner fixture');
+        }
+        $envPrefix .= ' ' . $key . '=' . escapeshellarg($value);
+    }
+
+    $cmd = $envPrefix
         . ' php ' . escapeshellarg($runner)
         . ' ' . escapeshellarg($config)
         . ' ' . escapeshellarg($suite)
@@ -125,6 +136,27 @@ try {
     assert_test(str_contains($passed['output'], 'Summary: suites=1 passed=1 failed=0'), 'passing summary is emitted');
     assert_test(str_contains($passed['output'], 'OK all'), 'passing composite closes with OK');
 
+    $colorPassed = run_runner($runner, $root, 'pass.php', 'all', ['FORCE_COLOR' => '1']);
+    assert_test($colorPassed['code'] === 0, 'forced color preserves passing exit code');
+    assert_test(str_contains($colorPassed['output'], "\033["), 'forced color emits ANSI sequences');
+    assert_test(str_contains($colorPassed['output'], "\033[36mSummary:\033[0m"), 'summary label uses TestKit cyan UI color');
+    assert_test(str_contains($colorPassed['output'], "\033[32mOK\033[0m"), 'passing status uses TestKit green UI color');
+
+    $colorFailed = run_runner($runner, $root, 'failures.php', 'all', ['FORCE_COLOR' => '1']);
+    assert_test($colorFailed['code'] === 1, 'forced color preserves failing exit code');
+    assert_test(str_contains($colorFailed['output'], "\033[31mFAIL\033[0m"), 'failing status uses TestKit red UI color');
+    assert_test(str_contains($colorFailed['output'], 'FAIL_DETAIL'), 'forced color preserves child failure stderr');
+
+    $noColorPassed = run_runner(
+        $runner,
+        $root,
+        'pass.php',
+        'all',
+        ['FORCE_COLOR' => '1', 'NO_COLOR' => '1']
+    );
+    assert_test($noColorPassed['code'] === 0, 'NO_COLOR preserves passing exit code');
+    assert_test(!str_contains($noColorPassed['output'], "\033["), 'NO_COLOR suppresses ANSI sequences');
+
     write_config($root . '/show-success-stderr.php', [
         'output' => 'failures',
         'success_stderr' => 'show',
@@ -137,6 +169,20 @@ try {
     assert_test(str_contains($showSuccessStderr['output'], 'PASS_WARNING'), 'success_stderr=show preserves successful stderr');
     assert_test(str_contains($showSuccessStderr['output'], 'Summary: suites=1 passed=1 failed=0'), 'success_stderr=show keeps compact summary');
     assert_test(str_contains($showSuccessStderr['output'], 'OK all'), 'success_stderr=show keeps aggregate PASS');
+
+    $colorSuccessStderr = run_runner(
+        $runner,
+        $root,
+        'show-success-stderr.php',
+        'all',
+        ['FORCE_COLOR' => '1']
+    );
+    assert_test($colorSuccessStderr['code'] === 0, 'colored success_stderr preserves successful exit');
+    assert_test(str_contains($colorSuccessStderr['output'], 'PASS_WARNING'), 'colored success_stderr preserves child stderr');
+    assert_test(
+        preg_match('/\x1b\[[0-9;]*mPASS_WARNING/', $colorSuccessStderr['output']) !== 1,
+        'child stderr is not recolored by suite reporter'
+    );
 
     $compositeOverrideSuites = $passSuites;
     $compositeOverrideSuites[2]['success_stderr'] = 'show';
