@@ -1,6 +1,6 @@
 # Salida humana compacta
 
-Estado: **IMPLEMENTATION_READY**
+Estado: **IMPLEMENTED**
 
 Baseline de diseño: `testKit/main` en `cbec3cda71d042e54bada91c9b50ffa02fa842d4`.
 
@@ -94,6 +94,29 @@ Cada categoría muestra un único resultado agregado cuando está verde. Un arch
 
 `php tests/framework/run.php` deja de imprimir un `[PASS]` por self-test. Los casos verdes se agregan; cualquier self-test fallido conserva su salida y rerun individual.
 
+## Runner declarativo de hosts
+
+`runners/runSuiteConfig.php` mantiene separados dos contratos:
+
+- `output=live|failures` controla captura de stdout/stderr;
+- `TESTKIT_CONSOLE_MODE=compact|live` controla presentación humana.
+
+Por compatibilidad con hosts que ya consumen `output=failures`, el runner declarativo sólo activa la fila compacta cuando `TESTKIT_CONSOLE_MODE=compact` se declara explícitamente. Un resultado completamente verde se muestra así:
+
+```text
+PASS Base PHP syntax                556/556 2.8s
+```
+
+No se imprimen el bloque `Summary:` ni el `OK <suite>` redundante en ese caso. Si aparece cualquier fallo, el runner conserva el detalle y el resumen diagnóstico histórico; no se compactan resultados no verdes.
+
+Para conservar explícitamente la presentación histórica aun usando captura `failures`:
+
+```bash
+TESTKIT_CONSOLE_MODE=live php runners/runSuiteConfig.php config/testkit-suites.php all
+```
+
+Esta separación permite que hosts como Base migren sólo la presentación sin cambiar comandos, fail-fast, composición, `success_stderr` ni códigos de salida.
+
 ## Suites y meta
 
 Una suite completamente verde usa una sola fila compacta. Si hay `FAIL`, `SKIP`, `TIMEOUT`, evidencia inválida o violaciones de performance, se conserva el reporter detallado existente.
@@ -139,6 +162,7 @@ php tests/framework/run.php
 NO_COLOR=1 php tests/framework/test_compact_batch_reporter.php
 NO_COLOR=1 php tests/framework/test_console_reporter_compact_pass.php
 php tests/framework/test_static_checks_contract.php
+php tests/framework/test_run_suite_config_compact_contract.php
 php tests/framework/test_wrapper_compact_output_contract.php
 bash -n bin/testkit
 ```
