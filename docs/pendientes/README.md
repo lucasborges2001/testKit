@@ -41,6 +41,7 @@ No conservar en esta carpeta documentos cuyo único paso restante sea ejecutar u
 
 ## Inventario activo
 
+- `run-suite-config-failure-output.md`: acotar la captura de stdout/stderr de fallos grandes en el runner declarativo sin perder evidencia completa ni cambiar exit codes;
 - `normalizacion-contratos/pendiente-interno-testkit.md`: normalización interna todavía no implementada;
 - `normalizacion-contratos/pendiente-integraciones-externas.md`: cambios/evidencia requeridos fuera de testKit;
 - `external-runtime-executor.md`: executor genérico para runtimes externos todavía no implementado;
