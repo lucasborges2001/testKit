@@ -50,6 +50,7 @@ jobs:
           required=(
             bin/testkit
             scripts/seed.sh
+            scripts/static_checks.php
             tests/framework/run.php
             runTest.php
           )
@@ -61,25 +62,10 @@ jobs:
             fi
           done
 
-      - name: PHP syntax
+      - name: Static syntax checks
         run: |
           set -euo pipefail
-          find . -type f -name '*.php' \
-            -not -path './vendor/*' \
-            -print0 | xargs -0 -r -n1 php -l
-
-      - name: Bash syntax
-        run: |
-          set -euo pipefail
-          find bin scripts lib -type f \
-            \( -name '*.sh' -o -name 'testkit' \) \
-            -print0 | xargs -0 -r -n1 bash -n
-
-      - name: Node module syntax
-        run: |
-          set -euo pipefail
-          find runners utils tests/fixtures/browser -type f -name '*.mjs' \
-            -print0 | xargs -0 -r -n1 node --check
+          php scripts/static_checks.php
 
   windows-static:
     name: windows-static

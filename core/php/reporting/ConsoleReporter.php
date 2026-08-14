@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+require_once __DIR__ . '/ConsoleMode.php';
+require_once __DIR__ . '/CompactBatchReporter.php';
 require_once __DIR__ . '/console/ConsoleRenderLimits.php';
 require_once __DIR__ . '/console/ConsoleTableFormatter.php';
 require_once __DIR__ . '/console/ConsoleProgressRenderer.php';
@@ -18,6 +20,10 @@ final class ConsoleReporter
 {
     public static function printSuiteStart(array $config, int $testsCount): void
     {
+        if (ConsoleMode::isCompact()) {
+            return;
+        }
+
         $name = strtoupper(str_replace('_', ' ', (string)$config['suite_id']));
         UI::header($name);
         UI::section('Selection');
@@ -68,6 +74,20 @@ final class ConsoleReporter
         $domain = (string)($diagnostics['failure_domain'] ?? 'none');
         $cause = (string)($diagnostics['cause_code'] ?? 'none');
         $compactPassed = self::shouldUseCompactPassView($result, $diagnostics);
+
+        if (ConsoleMode::isCompact() && $compactPassed) {
+            CompactBatchReporter::printCheck([
+                'label' => str_replace('_', '-', (string)($result['suite_id'] ?? 'suite')),
+                'total' => $pass,
+                'passed' => $pass,
+                'failed' => 0,
+                'skipped' => 0,
+                'duration_ms' => $duration,
+            ]);
+            ConsoleIssueRenderer::printWarnings($result);
+            ConsoleIssueRenderer::printSlow($result);
+            return;
+        }
 
         $p = UI::success('PASS=' . $pass);
         $f = $fail > 0 ? UI::failure('FAIL=' . $fail) : UI::gray('FAIL=' . $fail);

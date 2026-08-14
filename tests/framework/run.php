@@ -1,15 +1,14 @@
 #!/usr/bin/env php
 <?php
-/**
- * Testkit framework self-test runner.
- *
- * Usage:  php tests/framework/run.php
- * Exit:   0 if all pass, 1 if any fail.
- *
- * Each test file is a standalone PHP script that exits 0 on success, non-zero on failure.
- * Output from failing tests is printed to help diagnose the problem.
- */
 declare(strict_types=1);
+
+$root = dirname(__DIR__, 2);
+require_once $root . '/core/php/common/Env.php';
+require_once $root . '/core/php/common/AgentMode.php';
+require_once $root . '/core/php/reporting/UI.php';
+require_once $root . '/core/php/reporting/CompactBatchReporter.php';
+
+use Testkit\Core\Reporting\CompactBatchReporter;
 
 $tests = [
     'ProcessRunner timeout'                 => __DIR__ . '/test_process_timeout.php',
@@ -37,6 +36,11 @@ $tests = [
     'Console reporter wrapper commands'     => __DIR__ . '/test_console_reporter_wrapper_commands.php',
     'Suggested command builder invokers'    => __DIR__ . '/test_suggested_command_builder_invokers.php',
     'ConsoleReporter compact pass'          => __DIR__ . '/test_console_reporter_compact_pass.php',
+    'Console meta compact pass'             => __DIR__ . '/test_console_meta_compact_pass.php',
+    'Console mode contract'                 => __DIR__ . '/test_console_mode_contract.php',
+    'Compact batch reporter'                => __DIR__ . '/test_compact_batch_reporter.php',
+    'Static checks contract'                => __DIR__ . '/test_static_checks_contract.php',
+    'Wrapper compact output contract'       => __DIR__ . '/test_wrapper_compact_output_contract.php',
     'Observability progress policy'         => __DIR__ . '/test_progress_policy.php',
     'Observability console contract'        => __DIR__ . '/test_console_observability_contract.php',
     'Observability execution contract'      => __DIR__ . '/test_execution_observability_contract.php',
@@ -59,38 +63,41 @@ $tests = [
     'Declarative suite output contract'     => __DIR__ . '/test_run_suite_config_output_contract.php',
 ];
 
+$started = microtime(true);
 $pass = 0;
 $fail = 0;
-$width = max(array_map('strlen', array_keys($tests)));
-
-echo str_repeat('-', $width + 12) . "\n";
-echo " Testkit self-tests\n";
-echo str_repeat('-', $width + 12) . "\n";
-
+$failures = [];
 foreach ($tests as $name => $file) {
+    $runner = str_ends_with($file, '.sh') ? 'bash ' : 'php ';
+    $rerun = $runner . self_test_relative_path($root, $file);
     if (!is_file($file)) {
-        printf("  [FAIL] %-{$width}s  (registered file not found: %s)\n", $name, $file);
         $fail++;
+        $failures[] = ['label' => $name, 'exit_code' => 127, 'reason' => 'registered file not found: ' . $file, 'rerun' => $rerun];
         continue;
     }
-
     $output = [];
     $exitCode = 0;
-    exec('php ' . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
+    exec($runner . escapeshellarg($file) . ' 2>&1', $output, $exitCode);
     if ($exitCode === 0) {
-        printf("  [PASS] %s\n", $name);
         $pass++;
-    } else {
-        printf("  [FAIL] %s\n", $name);
-        foreach ($output as $line) {
-            printf("         %s\n", $line);
-        }
-        $fail++;
+        continue;
     }
+    $fail++;
+    $failures[] = ['label' => $name, 'exit_code' => $exitCode, 'output' => implode("\n", $output), 'rerun' => $rerun];
 }
 
-echo str_repeat('-', $width + 12) . "\n";
-printf("  %d passed, %d failed\n", $pass, $fail);
-echo str_repeat('-', $width + 12) . "\n";
-
+$check = [
+    'label' => 'Framework tests', 'total' => count($tests), 'passed' => $pass, 'failed' => $fail, 'skipped' => 0,
+    'duration_ms' => (int)round((microtime(true) - $started) * 1000), 'failures' => $failures,
+];
+CompactBatchReporter::printCheck($check);
+CompactBatchReporter::printSummary([$check]);
 exit($fail > 0 ? 1 : 0);
+
+function self_test_relative_path(string $root, string $path): string
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $path = str_replace('\\', '/', $path);
+    $prefix = $root . '/';
+    return str_starts_with($path, $prefix) ? substr($path, strlen($prefix)) : $path;
+}

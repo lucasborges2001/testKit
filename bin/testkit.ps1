@@ -12,19 +12,20 @@ $script:TestkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCom
 
 Initialize-TestkitEnv
 
+function Set-TestkitComposeProgress {
+  if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROGRESS)) { return }
+  if ($env:TESTKIT_CONSOLE_MODE -ne 'live') {
+    $env:COMPOSE_PROGRESS = 'quiet'
+  }
+}
+
 function Invoke-TestkitInspect([string]$EnvFilePath, [string[]]$InspectArgs) {
   $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
   $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
   $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
   $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
-
   $files = Get-TestkitComposeFiles $stackCsv
-  $cmd = @('compose','--env-file',$EnvFilePath) + $files + @(
-    'run','--rm',
-    '-e','TESTKIT_WRAPPER_KIND=powershell',
-    'testkit','php','/workspace/testkit/scripts/inspect.php'
-  ) + $InspectArgs
-
+  $cmd = @('compose','--env-file',$EnvFilePath) + $files + @('run','--rm','-e','TESTKIT_WRAPPER_KIND=powershell','testkit','php','/workspace/testkit/scripts/inspect.php') + $InspectArgs
   & docker @cmd
   return $LASTEXITCODE
 }
@@ -34,14 +35,8 @@ function Invoke-TestkitCleanup([string]$EnvFilePath, [string[]]$CleanupArgs) {
   $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
   $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
   $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
-
   $files = Get-TestkitComposeFiles $stackCsv
-  $cmd = @('compose','--env-file',$EnvFilePath) + $files + @(
-    'run','--rm',
-    '-e','TESTKIT_WRAPPER_KIND=powershell',
-    'testkit','php','/workspace/testkit/scripts/cleanup.php'
-  ) + $CleanupArgs
-
+  $cmd = @('compose','--env-file',$EnvFilePath) + $files + @('run','--rm','-e','TESTKIT_WRAPPER_KIND=powershell','testkit','php','/workspace/testkit/scripts/cleanup.php') + $CleanupArgs
   & docker @cmd
   return $LASTEXITCODE
 }
@@ -53,29 +48,22 @@ function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$CliArgs) {
     $legacyPg = $true
     $runtimeArgs = if ($runtimeArgs.Count -gt 1) { @($runtimeArgs[1..($runtimeArgs.Count-1)]) } else { @() }
   }
-
   $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
   if ($legacyPg -and -not (Test-TestkitStackHas $stackCsv 'pg')) {
     $stackCsv = if ([string]::IsNullOrWhiteSpace($stackCsv)) { 'pg' } else { "$stackCsv,pg" }
   }
-
   $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
   $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
   $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
-
   $files = Get-TestkitComposeFiles $stackCsv
   $runArgs = Convert-TestkitRunArgs $runtimeArgs
-
   if ($runArgs.Count -gt 0 -and $runArgs[0] -eq 'run') {
     $head = @($runArgs[0..0])
     $tail = if ($runArgs.Count -gt 1) { @($runArgs[1..($runArgs.Count-1)]) } else { @() }
-    $cmd = @('compose','--env-file',$EnvFilePath) + $files + $head + @(
-      '-e','TESTKIT_WRAPPER_KIND=powershell'
-    ) + $tail
+    $cmd = @('compose','--env-file',$EnvFilePath) + $files + $head + @('-e','TESTKIT_WRAPPER_KIND=powershell') + $tail
   } else {
     $cmd = @('compose','--env-file',$EnvFilePath) + $files + $runArgs
   }
-
   & docker @cmd
   return $LASTEXITCODE
 }
@@ -90,22 +78,20 @@ if (-not $envFile) {
   Write-Error 'Falta env de tests. Creá <project>/test/.env.test o <project>/.env.test.'
   exit 1
 }
-
 if (-not (Test-TestkitPathUnderRoot $script:ProjectRoot $envFile.Path)) {
   Write-Error "El env de tests quedó fuera del repo montado: $($envFile.Path)"
   exit 1
 }
 
 Import-TestkitEnvKV $envFile.Path
+Set-TestkitComposeProgress
 
 if ($Args.Count -gt 0 -and $Args[0] -eq 'inspect') {
   $inspectArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
   exit (Invoke-TestkitInspect $envFile.Path $inspectArgs)
 }
-
 if ($Args.Count -gt 0 -and $Args[0] -eq 'cleanup') {
   $cleanupArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
   exit (Invoke-TestkitCleanup $envFile.Path $cleanupArgs)
 }
-
 exit (Invoke-TestkitRuntime $envFile.Path $Args)

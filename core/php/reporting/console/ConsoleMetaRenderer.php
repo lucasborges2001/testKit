@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Testkit\Core\Reporting\Console;
 
 use Testkit\Core\Reporting\CommandSuggestion;
+use Testkit\Core\Reporting\CompactBatchReporter;
+use Testkit\Core\Reporting\ConsoleMode;
 use Testkit\Core\Reporting\ReportSummary;
 use Testkit\Core\Reporting\UI;
 
@@ -11,13 +13,26 @@ final class ConsoleMetaRenderer
 {
     public static function printMeta(array $meta): void
     {
-        UI::header('META SUMMARY');
-
         $suites = is_array($meta['suites'] ?? null) ? $meta['suites'] : [];
         $summary = is_array($meta['summary'] ?? null) ? $meta['summary'] : [];
         $failedFiles = array_values(array_filter((array)($meta['failed_files'] ?? []), 'is_string'));
         $diagnostics = is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : ReportSummary::diagnostics($meta);
 
+        if (ConsoleMode::isCompact() && self::isCleanPass($suites, $summary, $failedFiles, $diagnostics)) {
+            $total = (int)($summary['total'] ?? $meta['selected_test_count'] ?? 0);
+            $passed = (int)($summary['passed'] ?? $total);
+            CompactBatchReporter::printCheck([
+                'label' => 'meta ' . str_replace('_', '-', (string)($meta['target'] ?? 'all')),
+                'total' => $total,
+                'passed' => $passed,
+                'failed' => 0,
+                'skipped' => 0,
+                'duration_ms' => (int)($summary['duration_ms'] ?? $meta['duration_ms'] ?? 0),
+            ]);
+            return;
+        }
+
+        UI::header('META SUMMARY');
         self::printMetaSummary($meta, $suites, $failedFiles, $diagnostics);
 
         if ($suites !== []) {
@@ -49,10 +64,22 @@ final class ConsoleMetaRenderer
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $suites
-     * @param array<int,string> $failedFiles
-     */
+    /** @param array<int,array<string,mixed>> $suites @param array<int,string> $failedFiles */
+    private static function isCleanPass(array $suites, array $summary, array $failedFiles, array $diagnostics): bool
+    {
+        $outcome = strtoupper(trim((string)($diagnostics['outcome_status'] ?? '')));
+        foreach ($suites as $suite) {
+            if ((int)($suite['exit_code'] ?? 1) !== 0) {
+                return false;
+            }
+        }
+        return in_array($outcome, ['PASSED', 'PASS', 'OK'], true)
+            && (int)($summary['failed'] ?? 0) === 0
+            && (int)($summary['skipped'] ?? 0) === 0
+            && $failedFiles === [];
+    }
+
+    /** @param array<int,array<string,mixed>> $suites @param array<int,string> $failedFiles */
     private static function printMetaSummary(array $meta, array $suites, array $failedFiles, array $diagnostics): void
     {
         $failedSuites = array_values(array_filter(
@@ -93,10 +120,7 @@ final class ConsoleMetaRenderer
         }
     }
 
-    /**
-     * @param array<int,array<string,mixed>> $suites
-     * @param array<int,array<string,mixed>> $failedSuites
-     */
+    /** @param array<int,array<string,mixed>> $suites @param array<int,array<string,mixed>> $failedSuites */
     private static function shouldSuggestConcreteSuite(array $suites, array $failedSuites): bool
     {
         return count($suites) > 1 && $failedSuites !== [];
@@ -108,23 +132,12 @@ final class ConsoleMetaRenderer
         if ($normalized === '') {
             return '';
         }
-
         $isBack = str_starts_with($normalized, 'test/back/');
         $isFront = str_starts_with($normalized, 'test/front/');
-
-        if ($isBack && str_ends_with($normalized, '.py')) {
-            return 'back-python';
-        }
-        if ($isBack) {
-            return 'back-php';
-        }
-        if ($isFront && str_ends_with($normalized, '.js')) {
-            return 'front-js';
-        }
-        if ($isFront) {
-            return 'front-php';
-        }
-
+        if ($isBack && str_ends_with($normalized, '.py')) return 'back-python';
+        if ($isBack) return 'back-php';
+        if ($isFront && str_ends_with($normalized, '.js')) return 'front-js';
+        if ($isFront) return 'front-php';
         return '';
     }
 
