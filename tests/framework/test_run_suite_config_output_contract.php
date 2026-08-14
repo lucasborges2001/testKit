@@ -256,6 +256,80 @@ PY;
         'child stderr is not recolored by suite reporter'
     );
 
+    $largeOutputProbe = <<<'PHP'
+fwrite(STDOUT, "LARGE_STDOUT_MARKER\n");
+for ($i = 0; $i < 24576; $i++) {
+    fwrite(STDOUT, str_repeat('X', 1024));
+}
+fwrite(STDERR, "LARGE_STDERR_MARKER\n");
+PHP;
+
+    $largeOutputCommand = 'php -r ' . escapeshellarg($largeOutputProbe);
+    $largeOutputSuite = [
+        'key' => 'large-pass',
+        'label' => 'large successful output',
+        'working_directory' => '.',
+        'commands' => [$largeOutputCommand],
+        'required' => true,
+        'description' => 'large successful capture regression',
+    ];
+
+    write_config($root . '/large-pass-hidden.php', [
+        'output' => 'failures',
+        'success_stderr' => 'hide',
+        'suites' => [$largeOutputSuite],
+    ]);
+
+    $largeHidden = run_runner(
+        $runner,
+        $root,
+        'large-pass-hidden.php',
+        'large-pass',
+        [],
+        ['-d', 'memory_limit=16M']
+    );
+
+    assert_test(
+        $largeHidden['code'] === 0,
+        'large successful stdout must not exhaust runner memory: ' . $largeHidden['output']
+    );
+    assert_test(
+        !str_contains($largeHidden['output'], 'LARGE_STDOUT_MARKER'),
+        'large successful stdout stays hidden'
+    );
+    assert_test(
+        !str_contains($largeHidden['output'], 'LARGE_STDERR_MARKER'),
+        'large successful stderr stays hidden when success_stderr=hide'
+    );
+
+    write_config($root . '/large-pass-show-stderr.php', [
+        'output' => 'failures',
+        'success_stderr' => 'show',
+        'suites' => [$largeOutputSuite],
+    ]);
+
+    $largeShowStderr = run_runner(
+        $runner,
+        $root,
+        'large-pass-show-stderr.php',
+        'large-pass',
+        [],
+        ['-d', 'memory_limit=16M']
+    );
+
+    assert_test(
+        $largeShowStderr['code'] === 0,
+        'success_stderr=show must not load large successful stdout: ' . $largeShowStderr['output']
+    );
+    assert_test(
+        !str_contains($largeShowStderr['output'], 'LARGE_STDOUT_MARKER'),
+        'success_stderr=show still hides large successful stdout'
+    );
+    assert_test(
+        str_contains($largeShowStderr['output'], 'LARGE_STDERR_MARKER'),
+        'success_stderr=show still preserves successful stderr'
+    );
+
     $compositeOverrideSuites = $passSuites;
     $compositeOverrideSuites[2]['success_stderr'] = 'show';
     write_config($root . '/composite-override.php', [

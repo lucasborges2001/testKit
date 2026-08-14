@@ -220,7 +220,13 @@ function testkit_suite_config_merge_result(array &$into, array $from): void
 }
 
 /** @return array{exit_code:int,stdout:string,stderr:string,time_ms:int} */
-function testkit_suite_config_run_command(string $command, string $workingDirectory, string $projectRoot, string $outputMode): array
+function testkit_suite_config_run_command(
+    string $command,
+    string $workingDirectory,
+    string $projectRoot,
+    string $outputMode,
+    string $successStderr
+): array
 {
     $processEnv = getenv();
     $env = array_merge($_ENV, is_array($processEnv) ? $processEnv : []);
@@ -259,8 +265,20 @@ function testkit_suite_config_run_command(string $command, string $workingDirect
     }
 
     $exitCode = proc_close($process);
-    $stdout = (string)@file_get_contents($stdoutPath);
-    $stderr = (string)@file_get_contents($stderrPath);
+
+    $stdout = '';
+    $stderr = '';
+
+    if ($exitCode !== 0) {
+        // Un fallo conserva el diagnóstico completo histórico.
+        $stdout = (string)@file_get_contents($stdoutPath);
+        $stderr = (string)@file_get_contents($stderrPath);
+    } elseif ($successStderr === 'show') {
+        // En un PASS nunca necesitamos cargar stdout.
+        // stderr sólo se materializa cuando el contrato pide mostrar warnings.
+        $stderr = (string)@file_get_contents($stderrPath);
+    }
+
     @unlink($stdoutPath);
     @unlink($stderrPath);
 
@@ -324,7 +342,13 @@ function testkit_suite_config_run_command_suite(array $suite, string $projectRoo
 
         if ($outputMode === 'live') echo '    ' . pvt_ui_dim('$') . " {$command}\n";
 
-        $commandResult = testkit_suite_config_run_command($command, $workingDirectory, $projectRoot, $outputMode);
+        $commandResult = testkit_suite_config_run_command(
+            $command,
+            $workingDirectory,
+            $projectRoot,
+            $outputMode,
+            $successStderr
+        );
         $result['commands']++;
         if ($commandResult['exit_code'] === 0) {
             $result['passed_commands']++;

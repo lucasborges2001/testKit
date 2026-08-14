@@ -117,6 +117,18 @@ TESTKIT_CONSOLE_MODE=live php runners/runSuiteConfig.php config/testkit-suites.p
 
 Esta separación permite que hosts como Base migren sólo la presentación sin cambiar comandos, fail-fast, composición, `success_stderr` ni códigos de salida.
 
+### Captura de comandos exitosos
+
+Cuando `output=failures`, la captura temporal no implica materializar en memoria salida que después será descartada:
+
+- un comando exitoso con `success_stderr=hide` no carga `stdout` ni `stderr`;
+- un comando exitoso con `success_stderr=show` carga únicamente `stderr`;
+- `stdout` exitoso permanece oculto en ambos casos;
+- un comando fallido conserva por ahora `stdout` y `stderr` completos para no degradar el diagnóstico histórico;
+- `output=live` no cambia.
+
+Esto evita que una validación verde con salida muy grande consuma memoria PHP sólo para descartar después esa salida. El tratamiento acotado de fallos de gran volumen es una preocupación separada y no forma parte de este contrato.
+
 ## Suites y meta
 
 Una suite completamente verde usa una sola fila compacta. Si hay `FAIL`, `SKIP`, `TIMEOUT`, evidencia inválida o violaciones de performance, se conserva el reporter detallado existente.
