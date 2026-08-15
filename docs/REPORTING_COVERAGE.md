@@ -4,275 +4,222 @@
 
 Usar este documento para responder:
 
-- qué artefactos de reporte escribe realmente `testkit`
-- qué campos JSON son canónicos para automatización
-- qué significan `suite_status`, `outcome_status` y `no_tests_reason`
-- cómo se expone la observabilidad de ejecución
-- qué partes del output son para humanos
-- qué partes son diagnósticos heurísticos
-- cómo leer coverage y qué límites tiene
+- qué artefactos de reporte escribe TestKit;
+- qué campos JSON son canónicos para automatización;
+- qué significan `suite_status`, `outcome_status` y `no_tests_reason`;
+- cómo se expone la observabilidad de ejecución;
+- qué partes del output son para humanos;
+- cómo leer coverage y cuáles son sus límites.
 
-No usarlo para quick start, troubleshooting de bootstrap/store ni arquitectura interna. Para eso, leer `USO.md`, `TROUBLESHOOTING.md`, `ARQUITECTURA.md` y `CONTRATO.md`.
+Para quick start, troubleshooting, arquitectura y adopción leer respectivamente `USO.md`, `TROUBLESHOOTING.md`, `ARQUITECTURA.md` y `CONTRATO.md`.
 
 ## 2) Superficies de salida
 
-| Superficie | Para qué sirve | Cómo leerla |
+| Superficie | Para qué sirve | Contrato |
 |---|---|---|
-| JSON suite/meta bajo `.testkit/reports/` | automatización y evidencia persistida | superficie principal |
-| `canonical_report` dentro del JSON | normalización derivada del reporte persistido | útil, pero no sustituye el top-level |
-| consola del runner | lectura rápida humana | no consumir como contrato de automatización |
-| `php scripts/report.php` | resumen humano agregado | no consumir como contrato estable |
-| `inspect` | diagnóstico asistido sobre reportes existentes | interfaz operativa |
-| artifacts de coverage | diagnóstico de cobertura | útiles para lectura y tooling, no gate implícito |
+| JSON suite/meta bajo `.testkit/reports/` | automatización y evidencia persistida | principal |
+| `canonical_report` dentro del JSON | normalización derivada | auxiliar |
+| consola del runner | lectura humana | no contractual |
+| `php scripts/report.php` | resumen humano agregado | no contractual |
+| `inspect` | diagnóstico sobre reportes persistidos | operativo |
+| artifacts de coverage | diagnóstico de cobertura | no implican gate por sí solos |
+
+La consola no debe parsearse como interfaz de máquina.
 
 ## 3) Artefactos persistidos
 
-Por suite:
+Los reportes viven bajo `.testkit/reports/` y el historial bajo `.testkit/history/`.
 
-- `.testkit/reports/<suite>_latest.json`
-- `.testkit/reports/<suite>_<timestamp>.json`
+Coverage canónico por suite:
 
-Por corrida meta:
+```text
+.testkit/coverage/<suite_id>/coverage.json
+.testkit/coverage/<suite_id>/lcov.info
+.testkit/coverage/<suite_id>/coverage_diagnostics.json
+.testkit/coverage/<suite_id>/coverage_report.md
+.testkit/coverage/<suite_id>/coverage_meta.json
+```
 
-- `.testkit/reports/meta_latest.json`
-- `.testkit/reports/meta__<target>__<scope>_latest.json` cuando aplica scope/run específico
-
-Índices y auxiliares:
-
-- `.testkit/reports/runs_latest.json`
-- `.testkit/reports/latest_run.json` cuando la corrida usó root por run
-- `.testkit/history/<suite>.json`
-
-Coverage:
-
-- `.testkit/coverage/<suite_id>/coverage.json`
-- `.testkit/coverage/<suite_id>/lcov.info`
-- `.testkit/coverage/<suite_id>/coverage_diagnostics.json`
-- `.testkit/coverage/<suite_id>/coverage_report.md`
-- `.testkit/coverage/<suite_id>/coverage_meta.json`
-
-Durante una transición, `scripts/report.php` también reconoce legacy coverage bajo:
-
-- `test/coverage/php_back`
-- `test/coverage/php_front`
-- `test/coverage/python_back`
-
-Ese fallback no se presenta como evidencia actual si no puede asociarse al `run_id` vigente. Sin metadata compatible se informa como `legacy/stale`.
+El runtime todavía puede reconocer rutas históricas bajo `test/coverage/`. Esa compatibilidad es deuda de I5 y no debe usarse para nuevas integraciones ni presentarse como ruta pública alternativa.
 
 ## 4) Qué consumir para automatización
 
-El contrato primario vive en el JSON top-level versionado por:
+El contrato primario vive en JSON versionado. Priorizar:
 
-- `report_contract_version`
-- `runner_contract_version`
+- `suite_status`;
+- `outcome_status`;
+- `no_tests_reason`;
+- `runner_capabilities`;
+- `summary`;
+- `failures`;
+- `first_failure`;
+- `evidence_valid`;
+- `evidence_invalid_reason`;
+- `phase_timings_ms`;
+- `progress_policy`;
+- `execution_metrics`.
 
-Campos canónicos a priorizar:
+`failures` es la colección canónica. Campos legacy sólo deben leerse para compatibilidad de reportes históricos, no como contrato nuevo.
 
-- `suite_status`
-- `outcome_status`
-- `no_tests_reason`
-- `runner_capabilities`
-- `summary`
-- `failures`
-- `first_failure`
-- `evidence_valid`
-- `evidence_invalid_reason`
-- `phase_timings_ms`
-- `progress_policy`
-- `execution_metrics`
+## 5) Estados
 
-`failures` es la colección canónica de fallos. `failed_tests` existe como fallback legacy y no debe ser la primera elección.
+### `suite_status`
 
-## 5) Estados: no mezclar niveles
+Describe el resultado directo de selección/ejecución de la suite. Valores observados incluyen:
 
-### 5.1) `suite_status`
+```text
+passed
+failed
+all_skipped
+no_tests
+listed
+```
 
-`suite_status` describe el resultado de la selección/ejecución de la suite en un nivel operativo directo.
+### `outcome_status`
 
-Valores relevantes:
+Es el estado final enriquecido por diagnóstico. Valores observados incluyen:
 
-- `passed`
-- `failed`
-- `all_skipped`
-- `no_tests`
-- `listed`
+```text
+passed
+failed
+partial
+skipped
+no_tests
+listed
+timeout
+contention
+infra_error
+bootstrap_error
+discovery_error
+reporting_error
+```
 
-### 5.2) `outcome_status`
+Para branching de automatización, `outcome_status` es el campo de mayor nivel.
 
-`outcome_status` es el estado final enriquecido por diagnóstico.
+### `no_tests_reason`
 
-Valores que el core produce hoy:
-
-- `passed`
-- `failed`
-- `partial`
-- `skipped`
-- `no_tests`
-- `listed`
-- `timeout`
-- `contention`
-- `infra_error`
-- `bootstrap_error`
-- `discovery_error`
-- `reporting_error`
-
-Para branching de automatización, este es el campo más fuerte.
-
-### 5.3) `no_tests_reason`
-
-`no_tests_reason` solo debe leerse cuando `suite_status=no_tests`.
+Leerlo cuando `suite_status=no_tests`.
 
 ## 6) Observabilidad
 
-`[Progress]`, `[Test]` y `[Phase Timings]` son señales operatorias humanas. El contrato fuerte para automatización está en el JSON final.
+`[Progress]`, `[Test]` y `[Phase Timings]` son señales humanas. La evidencia contractual permanece en el JSON persistido.
 
-`execution_metrics` resume:
+`execution_metrics` puede resumir:
 
-- `selected_test_count`
-- `completed_test_count`
-- `avg_test_ms`
-- `estimated_total_ms`
+- `selected_test_count`;
+- `completed_test_count`;
+- `avg_test_ms`;
+- `estimated_total_ms`.
 
-No hay persistencia de cada heartbeat.
+No inferir persistencia de cada heartbeat si no está en el reporte.
 
-## 7) Humanos vs automatización
+## 7) Fragility hints
 
-Para humanos:
+`fragility_hints` es diagnóstico heurístico derivado del historial local. Puede ayudar a priorizar triage, pero:
 
-- consola del runner
-- `[Progress]`
-- `[Test]`
-- `[Phase Timings]`
-- `php scripts/report.php`
-- `inspect`
-- `coverage_report.md`
+- no prueba causalidad;
+- depende del historial disponible;
+- no reemplaza rerun focalizado ni inspección del fallo.
 
-Para automatización:
+## 8) Coverage
 
-- JSON suite/meta persistidos
-- `failures`
-- `summary`
-- `suite_status`
-- `outcome_status`
-- `phase_timings_ms`
-- `progress_policy`
-- `execution_metrics`
-- `canonical_report` solo como ayuda de normalización, no como único origen
+Coverage es una señal diagnóstica. No constituye por sí sola un gate contractual de calidad.
 
-## 8) Fragility hints
+Un proyecto que quiera imponer umbrales obligatorios debe hacerlo mediante una política explícita de ese proyecto.
 
-`fragility_hints` salen del historial local por suite.
+## 9) Ruta canónica de coverage
 
-Lectura correcta:
-
-- marcan alternancia histórica entre `pass` y `fail`
-- dependen del historial disponible en `.testkit/history`
-- no prueban causalidad
-- no reemplazan triage manual
-
-## 9) Coverage: lectura correcta
-
-Coverage en `testkit` es una señal diagnóstica. Sirve para:
-
-- ver cobertura agregada
-- detectar archivos con cobertura baja
-- resaltar archivos críticos sin cobertura o bajo threshold
-
-No implica por sí sola un gate contractual de calidad. Si un proyecto quiere usar coverage como gate, ese gate tiene que vivir en la política del proyecto.
-
-## 10) Rutas de coverage
-
-Default canónico:
+Default:
 
 ```text
-.testkit/coverage/back_php
-.testkit/coverage/front_php
-.testkit/coverage/back_python
+.testkit/coverage/<suite_id>
 ```
 
-Override canónico:
+Override público recomendado:
 
 ```bash
 TEST_COVERAGE_ROOT=/tmp/cov
 ```
 
-produce:
+Para `back_php` produce:
 
 ```text
 /tmp/cov/back_php
 ```
 
-Compatibilidad legacy:
+### Deuda legacy
 
-```bash
-TEST_COVERAGE_DIR=/tmp/cov
-```
-
-mantiene la semántica histórica de root y también produce:
+El runtime actual todavía puede reconocer:
 
 ```text
-/tmp/cov/back_php
+TEST_COVERAGE_DIR
+legacy test/coverage/*
 ```
 
-`TEST_COVERAGE_DIR` no debe interpretarse como ruta final nueva. Se conserva para no romper proyectos existentes, pero la configuración nueva debe usar `TEST_COVERAGE_ROOT`.
+No usar esas superficies en configuración nueva. Su eliminación pertenece a I5 en:
 
-## 11) Variables de coverage
+```text
+docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md
+```
+
+Documentarlas aquí sólo registra deuda compatible existente; no las convierte en contrato recomendado.
+
+## 10) Variables de coverage vigentes para nuevos consumidores
 
 | Env | Default | Semántica |
 |---|---:|---|
-| `TEST_COVERAGE` | `0` | Habilita coverage en suites soportadas. |
+| `TEST_COVERAGE` | `0` | Habilita coverage donde la suite lo soporte. |
 | `TEST_COVERAGE_FORMAT` | `lcov` | `lcov`, `json` o `both`. |
-| `TEST_COVERAGE_ROOT` | `.testkit/coverage` | Root canónico; el runner agrega `<suite_id>`. |
-| `TEST_COVERAGE_DIR` | vacío | Alias legacy de root; el runner agrega `<suite_id>`. |
-| `TEST_COVERAGE_SOURCE_DIRS` | `TK_BACK_DIR,TK_PUBLIC_DIR` | Directorios fuente incluidos en cálculos. |
-| `TEST_COVERAGE_EXCLUDE_DIRS` | `test,testkit,docker,vendor,logs,storage` | Directorios excluidos por política central. |
-| `TEST_COVERAGE_CRITICAL_FILES` | vacío | Patrones `fnmatch` repo-relativos para críticos. |
-| `TEST_COVERAGE_CRITICAL_THRESHOLD` | `85` | Threshold para `critical_low`. |
-| `TEST_COVERAGE_LOW_THRESHOLD` | `70` | Threshold para `low_files`. |
-| `TEST_COVERAGE_SUMMARY_TOP` | `10` | Límite de archivos por lista en `scripts/report.php`. |
+| `TEST_COVERAGE_ROOT` | `.testkit/coverage` | Root canónico; agrega `<suite_id>`. |
+| `TEST_COVERAGE_SOURCE_DIRS` | según suite/config | Directorios fuente incluidos. |
+| `TEST_COVERAGE_EXCLUDE_DIRS` | política del framework | Directorios excluidos. |
+| `TEST_COVERAGE_CRITICAL_FILES` | vacío | Patrones repo-relative para archivos críticos. |
+| `TEST_COVERAGE_CRITICAL_THRESHOLD` | `85` | Threshold de `critical_low`. |
+| `TEST_COVERAGE_LOW_THRESHOLD` | `70` | Threshold de `low_files`. |
+| `TEST_COVERAGE_SUMMARY_TOP` | `10` | Límite del resumen humano. |
 
-## 12) Filtro de coverage
+La autoridad exacta de configuración sigue siendo el runtime/schema vigente; este documento no debe inventar aliases para completar huecos.
+
+## 11) Filtro de coverage
 
 La política central está en `CoverageFilter`.
 
-`TEST_COVERAGE_SOURCE_DIRS=back,public_html` significa que el cálculo se hace solo sobre archivos repo-relativos bajo:
+Ejemplo:
 
-```text
-back/
-public_html/
+```bash
+TEST_COVERAGE_SOURCE_DIRS=back,public_html
 ```
 
-Ese filtro afecta:
+El filtro puede afectar:
 
-- `overall.percent`
-- `files`
-- `modules`
-- `low_files`
-- `critical_missing`
-- `critical_low`
+- `overall.percent`;
+- `files`;
+- `modules`;
+- `low_files`;
+- `critical_missing`;
+- `critical_low`.
 
-No debe incluir `testkit/`, `test/`, `vendor/`, `docker/`, `logs/` ni `storage/` salvo que el proyecto cambie explícitamente `TEST_COVERAGE_EXCLUDE_DIRS`.
+Las exclusiones deben mantenerse consistentes con la configuración efectiva del runner.
 
-## 13) Metadata anti-stale
+## 12) Metadata anti-stale
 
-Cuando una suite genera coverage, TestKit escribe `coverage_meta.json` junto a los artefactos. Campos relevantes:
+Cuando una suite genera coverage, TestKit escribe `coverage_meta.json` junto a los artefactos. Campos relevantes incluyen:
 
-- `suite_id`
-- `generated_at`
-- `coverage_dir` y `coverage_dir_rel`
-- `report_root` y `report_root_rel`
-- `run_id` y `meta_run_id`
-- `coverage_enabled`
-- `coverage_format`
-- `source_dirs`
-- `exclude_dirs`
-- `diagnostics_file`
-- `report_file`
-- `coverage_file`
-- `lcov_file`
-- `diagnostics_summary`
+- `suite_id`;
+- `generated_at`;
+- `coverage_dir` / `coverage_dir_rel`;
+- `report_root` / `report_root_rel`;
+- `run_id` / `meta_run_id`;
+- `coverage_enabled`;
+- `coverage_format`;
+- `source_dirs`;
+- `exclude_dirs`;
+- referencias a archivos de coverage;
+- `diagnostics_summary`.
 
-El JSON de suite también incluye un bloque `coverage`:
+El objetivo es impedir que archivos viejos se presenten como evidencia de la corrida actual.
+
+Ejemplo de attachment generado:
 
 ```json
 {
@@ -281,7 +228,6 @@ El JSON de suite también incluye un bloque `coverage`:
     "generated": true,
     "status": "generated",
     "dir": "/workspace/project/.testkit/coverage/back_php",
-    "metadata_file": "/workspace/project/.testkit/coverage/back_php/coverage_meta.json",
     "run_id": "20260614T204957Z_d21d61",
     "overall_percent": 59.7,
     "critical_missing_count": 0,
@@ -290,97 +236,61 @@ El JSON de suite también incluye un bloque `coverage`:
 }
 ```
 
-Si coverage no estuvo activo en esa corrida:
+Si coverage no se generó en la corrida, el reporte no debe reutilizar silenciosamente datos anteriores como actuales.
 
-```json
-{
-  "coverage": {
-    "enabled": false,
-    "generated": false,
-    "status": "disabled"
-  }
-}
-```
+## 13) Coverage PHP y Python
 
-`report.php` valida que la metadata coincida con el `suite_id`, el `run_id` y el `report_root` del latest report. Si no coincide, no imprime `overall` ni listas como si fueran actuales. En su lugar informa `stale coverage available ... not attached to current run`.
-
-## 14) Coverage PHP
+### PHP
 
 Artifacts típicos:
 
-- `coverage.json`
-- `lcov.info`
-- `coverage_diagnostics.json`
-- `coverage_report.md`
-
-`coverage_diagnostics.json` incluye:
-
-- `overall`
-- `thresholds`
-- `files`
-- `modules`
-- `low_files`
-- `critical_missing`
-- `critical_low`
-- `source_dirs`
-- `exclude_dirs`
-
-## 15) Coverage Python
-
-Python usa `trace` de la stdlib.
-
-Lectura correcta:
-
-- es una señal liviana
-- no equivale al pipeline diagnóstico PHP
-- no debe venderse como analítica avanzada
-- puede servir para smoke diagnóstico
-
-## 16) Resumen ejecutivo
-
-`scripts/report.php` lee coverage asociado al latest report de cada suite. Primero valida metadata/run actual; recién después muestra conteos y listas accionables:
-
 ```text
-Coverage diagnostics
-- back_php: overall=54.54% critical_missing=4 critical_low=10
-  missing:
-    * back/curso/service/delivery_service.php
-    * back/curso/service/contenido_service.php
-  low:
-    * 2.94% back/curso/service/delivery/pdf_resolver_para_consumo.php
-    * 4.35% back/auth/service/plan.php
+coverage.json
+lcov.info
+coverage_diagnostics.json
+coverage_report.md
 ```
 
-Si hay más de `TEST_COVERAGE_SUMMARY_TOP`, imprime `... N more`.
+`coverage_diagnostics.json` puede incluir `overall`, `thresholds`, `files`, `modules`, `low_files`, `critical_missing`, `critical_low`, `source_dirs` y `exclude_dirs`.
 
-Si hay coverage viejo no asociado al latest report:
+### Python
+
+Python usa una señal de coverage más liviana. No debe venderse como equivalente analítico al pipeline PHP si el runtime no lo demuestra.
+
+## 14) Resumen humano
+
+`scripts/report.php` puede mostrar coverage asociado a la última corrida. Ese resumen es para operador; la decisión automática debe volver al JSON persistido.
+
+Una ruta legacy sin metadata compatible debe tratarse como stale/legacy, nunca como evidencia actual.
+
+## 15) Regla práctica de consumo
+
+Para automatización:
 
 ```text
-Coverage diagnostics
-- back_php: stale coverage available at .testkit/coverage/back_php, not attached to current run
+JSON persistido
+-> outcome_status
+-> summary
+-> failures
+-> evidence_valid
+-> métricas/diagnóstico necesario
 ```
 
-Si hay fallback legacy sin metadata compatible:
+Para lectura humana:
 
 ```text
-Coverage diagnostics
-- back_php: legacy/stale coverage available at test/coverage/php_back, not attached to current run
+inspect latest
+inspect failure
+php scripts/report.php
 ```
 
-## 17) Regla práctica de consumo
+## 16) No verificado por este documento
 
-Para una decisión automática:
+Este documento no declara:
 
-1. usar el JSON persistido
-2. leer `outcome_status`
-3. leer `summary`
-4. leer `failures`
-5. leer `phase_timings_ms`, `progress_policy` y `execution_metrics`
-6. usar `canonical_report` solo como ayuda de uniformidad
+- que I5 esté cerrado;
+- que las rutas legacy ya hayan sido eliminadas del runtime;
+- que coverage tenga gate obligatorio por defecto;
+- que todos los lenguajes tengan la misma profundidad de instrumentación.
 
-Para entender rápido qué pasó:
-
-1. `inspect latest`
-2. `inspect failure`
-3. `php scripts/report.php`
-4. revisar `[Phase Timings]` y, durante la corrida, `[Progress]` o `[Test]`
+El contrato canónico debe converger hacia una única raíz de coverage y sin aliases legacy; hasta entonces la diferencia permanece registrada como deuda explícita.
