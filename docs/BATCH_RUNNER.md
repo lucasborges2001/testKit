@@ -1,6 +1,6 @@
 # Batch runner seguro
 
-Este documento describe la selección múltiple de tests y el rerun aislado de fallidos.
+Este documento describe selección múltiple de tests y rerun aislado de fallidos sobre el contrato público tipado de TestKit.
 
 ## Objetivo
 
@@ -8,28 +8,32 @@ Permitir correr varios tests seleccionados dentro de una sola suite para reducir
 
 La mejora no reemplaza `ParallelGuard`. La seguridad de DB, locks de store y política `TEST_JOBS` siguen pasando por el guard existente.
 
-## Precedencia de selección
+## Contrato público de selección
 
-La selección efectiva usa esta precedencia:
+Toda corrida declara exactamente uno de:
 
-1. `TEST_MATCH_FILE`
-2. `TEST_MATCH_LIST`
-3. `TEST_MATCH`
-4. sin filtro explícito
-
-`TEST_MATCH` conserva el comportamiento legacy por substring.
-
-`TEST_MATCH_FILE` y `TEST_MATCH_LIST` usan match exacto por defecto contra el path repo-relative descubierto. Para usar substring debe declararse explícitamente:
-
-```bash
--e TEST_MATCH_LIST_MODE=substring
+```text
+--suite
+--group
+--category
 ```
 
-`TEST_SELECTION_MATCH_MODE=substring` se conserva como alias compatible para paquetes previos, pero la configuración nueva debería usar `TEST_MATCH_LIST_MODE`.
+La selección explícita de archivos usa únicamente:
 
-## `TEST_MATCH_FILE`
+```text
+--test <repo-relative>             # repetible
+--selection-file <repo-relative>   # lote declarado
+```
 
-Archivo dentro del repo host con una ruta de test por línea:
+`--test` y `--selection-file` son mutuamente excluyentes. Las rutas absolutas y traversal con `..` se rechazan.
+
+Ejemplos:
+
+```bash
+php runTest.php --suite front-php \
+  --test test/front/cliente/unit/cliente_api_wiring.test.php \
+  --test test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php
+```
 
 ```bash
 mkdir -p .testkit
@@ -40,43 +44,61 @@ test/front/cliente/unit/cliente_domestic_asset_endpoint_contract.test.php
 test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php
 EOF
 
-./testkit/bin/testkit run --rm \
-  -e TEST_MATCH_FILE='.testkit/selection.front_php.txt' \
-  testkit php runTest.php front-php
+php runTest.php --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
 ```
 
-Reglas:
-
-- ignora líneas vacías;
-- ignora líneas que empiezan con `#`;
-- normaliza `\` a `/`;
-- rechaza path traversal con `..`;
-- rechaza entradas absolutas dentro del archivo;
-- las entradas deben ser repo-relative;
-- si `TEST_MATCH_FILE` apunta a un archivo inexistente o ilegible, la corrida falla de forma explícita;
-- las entradas válidas pero no encontradas no fallan por sí solas, pero quedan en `selection_unmatched_entries`.
-
-## `TEST_MATCH_LIST`
-
-Lista por coma:
+Desde el wrapper Docker:
 
 ```bash
-./testkit/bin/testkit run --rm \
-  -e TEST_MATCH_LIST='test/front/cliente/unit/cliente_api_wiring.test.php,test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php' \
-  testkit php runTest.php front-php
+./testkit/bin/testkit run --rm testkit php runTest.php \
+  --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
 ```
 
 PowerShell:
 
 ```powershell
-$env:TEST_MATCH_LIST = 'test/front/cliente/unit/cliente_api_wiring.test.php,test/front/cliente/unit/cliente_mi_cargador_modal_contract.test.php'
-.\testkit\bin\testkit.ps1 run --rm testkit php runTest.php front-php
-Remove-Item Env:\TEST_MATCH_LIST
+.\testkit\bin\testkit.ps1 run --rm testkit php runTest.php `
+  --suite front-php `
+  --selection-file .testkit/selection.front_php.txt
 ```
+
+## Bridge interno legacy
+
+El runtime todavía puede traducir temporalmente `--test` y `--selection-file` a variables internas `TEST_MATCH_LIST`, `TEST_MATCH_FILE` y `TEST_MATCH_LIST_MODE`.
+
+Eso es deuda de implementación de I4, no contrato público para consumidores.
+
+No documentar ni introducir nueva configuración basada en:
+
+```text
+TEST_MATCH
+TEST_MATCH_LIST
+TEST_MATCH_FILE
+TEST_MATCH_LIST_MODE
+TEST_SELECTION_MATCH_MODE
+```
+
+El criterio de cierre de I4 está en `docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md`.
+
+## Archivo de selección
+
+`--selection-file` apunta a un archivo dentro del repo host con una ruta de test por línea.
+
+Reglas esperadas:
+
+- ignora líneas vacías;
+- puede ignorar comentarios `#` según el parser interno vigente;
+- normaliza separadores de path cuando corresponde;
+- rechaza path traversal con `..`;
+- rechaza rutas absolutas;
+- las entradas deben ser repo-relative;
+- archivo inexistente o ilegible debe fallar explícitamente.
 
 ## Metadata de selección
 
-La suite adjunta metadata top-level y en `selection_manifest`:
+La suite puede adjuntar metadata top-level y en `selection_manifest`:
 
 ```json
 {
@@ -93,60 +115,61 @@ La suite adjunta metadata top-level y en `selection_manifest`:
 }
 ```
 
-`selection_unmatched_entries` indica entradas válidas del selector que no coincidieron con ningún `rel` descubierto luego de aplicar patrones/extensiones. No implica por sí solo fallo de suite salvo que el proyecto use `TEST_REQUIRE_TESTS=1` y la selección completa quede vacía.
+Los nombres `match_file`/`selection_match_mode` describen metadata interna persistida. No convierten las variables `TEST_MATCH*` en API pública.
+
+`selection_unmatched_entries` indica entradas válidas que no coincidieron con ningún archivo descubierto. No implica por sí solo fallo de suite salvo que el contrato de la corrida exija tests y la selección completa quede vacía.
 
 ## Paralelismo intra-suite
 
 Para unitarios paralelizables:
 
 ```bash
-./testkit/bin/testkit run --rm \
-  -e TEST_MATCH_FILE='.testkit/selection.front_php.txt' \
-  -e TEST_JOBS=4 \
-  testkit php runTest.php front-php
+TEST_JOBS=4 php runTest.php \
+  --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
 ```
 
 Para integración con DB, solo si el contrato del proyecto soporta `per_worker`:
 
 ```bash
-./testkit/bin/testkit run --rm \
-  -e TEST_MATCH_FILE='.testkit/selection.front_php.txt' \
-  -e TEST_JOBS=2 \
-  -e TEST_DB_STRATEGY=per_worker \
-  testkit php runTest.php front-php
+TEST_JOBS=2 \
+TEST_DB_STRATEGY=per_worker \
+php runTest.php \
+  --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
 ```
 
-No lanzar varios runners top-level en paralelo contra el mismo store. `per_worker` solo aísla workers dentro de una suite. No convierte múltiples `runTest.php` top-level en una configuración segura.
+No lanzar varios runners top-level en paralelo contra el mismo store. `per_worker` solo aísla workers dentro de una suite.
 
 ## Rerun aislado de fallidos
 
 Activar con:
 
 ```bash
--e TEST_RERUN_FAILED_ISOLATED=1
+TEST_RERUN_FAILED_ISOLATED=1
 ```
 
-Ejemplo recomendado:
+Ejemplo:
 
 ```bash
-./testkit/bin/testkit run --rm \
-  -e TEST_MATCH_FILE='.testkit/selection.front_php.txt' \
-  -e TEST_RERUN_FAILED_ISOLATED=1 \
-  -e TEST_COVERAGE=0 \
-  testkit php runTest.php front-php
+TEST_RERUN_FAILED_ISOLATED=1 \
+TEST_COVERAGE=0 \
+php runTest.php \
+  --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
 ```
 
 Comportamiento:
 
-1. Ejecuta la corrida batch normal.
-2. Si no hay fallos, no reejecuta nada.
-3. Si hay fallos, toma los archivos fallidos del reporte canónico y ejecuta solo esos archivos uno por uno con `TEST_JOBS=1`.
-4. El rerun aislado define `TEST_ISOLATED_RERUN_ACTIVE=1` para impedir recursión.
-5. Adjunta el resultado en `isolated_rerun`.
+1. ejecuta la corrida batch normal;
+2. si no hay fallos, no reejecuta nada;
+3. si hay fallos, toma los archivos fallidos del reporte canónico y los ejecuta uno por uno con `TEST_JOBS=1`;
+4. usa `TEST_ISOLATED_RERUN_ACTIVE=1` como guard interno para impedir recursión;
+5. adjunta el resultado en `isolated_rerun`.
 
 ### Exit code
 
-`isolated_rerun` es diagnóstico. No oculta fallos.
+`isolated_rerun` es diagnóstico y no oculta fallos.
 
 ```json
 {
@@ -156,11 +179,11 @@ Comportamiento:
 }
 ```
 
-Si el batch falla y el rerun aislado pasa, el exit code sigue siendo `1` por defecto. Eso evita convertir interferencia, orden inestable o flakiness en un falso éxito.
+Si el batch falla y el rerun aislado pasa, el exit code del batch continúa siendo fallido.
 
 ### Coverage
 
-Durante el rerun aislado, coverage se desactiva aunque la corrida batch tenga `TEST_COVERAGE=1`.
+Durante el rerun aislado, coverage se desactiva para no mezclar artefactos con la corrida principal:
 
 ```json
 {
@@ -170,11 +193,9 @@ Durante el rerun aislado, coverage se desactiva aunque la corrida batch tenga `T
 }
 ```
 
-La decisión evita mezclar artefactos de coverage de la corrida principal con los procesos diagnósticos secundarios. Si en una fase futura se necesita coverage del rerun aislado, debe escribirse en un directorio separado.
-
 ### Interpretación
 
-| Batch | Aislado | Diagnosis |
+| Batch | Aislado | Diagnóstico |
 |---|---|---|
 | `fail` | `fail` | `confirmed_failure` |
 | `fail` | `pass` | `interference_suspected` |
@@ -182,46 +203,27 @@ La decisión evita mezclar artefactos de coverage de la corrida principal con lo
 | `timeout` | `timeout` | `confirmed_failure` |
 | `fail` | `skip` / `no_tests` | `inconclusive` |
 
-`interference_suspected` significa que el archivo falló dentro del batch pero pasó aislado. Es una señal fuerte de interferencia por estado compartido, orden, seed, archivos, memoria global, clock, recursos externos o acoplamiento entre tests. No prueba causalidad por sí solo.
+`interference_suspected` es una señal de posible estado compartido, orden, seed, filesystem, memoria global, reloj o recursos externos. No prueba causalidad por sí sola.
 
 `confirmed_failure` significa que el fallo se reproduce aislado y debe tratarse como fallo real del archivo o de su entorno mínimo.
 
-## JSON mínimo de rerun aislado
-
-```json
-{
-  "isolated_rerun": {
-    "enabled": true,
-    "attempted": true,
-    "active_guard": false,
-    "affects_exit_code": false,
-    "coverage_policy": "disabled_for_isolated_rerun",
-    "failed_files_count": 1,
-    "results": [
-      {
-        "file": "test/example.test.php",
-        "batch_status": "fail",
-        "isolated_status": "pass",
-        "diagnosis": "interference_suspected",
-        "duration_ms": 123
-      }
-    ],
-    "summary": {
-      "confirmed_failures": 0,
-      "interference_suspected": 1,
-      "inconclusive": 0
-    }
-  }
-}
-```
-
 ## Tags de aislamiento
-
-Tags reconocidos:
 
 | Tag | Significado | Política |
 |---|---|---|
-| `memory-isolated` | Sensible a estado estático/global del proceso | PHP ya ejecuta cada archivo en proceso separado; queda como metadata. |
-| `db-isolated` | Requiere DB limpia o worker propio | Se trata como DB-sensitive para `ParallelGuard`. |
+| `memory-isolated` | Sensible a estado estático/global del proceso | Metadata; PHP ejecuta archivos en procesos separados. |
+| `db-isolated` | Requiere DB limpia o worker propio | DB-sensitive para `ParallelGuard`. |
 | `serial` | No paralelizar | Rechaza `TEST_JOBS>1`. |
-| `fragile` | Posible flaky/intermitente | Útil para priorizar rerun aislado y triage; no cambia exit code. |
+| `fragile` | Posible flaky/intermitente | Prioriza triage; no cambia exit code. |
+
+## Regla de consumo
+
+Para documentación nueva, scripts de hosts y agentes:
+
+```text
+selector tipado
++ --test / --selection-file
++ JSON persistido
+```
+
+No usar variables legacy de selección como superficie de integración.
