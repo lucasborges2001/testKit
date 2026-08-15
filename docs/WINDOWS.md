@@ -1,6 +1,8 @@
 # testKit en Windows
 
-Este documento describe la ruta operativa soportada para usar `testkit` desde Windows, con PowerShell 7 como wrapper y Docker Desktop (Linux containers) como runtime. Léelo junto con [`docs/USO.md`](USO.md), [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`docs/CI.md`](CI.md) y [`SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md).
+Este documento describe la ruta operativa prevista para usar `testkit` desde Windows, con PowerShell 7 como wrapper y Docker Desktop (Linux containers) como runtime. Léelo junto con [`docs/USO.md`](USO.md), [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md), [`docs/CI.md`](CI.md) y [`SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md).
+
+La superficie PowerShell está cubierta por contratos y self-tests. La ejecución real con Docker Desktop/MySQL sobre un host Windows no tiene evidencia remota vigente mientras la CI de `testKit` permanece deshabilitada. No confundir soporte contractual del wrapper con validación runtime actual.
 
 ## Requisitos
 
@@ -36,15 +38,17 @@ Los comandos de test usan exactamente un selector tipado:
 
 No se soportan targets posicionales, `TEST_TARGET`, `TESTKIT_TARGET_*` ni `doctor --target`.
 
-## Rutas soportadas
+## Rutas operativas
 
-### Ruta primaria: checkout NTFS + Docker Desktop/WSL2
+### Ruta objetivo: checkout NTFS + Docker Desktop/WSL2
 
 ```text
 Windows 11 → PowerShell 7 → Docker Desktop (backend WSL2) → contenedor Linux de testkit
 ```
 
-El proyecto y `testkit` pueden vivir en el mismo drive o en drives distintos. Ambos casos están cubiertos por `Test-TestkitPathUnderRoot` en `lib/powershell/Env.ps1`.
+El proyecto y `testkit` pueden vivir en el mismo drive o en drives distintos. La validación de paths está cubierta por `Test-TestkitPathUnderRoot` en `lib/powershell/Env.ps1`.
+
+Esto no demuestra por sí solo que Docker Desktop, bind mounts y stores reales funcionen en todos los hosts Windows. Esa evidencia runtime debe obtenerse en una máquina Windows real o runner equivalente y registrarse por separado.
 
 ### Ruta alternativa: checkout dentro de WSL2
 
@@ -123,15 +127,17 @@ git status --short
 
 El estado Git debe ser idéntico antes y después.
 
-## Evidencia Windows en CI
+## Estado de evidencia Windows
 
-El job canónico `windows-static` usa `windows-2025` para evitar la deriva de `windows-latest` y ejecuta:
+La CI remota de `testKit` está temporalmente deshabilitada por presupuesto. Por lo tanto no existe un job Windows vigente que pueda usarse como evidencia nueva del HEAD actual.
+
+El workflow completo anterior incluía un gate `windows-static` sobre `windows-2025` que cubría:
 
 1. existencia de archivos PowerShell críticos;
 2. parseo de `bin`, `lib`, `ui`, `scripts` y `tests/powershell`;
 3. detección de CRLF en scripts Linux críticos;
 4. `tests/powershell/run.ps1`;
-5. `php tests/framework/run.php`.
+5. self-tests PHP cuando correspondía al corte validado.
 
 El harness PowerShell incluye un gate específico de `TEST_STORE_DRIVER` sobre `seed.ps1` y `db_clean.ps1`. Sin Docker valida:
 
@@ -139,7 +145,9 @@ El harness PowerShell incluye un gate específico de `TEST_STORE_DRIVER` sobre `
 - valor inválido → `TEST_STORE_DRIVER_INVALID`, exit `2`;
 - `TEST_STORE_DRIVER=none` exportado prevalece sobre un valor distinto del archivo env y termina sin invocar runtime.
 
-Este job no demuestra Docker Desktop/MySQL sobre Windows; esa superficie sigue fuera del CI principal.
+Ese tipo de gate estático no demuestra Docker Desktop/MySQL sobre Windows. La evidencia runtime real sigue pendiente y debe registrarse sin convertir parseo o self-tests en un falso PASS de runtime.
+
+La deuda conocida de terminación/timeout de procesos nativos PHP en Windows está separada en `docs/pendientes/processrunner-timeout-windows.md`.
 
 ## Execution Policy
 
@@ -184,13 +192,14 @@ Ver [`docs/CLEANUP.md`](CLEANUP.md):
 
 ## Matriz resumida
 
-| Caso | Soporte |
+| Caso | Estado |
 |---|---|
-| PowerShell 7 + Docker Desktop/WSL2 | Soportado, ruta primaria |
-| Checkout NTFS con espacios | Soportado |
-| Proyecto y `testkit` en drives distintos | Soportado |
-| Checkout dentro de WSL2 operado por Bash | Soportado como alternativa |
-| `windows-2025` para gates estáticos de CI | Soportado |
+| PowerShell 7: wrapper, parseo y contratos estáticos | Cubierto contractualmente |
+| Checkout NTFS con espacios | Cubierto por lógica/tests de paths; runtime real no revalidado en este corte |
+| Proyecto y `testkit` en drives distintos | Cubierto por lógica/tests de paths; runtime real no revalidado en este corte |
+| Docker Desktop/WSL2 + containers Linux | Ruta runtime objetivo; evidencia Windows real pendiente |
+| Checkout dentro de WSL2 operado por Bash | Ruta alternativa |
+| Gate `windows-static` histórico | Sin evidencia remota nueva mientras CI está deshabilitada |
 | Windows containers | No soportado |
 | PowerShell 5.1 | No cubierto |
 | Paths UNC | No soportado |
