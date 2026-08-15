@@ -5,7 +5,7 @@ Influx Query Profiling agrega a TestKit una primera capa de **discovery + rankin
 Está apagado por defecto y se activa con:
 
 ```bash
-TESTKIT_INFLUX_PROFILE=1 php runTest.php back-php
+TESTKIT_INFLUX_PROFILE=1 php runTest.php --suite back-php
 php scripts/influx_query_report.php
 ```
 
@@ -31,7 +31,7 @@ El reporte no prueba que una query sea mala. Señala consultas que merecen inspe
 
 ```bash
 export TESTKIT_INFLUX_PROFILE=1
-php runTest.php back-php
+php runTest.php --suite back-php
 php scripts/influx_query_report.php
 ```
 
