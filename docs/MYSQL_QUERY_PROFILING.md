@@ -7,7 +7,7 @@ Las policies absolutas, los baselines históricos y la comparación son extensio
 ## Activación
 
 ```bash
-TESTKIT_DB_PROFILE=1 php runTest.php back-php
+TESTKIT_DB_PROFILE=1 php runTest.php --suite back-php
 php scripts/query_report.php
 php scripts/query_instrumentation_audit.php
 ```
@@ -266,7 +266,7 @@ Una query puede ser `classification=ok` y violar `max_calls`; también puede ser
 ```bash
 TESTKIT_DB_PROFILE=1 \
 TESTKIT_DB_PROFILE_POLICY_FILE=test/sql/mysql-profile-policies.json \
-php runTest.php back-php
+php runTest.php --suite back-php
 ```
 
 Luego:
@@ -365,7 +365,7 @@ Activación integrada:
 ```bash
 TESTKIT_DB_PROFILE=1 \
 TESTKIT_DB_PROFILE_BASELINE_FILE=test/sql/baselines/back-php.v1.json \
-php runTest.php back-php
+php runTest.php --suite back-php
 ```
 
 Artifacts default:
@@ -396,7 +396,7 @@ TESTKIT_DB_PROFILE_POLICY_FILE=test/sql/mysql-profile-policies.json \
 TESTKIT_DB_PROFILE_BASELINE_FILE=test/sql/baselines/back-php.v1.json \
 TESTKIT_DB_PROFILE_GATE_FILE=test/sql/mysql-query-gate.json \
 TESTKIT_DB_PROFILE_GATE_MODE=fail \
-php runTest.php back-php
+php runTest.php --suite back-php
 ```
 
 Variables:
