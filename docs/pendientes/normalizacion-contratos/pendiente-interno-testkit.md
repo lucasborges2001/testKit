@@ -2,85 +2,119 @@
 
 ## Estado
 
-Activo. Este documento contiene únicamente trabajo interno todavía no implementado.
+Activo. Este documento contiene únicamente deuda interna todavía no cerrada en `lucasborges2001/testKit`.
 
-La frontera documental vigente está en [`../README.md`](../README.md): cuando una fase queda implementada debe retirarse de este pendiente y, si todavía falta evidencia de ejecución, convertirse en una verificación bajo `docs/verificaciones/`.
+```text
+Baseline auditado: 8fd6cca8b91167c57bd4189e81365e5e4d34e3da
+Fecha: 2026-08-15
+```
+
+La frontera documental vigente está en [`../README.md`](../README.md). Los documentos históricos `fase-*` no definen el backlog actual.
 
 ## Ownership
 
-Todo este pendiente pertenece a `lucasborges2001/testKit` y debe poder resolverse sin modificar `Base`, `Pruebas` ni repositorios consumidores.
-
-## Baseline obligatorio por fase
-
-Antes de implementar cualquier punto registrar un baseline nuevo:
-
-```bash
-git branch --show-current
-git rev-parse HEAD
-git status --short
-git log --oneline -8
-```
-
-No reutilizar SHAs históricos como baseline operativo.
+Todo este pendiente pertenece a `testKit`. No autoriza modificar `Base`, `Pruebas`, consumidores externos, gitlinks, releases ni tags.
 
 ## Objetivo
 
-Completar la normalización interna del repositorio sin aliases, fallbacks silenciosos ni contratos duales.
+Completar la normalización interna sin aliases públicos, fallbacks silenciosos ni contratos duales, manteniendo una única superficie pública verificable.
 
-## Fase I3 — Stack estricto
+## Estado resumido
+
+| Fase | Estado auditado | Evidencia principal |
+|---|---|---|
+| I3 — Stack estricto | `ACTIVO` | Bash y PowerShell todavía normalizan aliases de stack. |
+| I4 — Selección única | `PARCIAL` | CLI pública ya usa `--test` / `--selection-file`, pero `RunRequest` conserva un puente interno mediante `TEST_MATCH*`. |
+| I5 — Coverage único | `ACTIVO` | `TEST_COVERAGE_DIR` y rutas legacy bajo `test/coverage` siguen resolviéndose. |
+| I6 — Protocolo de agentes v2 | `ACTIVO` | el planner todavía serializa comandos shell y sintaxis POSIX como contrato de acción. |
+| I7 — Paridad wrappers | `ACTIVO` | falta cerrar paridad mediante vectores y runtime Windows verificable. |
+| I8 — Reportes y exit codes v2 | `NO_VERIFICADO_COMO_CERRADO` | no existe evidencia suficiente en este corte para retirarlo. |
+| I9 — Documentación y gates | `PARCIAL` | existe registro generado, pero se detectó drift documental transversal. |
+
+## I3 — Stack estricto
+
+### Evidencia actual
+
+`lib/bash/stack.sh` y `lib/powershell/Stack.ps1` todavía aceptan y normalizan equivalencias como:
+
+```text
+postgres | postgresql -> pg
+influxdb              -> influx
+```
 
 ### Objetivo
 
-Eliminar sinónimos y shortcuts de stack, incluido `--pg`, conservando una única representación canónica.
+Aceptar únicamente los nombres canónicos del contrato de stack y fallar antes de Docker ante cualquier sinónimo o valor desconocido.
 
-### Criterio PASS
+### PASS
 
-- Bash y PowerShell aceptan exactamente los mismos valores;
-- `postgres`, `postgresql`, `influxdb` u otros sinónimos no se normalizan;
+- Bash y PowerShell aceptan exactamente el mismo conjunto;
+- no existen normalizaciones semánticas de aliases;
 - valores inválidos fallan antes de invocar Docker;
-- tests de paridad cubren todos los valores permitidos y rechazados.
+- tests de paridad cubren permitidos y rechazados.
 
-## Fase I4 — Selección de tests única
+## I4 — Selección de tests única
 
-### Objetivo
+### Estado actual
 
-Eliminar la superposición entre `TEST_MATCH`, listas, archivos y modos de selección.
+La superficie pública ya está tipada:
 
-### Contrato esperado
+```text
+--test <repo-relative>
+--selection-file <repo-relative>
+```
 
-- `--test <repo-relative>` repetible para archivos explícitos;
-- `--selection-file <repo-relative>` para lotes declarados;
-- ninguna selección por substring implícito;
-- rutas absolutas y traversal rechazados.
+`core/php/config/RunRequest.php` valida rutas repo-relative, rechaza traversal y hace mutuamente excluyentes `--test` y `--selection-file`.
 
-### Criterio PASS
+Sin embargo, todavía existe un puente interno que traduce esas entradas a:
 
-- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas públicas e internas de transición;
-- CLI, UI, reporting y rerun usan el mismo modelo;
+```text
+TEST_MATCH_LIST
+TEST_MATCH_FILE
+TEST_MATCH_LIST_MODE
+```
+
+Por eso esta fase no está cerrada.
+
+### PASS
+
+- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas públicas y puentes internos de transición;
+- CLI, UI, reporting y rerun usan un mismo modelo de selección;
+- no existe selección implícita por substring;
 - selección vacía o contradictoria falla explícitamente.
 
-## Fase I5 — Coverage único
+## I5 — Coverage único
 
-### Objetivo
+### Evidencia actual
 
-Definir una única variable de activación, un único formato y una única raíz de artifacts.
+`core/php/common/Paths.php` todavía resuelve:
 
-### Criterio PASS
+```text
+TEST_COVERAGE_ROOT
+TEST_COVERAGE_DIR     # legacy
+.testkit/coverage/
+test/coverage/       # candidatos legacy
+```
 
-- `TEST_COVERAGE_DIR` y paths legacy dejan de ser entradas;
+### PASS
+
+- `TEST_COVERAGE_ROOT` es la única raíz configurable;
+- `TEST_COVERAGE_DIR` deja de ser entrada;
 - no existen fallbacks bajo `test/coverage/`;
 - reporting publica una sola ruta canónica;
-- Linux y PowerShell generan el mismo plan de coverage.
+- Linux y PowerShell generan el mismo plan.
 
-## Fase I6 — Protocolo de agentes v2
+## I6 — Protocolo de agentes v2
+
+### Evidencia actual
+
+`AgentActionPlanner` todavía construye comandos textuales como `./bin/testkit ...` y antepone `TESTKIT_MODE=agent` con semántica POSIX.
 
 ### Objetivo
 
-Sustituir comandos shell serializados como contrato primario por un `command_spec` neutral y versionado.
+Sustituir el string shell como contrato primario por un `command_spec` neutral y versionado.
 
-### Criterio PASS
-
-Cada acción cumple:
+### PASS
 
 ```text
 planner
@@ -91,43 +125,39 @@ planner
 -> artifact persistido
 ```
 
-No se considera PASS si el agente solo publica texto de consola ejecutable en Bash.
+No es PASS si una acción solo publica una cadena ejecutable en Bash.
 
-## Fase I7 — Paridad de wrappers
+## I7 — Paridad de wrappers
 
-### Objetivo
-
-Hacer que Bash y PowerShell sean adapters del mismo plan normalizado.
-
-### Criterio PASS
+### PASS
 
 - mismos vectores de entrada;
 - mismo selector, env, compose files y entrypoint;
 - mismo código de salida contractual;
-- divergencia en vectores provoca fallo;
-- soporte runtime Windows se declara solo con smoke real.
+- divergencia de vectores provoca fallo;
+- soporte runtime Windows se declara únicamente con smoke real.
 
-## Fase I8 — Reportes y códigos de salida v2
+La deuda específica de terminación de procesos en Windows se mantiene separada en `../processrunner-timeout-windows.md`.
 
-### Objetivo
+## I8 — Reportes y códigos de salida v2
 
-Unificar suite, meta, inspect y agente bajo schemas versionados sin duplicación semántica.
+No retirar esta fase hasta auditar de forma específica todos los schemas de suite, meta, inspect y agentes.
 
-### Criterio PASS
+### PASS
 
-- JSON Schema validado en CI;
+- JSON Schema validado;
 - tabla cerrada de exit codes;
 - campos duplicados eliminados;
 - ningún significado depende de una suite de dominio;
-- consola queda como presentación no contractual.
+- consola es presentación, no contrato de máquina.
 
-## Fase I9 — Documentación generada y gates finales
+## I9 — Documentación generada y gates finales
 
-### Objetivo
+### Estado actual
 
-Eliminar drift entre registro, ayuda, schema, doctor y documentación.
+`docs/CONTRACT_REGISTRY.md` ya se genera desde `ContractRegistry` y representa la autoridad de selectores. El corte documental del 2026-08-15 corrigió `docs/CONTRATO.md` y `docs/USO.md`, pero la eliminación de drift debe mantenerse como gate permanente.
 
-### Gates
+### PASS
 
 - test contractual ausente = FAIL;
 - alias semántico nuevo = FAIL;
@@ -140,15 +170,24 @@ Eliminar drift entre registro, ayuda, schema, doctor y documentación.
 
 ```text
 I3 stack
-I4 selección
-I5 coverage
-I6 agentes
-I7 wrappers
-I8 reportes
-I9 gates/documentación
+-> I4 selección
+-> I5 coverage
+-> I6 agentes
+-> I7 wrappers
+-> I8 reportes
+-> I9 gates/documentación
 ```
 
-No adelantar I6-I9 para ocultar aliases todavía activos en I3-I5.
+No adelantar fases posteriores para ocultar aliases o bridges todavía activos.
+
+## Baseline obligatorio por fase
+
+```bash
+git branch --show-current
+git rev-parse HEAD
+git status --short
+git log --oneline -8
+```
 
 ## Validación mínima por fase
 
@@ -166,26 +205,4 @@ pwsh -NoProfile -NonInteractive -File tests/powershell/run.ps1
 
 ## Conversión a verificación
 
-Una fase debe salir de este archivo cuando:
-
-1. el código/contrato necesario ya existe;
-2. sus self-tests o gates reproducibles están definidos;
-3. no queda implementación funcional pendiente para ejecutar esos gates.
-
-Si todavía falta ejecución local, CI real, Docker, Windows o infraestructura externa, crear un documento en `docs/verificaciones/` con:
-
-- baseline;
-- entorno requerido;
-- comandos exactos;
-- resultado esperado;
-- evidencia;
-- `PASS/FAIL/BLOCKED`;
-- acción después de `PASS`.
-
-## Acciones excluidas
-
-- modificar consumidores externos;
-- actualizar gitlinks en `Base` o `Pruebas`;
-- crear aliases temporales;
-- hacer release o tag sin autorización;
-- declarar soporte runtime no probado.
+Una fase sale de este archivo cuando el código requerido existe y únicamente queda obtener evidencia en un entorno concreto. En ese caso crear o actualizar `docs/verificaciones/` con baseline, entorno, comandos, resultado esperado y estado `PASS|FAIL|BLOCKED`.

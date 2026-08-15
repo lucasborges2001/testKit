@@ -1,379 +1,281 @@
 # Contrato de adopción de testkit
 
-## 1) Qué responde este documento
+## Autoridad y alcance
 
-Este documento fija el contrato mínimo entre `testkit` y el proyecto integrador.
+Este documento fija el contrato público mínimo entre `testkit` y un proyecto integrador.
 
-Usarlo para responder estas preguntas:
+Para selectores, nombres de suites, grupos y categorías, la autoridad canónica es [`CONTRACT_REGISTRY.md`](CONTRACT_REGISTRY.md), generado desde `Testkit\Core\Config\ContractRegistry`.
 
-- qué necesita un proyecto para adoptar `testkit`
-- qué controla `testkit`
-- qué sigue siendo responsabilidad del proyecto
-- qué motores y servicios están realmente soportados
-- qué casos no están soportados o no están garantizados
+Si un ejemplo histórico contradice ese registro o el parser de `RunRequest`, el ejemplo histórico está desactualizado.
 
-No usarlo para:
+## Selector público
 
-- quick start operativo
-- troubleshooting paso a paso
-- arquitectura interna detallada
-- lectura de reportes o coverage
+Toda ejecución de tests declara exactamente uno de:
 
-Para eso, leer:
-
-- [`USO.md`](USO.md)
-- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
-- [`ARQUITECTURA.md`](ARQUITECTURA.md)
-- [`REPORTING_COVERAGE.md`](REPORTING_COVERAGE.md)
-- [`../SUPPORT_MATRIX.md`](../SUPPORT_MATRIX.md)
-
-## 2) Adopción mínima
-
-Un proyecto puede adoptar `testkit` si cumple estas condiciones mínimas.
-
-### 2.1) Repositorio y env
-
-Requisitos estrictos:
-
-- `TESTKIT_PROJECT_ROOT` debe apuntar al repo del proyecto probado.
-- El env de tests debe existir en una de estas rutas:
-  - `<project>/test/.env.test` (preferido)
-  - `<project>/.env.test`
-- Ese archivo debe vivir dentro del repo montado. `doctor` falla si queda afuera.
-
-### 2.2) Layout de tests
-
-Requisitos estrictos:
-
-- `testkit` espera un root contractual `test/`.
-- Las suites usan tests bajo `test/back/` y `test/front/` según corresponda.
-- Si el proyecto no usa una suite, no necesita poblar su árbol asociado.
-
-Convenciones configurables:
-
-- algunas rutas y convenciones de discovery pueden ajustarse por configuración
-- esos ajustes cambian la resolución de archivos, no el ownership del lifecycle
-
-### 2.3) Contrato mínimo de store
-
-Solo aplica a suites que tocan DB/store real.
-
-Requisitos estrictos:
-
-- el proyecto debe declarar credenciales runtime válidas para el store activo
-- si `TEST_STORE_PROVISION=managed`, también debe declarar credenciales admin
-- si usa bootstrap estructural, debe proveer la estructura de `test/seeds/<driver>/`
-
-Para baseline `layered`:
-
-- `test/seeds/<driver>/schema/`
-- `test/seeds/<driver>/base/`
-- `test/seeds/<driver>/validations/` es opcional
-- `test/seeds/<driver>/migrations/<id>/` aplica solo si el proyecto decide usar migraciones explícitas
-- `test/seeds/<driver>/migrations.disabled` permite desactivar el catálogo runtime y reconstruir solo desde `schema + base + validations`
-
-Para baseline `snapshot`:
-
-- en esta fase la ruta cerrada es MySQL
-- el proyecto debe declarar un dump lógico resoluble
-- la fuente admitida es:
-  - `TEST_BASELINE_SNAPSHOT_FILE`
-  - o metadata/report JSON compatible usado para resolver ese artefacto
-- `snapshot` no reemplaza el catálogo estructural del proyecto; solo cambia el punto de partida del bootstrap
-
-### 2.4) Contrato de referencias PHP
-
-`reference-contract` es una suite técnica estática. No ejecuta tests de dominio y no toca DB/store.
-
-Contrato vigente:
-
-- target principal: `php runTest.php reference-contract`
-- aliases: `references`, `php-references`
-- suite interna: `reference_contract`
-- alcance actual: solo includes PHP (`require`, `require_once`, `include`, `include_once`)
-- resolución estática: literales simples y concatenaciones simples con `__DIR__`
-- dinámicos: warning por defecto, ignorables o convertibles en error por env
-- salida: `.testkit/reports/reference_contract/`
-
-El root no es todo el repo por default. Se resuelve así:
-
-1. `TESTKIT_REFERENCE_ROOT`, si existe.
-2. `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
-3. `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si falta, usa `TK_PUBLIC_DIR`.
-4. Sin scope explícito, default `back`.
-
-No forman parte de este corte:
-
-- imports JS
-- assets HTML/CSS
-- Markdown
-- rutas HTTP
-- inferencia semántica de factories, autoloaders o constantes de negocio
-
-### 2.5) Contrato de suite infra PHP
-
-`infra_php` es una suite operacional para tests propios del host integrador.
-No es equivalente a `back_php` ni debe usarse para dominio funcional PHP puro.
-
-Targets:
-
-- `php runTest.php infra`
-- `php runTest.php infra-php`
-- `php runTest.php http` como alias operacional de `infra_php`
-
-Contrato:
-
-- suite interna: `infra_php`
-- root recomendado: `test/infra`
-- patrón recomendado: `*.test.php`
-- soporta `TEST_CATEGORY`, `TEST_SCOPE`, `TEST_MATCH`, `TEST_MATCH_LIST` y `TEST_MATCH_FILE`
-- genera reportes y coverage bajo el `suite_id` propio `infra_php`
-- puede ejecutar pruebas HTTP reales, Docker, seguridad operacional, cookies y límites de autenticación del host
-- no ejecuta bootstrap estructural de store por defecto
-- no asume que todos los tests infra son DB-sensitive
-
-Variables:
-
-```env
-TK_INFRA_PHP_TEST_ROOTS=test/infra
-TK_INFRA_PHP_TEST_PATTERNS=*.test.php
-TK_INFRA_PHP_TEST_EXCLUDE_ROOTS=
-TK_INFRA_PHP_TEST_EXCLUDE_PATTERNS=*/vendor/*,*/node_modules/*,*/_out/*,*/.testkit/*,*/testkit/*
+```text
+--suite <nombre>
+--group <nombre>
+--category <nombre>
 ```
 
-Los tests infra pueden requerir servidor HTTP, Docker o credenciales de entorno.
-Esa dependencia debe estar declarada por el test, la configuración del host o la documentación del proyecto.
+No forman parte del contrato público:
 
-## 3) Qué controla testkit
+- targets posicionales;
+- aliases de suites o grupos;
+- `TEST_TARGET`;
+- `TESTKIT_TARGET_*`;
+- inferencia de selector desde otras variables.
 
-`testkit` es dueño de la plataforma de ejecución. Controla:
+Ejemplos válidos:
 
-- selección de target y suite
-- discovery y filtros compartidos
-- lifecycle de bootstrap estructural
-- naming de DB/store derivado para workers y baseline
-- restricciones operativas de estrategia (`shared`, `per_worker`, `clean`)
-- formato y ubicación de artefactos operativos del framework
-- reportes técnicos y diagnósticos del framework
-- scanner técnico de referencias estáticas cuando se usa `reference-contract`
+```bash
+php runTest.php --suite back-php
+php runTest.php --group all --list
+php runTest.php --category smoke
+php runTest.php --suite reference-contract
+php runTest.php --suite infra-php
+```
 
-En otras palabras: `testkit` decide cómo se corre la plataforma.
+## Selección explícita de archivos
 
-## 4) Qué sigue siendo responsabilidad del proyecto
+La selección pública adicional es:
 
-El proyecto integrador sigue siendo dueño de:
+```text
+--test <repo-relative>          # repetible
+--selection-file <repo-relative>
+```
 
-- los tests de dominio
-- builders, helpers y asserts en `test/_support`
-- el contenido SQL de `schema`, `base`, `migrations` y `validations`
-- la definición de escenarios de negocio
-- la semántica funcional que los tests deben validar
-- la elección y mantenimiento de servicios externos que el proyecto necesite
-- la calidad y determinismo de sus propios tests
-- corregir referencias PHP rotas detectadas por `reference-contract`
+Reglas:
 
-`testkit` no inventa fixtures de negocio ni corrige automáticamente tests frágiles.
+- `--test` y `--selection-file` son mutuamente excluyentes;
+- las rutas deben ser repo-relative;
+- rutas absolutas y traversal con `..` se rechazan;
+- no existe selección pública implícita por substring.
 
-## 5) Strict vs configurable
+Ejemplos:
 
-| Tipo | Qué entra |
+```bash
+php runTest.php --suite back-php \
+  --test test/back/auth/login.test.php
+
+php runTest.php --suite front-php \
+  --selection-file .testkit/selection.front_php.txt
+```
+
+Las variables internas `TEST_MATCH*` que todavía puedan existir en el runtime son bridges de transición y no deben documentarse como API pública nueva. Su eliminación está registrada en `docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md`.
+
+## Adopción mínima
+
+### Proyecto y env
+
+- `TESTKIT_PROJECT_ROOT` apunta al repositorio probado.
+- El env de tests vive dentro del proyecto, normalmente en `test/.env.test` o `.env.test`.
+- `TESTKIT_ENV_FILE` puede seleccionar explícitamente el archivo admitido.
+- Un env fuera del proyecto montado debe fallar.
+
+### Layout
+
+El root contractual de tests es `test/`.
+
+Las suites funcionales usan, según corresponda:
+
+```text
+test/back/
+test/front/
+test/infra/
+```
+
+Los tests, fixtures y reglas de dominio pertenecen al proyecto consumidor, no a `testkit`.
+
+## Store estructural
+
+`TEST_STORE_DRIVER` es el único selector del store estructural.
+
+Valores exactos:
+
+```text
+mysql
+pgsql
+none
+```
+
+No seleccionan store:
+
+```text
+DB_DRIVER
+TEST_DB_DRIVER
+TEST_DB_DSN
+nombres de DB
+credenciales
+TESTKIT_STACK
+```
+
+Semántica general:
+
+| Driver | Estado contractual |
 |---|---|
-| Estricto | root `test/`, env dentro del repo, semántica de `TEST_DB_STRATEGY`, restricciones de `migration-contract`, ownership del lifecycle de bootstrap |
-| Configurable | rutas base del proyecto, tagging por path/metadata, cantidad de workers, provisionado `managed|external`, sufijo de workers, root de artefactos, root/scope del scanner de referencias |
-| Fuera de contrato | reglas de negocio, builders del proyecto, fixtures funcionales, políticas de datos del dominio |
+| `mysql` | ruta principal cerrada |
+| `pgsql` | parcial/experimental |
+| `none` | proyecto sin store runtime |
 
-Regla práctica: lo configurable puede cambiar la forma de resolver o ejecutar; no cambia quién es dueño de cada responsabilidad.
-
-## 6) Matriz de soporte por motor/servicio
-
-Esta tabla es el contrato vigente. No debe leerse como roadmap.
-
-| Componente | Estado | Contrato actual | Límites |
-|---|---|---|---|
-| MySQL | cerrado / principal | provision, reset, baseline layered, snapshot restore, clone para `per_worker`, `migration-contract` | requiere env DB válido; `per_worker` no habilita múltiples runners top-level |
-| PostgreSQL | parcial / experimental | adapter runtime con provision/reset básico cuando el env está completo | sin snapshot restore cerrado; sin clone cerrado; no es ruta cerrada de `migration-contract` |
-| Sin store (`none`) | soportado / no-store | no hay lifecycle estructural de DB; las suites pueden listar/ejecutar sin credenciales DB | no participa en baseline/snapshot/clone ni en `migration-contract` |
-| Redis | auxiliar | servicio disponible si el stack lo levanta | sin lifecycle estructural en core PHP; no participa en baseline/snapshot/clone |
-| Influx | auxiliar / perfilado | profiling/reporting si está habilitado | no es store driver principal; no participa en seed/bootstrap estructural |
-| `reference-contract` | técnico / estático | scanner PHP de includes resolubles | no analiza JS/CSS/HTML/HTTP ni expresiones dinámicas de negocio |
-| `infra_php` | operacional / host | discovery PHP bajo `test/infra`; HTTP/Docker/security del host; reportes propios | no reemplaza `back_php`; no bootstrap de store por defecto; puede requerir servicios externos levantados |
-
-Semántica operativa:
-
-- MySQL es la única ruta principal cerrada en esta fase.
-- PostgreSQL puede existir como infraestructura parcial, pero no debe venderse como equivalente a MySQL.
-- `TEST_STORE_DRIVER=none` declara explícitamente un proyecto sin store runtime.
-- Redis no tiene lifecycle estructural equivalente dentro del core PHP.
-- Influx funciona como servicio auxiliar/perfilado, no como store driver principal.
-- `reference-contract` es independiente del store.
-
-## 7) Límites vigentes
-
-Estos límites forman parte del contrato actual y no deben maquillarse como soporte general.
-
-### 7.1) Paralelismo
-
-- `per_worker` aísla workers dentro de una misma suite.
-- No vuelve seguro correr varios runners top-level en paralelo sobre el mismo proyecto/store.
-- Si una suite usa DB real con `TEST_JOBS > 1`, la ruta cerrada es `TEST_DB_STRATEGY=per_worker`.
-- `reference-contract` no toca store y declara top-level parallel safe.
-
-### 7.2) Estrategias de store
-
-- `shared` está soportado.
-- `per_worker` está soportado con naming derivado por worker.
-- `clean` no está implementado como modo operativo. Intentar usarlo debe fallar explícitamente.
-
-### 7.3) Motores
-
-### 7.3.1) Proyectos sin store
-
-Contrato:
+Para proyectos sin store:
 
 ```env
 TEST_STORE_DRIVER=none
 TEST_STORE_PROVISION=external
 ```
 
-Comportamiento esperado:
+## Estrategias de DB
 
-- no se requieren credenciales MySQL ni variables `DB_*`/`TEST_MYSQL_*`
-- no se arranca stack `mysql,redis` por default si `TESTKIT_STACK` no fue declarado
-- `runTest.php` puede listar o ejecutar suites sin bootstrap estructural de store
-- si el proyecto declara `TESTKIT_STACK` explícitamente, se respeta
+| Estrategia | Estado |
+|---|---|
+| `shared` | soportada |
+| `per_worker` | soportada dentro de una suite; no habilita múltiples runners top-level concurrentes |
+| `clean` | reconocida pero no implementada; debe rechazarse |
 
-- MySQL es la ruta principal cerrada para bootstrap, snapshot restore y clone por worker.
-- PostgreSQL puede existir como infraestructura de test, pero snapshot/clone no forman parte del contrato cerrado de esta fase.
-- Redis no tiene lifecycle estructural equivalente dentro del core PHP.
-- Influx no es un store driver principal; su contrato se limita a servicio auxiliar/perfilado.
+`per_worker` no convierte una DB compartida en segura para varios procesos top-level independientes.
 
-### 7.4) migration-contract
+## Baseline y bootstrap
 
-`migration-contract` no es una suite funcional general. Su contrato es más chico:
+Para suites con store real, el proyecto es dueño de sus seeds y estructura bajo `test/seeds/<driver>/`.
 
-- valida bootstrap técnico de una baseline restaurada
-- exige `TEST_BASELINE_MODE=snapshot`
-- exige una fuente de snapshot resoluble
-- exige `TEST_DB_STRATEGY=shared`
-- en esta fase está cerrado solo para MySQL
+Baseline `layered` puede usar:
 
-No reemplaza tests funcionales del proyecto.
+```text
+test/seeds/<driver>/schema/
+test/seeds/<driver>/base/
+test/seeds/<driver>/validations/
+test/seeds/<driver>/migrations/<id>/
+```
 
-### 7.5) reference-contract
+Baseline `snapshot` está cerrado actualmente en la ruta MySQL y requiere una fuente resoluble.
 
-`reference-contract` no es un linter completo ni un autoloader analyzer.
+`migration-contract` es una suite técnica, no una suite funcional general. El contrato cerrado exige MySQL, snapshot resoluble, estrategia `shared` y `TEST_JOBS=1`.
 
-En este corte:
+## Suite `reference-contract`
 
-- no escanea todo el repo por default
-- solo procesa archivos `.php`
-- solo falla rutas literales/resolubles que apuntan a archivos inexistentes
-- registra dinámicos según `TESTKIT_REFERENCE_DYNAMIC_SEVERITY`
-- corta por timeout, cantidad máxima de archivos, tamaño por archivo y cantidad máxima de violaciones
+Selector público:
 
-### 7.6) Heurísticas
+```bash
+php runTest.php --suite reference-contract
+```
 
-No están garantizados como verdad semántica:
+No existen aliases públicos equivalentes.
 
-- fragility hints
-- agrupación de familias de fallo
-- señales de triage derivadas de historial
-- clasificación de un include dinámico como seguro o inseguro
+Alcance actual:
 
-Sirven para priorizar análisis, no para cerrar diagnóstico.
+- `require`;
+- `require_once`;
+- `include`;
+- `include_once`;
+- literales y concatenaciones simples resolubles con `__DIR__`.
 
-### 7.7) Capability doctor
+No es un analizador general de JS, CSS, HTML, Markdown, rutas HTTP ni reglas semánticas de autoloaders.
 
-`doctor` puede emitir una sección de capability basada en la config visible del wrapper.
+El root se resuelve mediante `TESTKIT_REFERENCE_ROOT` o el scope configurado. El scanner no debe interpretarse como test funcional de dominio.
 
-Eso **no** cambia este contrato:
+## Suite `infra-php`
 
-- no convierte `UNKNOWN` en `PASS`
-- no vuelve seguro un path runtime que no fue ejecutado
-- no reemplaza una corrida real
-- no autoriza varios runners top-level en paralelo
-- no convierte PostgreSQL, Redis o Influx en rutas estructurales cerradas
+Selector público:
 
-Sirve para detectar contradicciones visibles y para no vender compatibilidad que el wrapper no puede demostrar todavía.
+```bash
+php runTest.php --suite infra-php
+```
 
-Semántica de capability:
+No existen `infra`, `http` u otros aliases públicos equivalentes.
 
-- `PASS`: ruta visible cerrada o declaración auxiliar correctamente clasificada
-- `WARN`: señal visible degradada, parcial o poco confiable
-- `UNKNOWN`: no hay evidencia suficiente para afirmar compatibilidad
-- `FAIL`: contradicción visible con el contrato
+`infra-php` pertenece a pruebas operacionales del host: HTTP real, Docker, seguridad operacional, cookies, límites de autenticación y validaciones de infraestructura.
 
-`UNKNOWN` no es `PASS` disfrazado y `WARN` no vuelve soportada una ruta no cerrada.
+No reemplaza `back-php` para dominio funcional PHP.
 
-## 8) Qué no soporta o no garantiza hoy
+Convención recomendada:
 
-- throughput normal basado en varios runners top-level concurrentes sobre la misma DB
-- soporte general de snapshot/clone para motores no MySQL
-- lifecycle estructural Redis o Influx dentro del core PHP
-- lifecycle de negocio dentro del seed de infraestructura
-- inferencia automática de reglas funcionales del proyecto
-- convertir tests no deterministas en tests seguros por configuración
-- contrato general de assets/imports fuera de includes PHP
+```env
+TK_INFRA_PHP_TEST_ROOTS=test/infra
+TK_INFRA_PHP_TEST_PATTERNS=*.test.php
+```
 
-## 9) Criterio de lectura
+## Stack de servicios
 
-Si una necesidad del proyecto contradice este documento, no hay que reinterpretar el contrato.
+`TESTKIT_STACK` describe servicios a levantar; no selecciona el store estructural.
 
-Hay dos opciones válidas:
+Nombres canónicos documentados:
 
-- adaptar el proyecto al contrato actual
-- registrar la diferencia como deuda o feature futura, sin venderla como soportada hoy
+```text
+mysql
+pg
+redis
+influx
+```
 
-## 10) `reference-contract`
+Los aliases que el runtime todavía normaliza son deuda interna de I3 y no deben usarse en configuración nueva.
 
-`reference-contract` es una suite técnica de análisis estático para includes PHP. Su alcance actual es cerrado y no debe reinterpretarse como analizador general de assets.
+## Coverage
 
-Incluye únicamente:
+La raíz canónica es:
 
-- `require`
-- `require_once`
-- `include`
-- `include_once`
+```env
+TEST_COVERAGE_ROOT=.testkit/coverage
+```
 
-Queda fuera de contrato en esta fase:
+Los artifacts se organizan por `suite_id`, por ejemplo:
 
-- JS imports
-- CSS `url()`
-- HTML `href/src`
-- Markdown links
-- rutas HTTP
-- autofix de includes
-- integración con Composer autoload más allá de no romperlo
+```text
+.testkit/coverage/back_php
+.testkit/coverage/front_php
+```
 
-Reglas de root:
+`TEST_COVERAGE_DIR` y rutas legacy bajo `test/coverage/` todavía pueden existir por compatibilidad interna, pero no forman parte de la configuración pública recomendada. Su eliminación está pendiente en I5.
 
-1. `TESTKIT_REFERENCE_ROOT` si está definido.
-2. `TESTKIT_REFERENCE_SCOPE=back` usa `TK_BACK_DIR`.
-3. `TESTKIT_REFERENCE_SCOPE=front` usa `TK_FRONT_DIR`; si no existe, usa `TK_PUBLIC_DIR`.
-4. Default de scope: `back`.
-5. `TESTKIT_REFERENCE_ROOT=.` es la única forma explícita de pedir escaneo del repo completo.
+## Ownership
 
-La suite no toca DB/store y no participa en bootstrap estructural.
+### testkit controla
 
-## Anexo: `reference-contract`
+- parsing del selector público;
+- discovery y ejecución;
+- lifecycle técnico de bootstrap/store;
+- restricciones de concurrencia;
+- ubicación y formato de artifacts técnicos;
+- reporting y evidencia del framework.
 
-`reference-contract` es una suite técnica de consistencia referencial. Su contrato actual está deliberadamente cerrado a includes PHP estáticos.
+### el proyecto consumidor controla
 
-Alcance soportado:
+- tests de dominio;
+- helpers, builders y asserts propios;
+- contenido de seeds y fixtures;
+- reglas funcionales;
+- dependencias externas de sus pruebas;
+- determinismo de sus escenarios.
 
-- `require`
-- `require_once`
-- `include`
-- `include_once`
-- expresiones resolubles con strings literales y `__DIR__`
+`testkit` no debe incorporar reglas específicas del dominio consumidor.
 
-Fuera de contrato en esta fase:
+## Evidencia y estados
 
-- imports JS
-- assets CSS/HTML
-- links Markdown
-- rutas HTTP
-- autoload avanzado de Composer
-- autofix
+La consola es presentación humana. Para automatización y agentes, la evidencia contractual debe provenir de JSON/reportes persistidos cuando esa superficie exista.
 
-Esta suite no debe tomar lock de store ni disparar bootstrap estructural: no muta DB, no ejecuta tests de dominio y no reemplaza coverage ni smoke tests funcionales.
+No interpretar:
+
+```text
+UNKNOWN = PASS
+WARN = soporte cerrado
+SKIP = validación real
+BLOCKED = PASS
+```
+
+## Límites vigentes
+
+No se garantiza:
+
+- varios runners top-level concurrentes sobre el mismo store;
+- snapshot/clone cerrado para motores distintos de MySQL;
+- lifecycle estructural de Redis o Influx;
+- runtime Docker Desktop real en Windows sólo por pasar validaciones estáticas;
+- terminación nativa completa de `ProcessRunner` en Windows mientras siga abierto su pendiente específico;
+- inferencia automática de reglas de negocio.
+
+## Regla de lectura
+
+Una necesidad que contradiga este contrato debe resolverse de una de dos formas:
+
+1. adaptar el consumidor al contrato vigente; o
+2. registrar una deuda/feature nueva sin presentar soporte inexistente como vigente.

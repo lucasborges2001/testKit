@@ -3,15 +3,18 @@
 ## Estado
 
 ```text
-ESTADO: PENDIENTE
+ESTADO: BLOCKED
 CLASIFICACION: VERIFICACION_CONTRATO_STORE
 IMPLEMENTACION_BASE: 2f8f34c33a25c8bbdd036d3cfccece9cda976c32
 ULTIMA_VALIDACION_LOCAL: 0e8479e02dee039adb1f78e2b710ea832fec44a8
-ULTIMO_RESULTADO: LOCAL_RUNTIME_PASS_CI_NORMALIZADO_PENDIENTE_REVALIDAR_Y_REACTIVAR
-POWERSHELL_LOCAL: BLOCKED_PWSH_NO_DISPONIBLE
-WORKFLOW_REMOTE_STATE: DISABLED_MANUALLY
+BASELINE_DOCUMENTAL_ACTUAL: 8fd6cca8b91167c57bd4189e81365e5e4d34e3da
+ULTIMO_RESULTADO_LOCAL: PASS
+CI_REMOTA_ACTUAL: BLOCKED_CI_BUDGET
+WORKFLOW_ACTUAL: STUB_DESHABILITADO
 PRODUCCION_AUTORIZADA: NO
 ```
+
+`BLOCKED_CI_BUDGET` no equivale a `PASS`. Esta verificación permanece abierta porque el HEAD actual no tiene evidencia remota nueva del workflow completo.
 
 ## Contrato
 
@@ -44,175 +47,97 @@ TEST_STORE_DRIVER_REQUIRED
 TEST_STORE_DRIVER_INVALID
 ```
 
-## Evidencia local ya cerrada
+## Evidencia local histórica válida
 
-Confirmado antes de normalizar CI:
+Antes de la deshabilitación de Actions se obtuvo evidencia local de:
 
 ```text
 Store driver explicit contract PASS
-Doctor mode self-tests passed: 7 case executions
-PHP syntax: PASS
-Bash syntax: PASS
-Negativos públicos: PASS
-Runtime MySQL fixture: PASS
-Framework: 43 passed, 0 failed
-Working tree: limpio
+Doctor mode self-tests PASS
+PHP syntax PASS
+Bash syntax PASS
+negativos públicos PASS
+runtime MySQL fixture PASS
+framework 43 passed, 0 failed
+working tree limpio
 ```
 
-Runtime MySQL real validado con:
+El fixture runtime usado fue:
 
 ```text
 tests/fixtures/runtime-mysql-host
 ```
 
-Evidencia:
+Y demostró al menos:
 
 ```text
 MySQL healthy
-Seeds aplicadas: 1
+seed aplicado
 runtime_mysql_store.test.php descubierto
 PASS=1 FAIL=0
 inspect latest: evidence_valid=true
-teardown: PASS
+teardown PASS
 ```
 
-## Auditoría del CI deshabilitado
+Esta evidencia demuestra el baseline donde fue ejecutada; no sustituye un run CI nuevo del HEAD actual.
 
-GitHub reportó:
+## Estado remoto actual
+
+En `main@8fd6cca` el archivo `.github/workflows/ci.yml` fue reemplazado temporalmente por un stub debido a presupuesto de GitHub Actions no disponible.
+
+El workflow actual:
+
+- sólo expone `workflow_dispatch`;
+- tiene permisos vacíos;
+- contiene un job con `if: false`;
+- no ejecuta los gates contractuales.
+
+Por eso el bloqueo actual se clasifica como:
 
 ```text
-CI    disabled_manually    workflow_id=237398346
+BLOCKED_CI_BUDGET
 ```
 
-Actions del repositorio están habilitadas globalmente; el workflow individual es el que permanece deshabilitado. Los runs visibles son históricos y no sirven como evidencia del baseline I2 actual.
+No como fallo de I2 y tampoco como PASS remoto.
 
-### Deuda encontrada
+## Baseline CI que debe restaurarse
 
-1. `actions/checkout@v4`, `actions/setup-node@v4` y `actions/upload-artifact@v4` estaban varios majors detrás del baseline vigente.
-2. El job estático fijaba Node `20`, ya EOL.
-3. La imagen Docker reusable también fijaba Node `20` y Playwright `1.45.0`.
-4. `windows-static` usaba `windows-latest`, sujeto a cambio de imagen.
-5. `browser-runner-smoke` usaba la raíz de TestKit como host implícito en vez de un `TESTKIT_PROJECT_ROOT` separado.
-6. `docs/WINDOWS.md` todavía publicaba selectores posicionales y `migration-contract` como preflight genérico.
-7. No existía un test PowerShell ejecutable que comprobara `TEST_STORE_DRIVER_REQUIRED`, `TEST_STORE_DRIVER_INVALID` y la precedencia del env en `seed.ps1`/`db_clean.ps1`.
-
-## Normalización publicada
-
-Baseline candidato posterior a la auditoría: `main` igual o posterior al commit que contiene este documento.
-
-Cambios intencionales:
+La definición completa anterior separaba:
 
 ```text
-.github/workflows/ci.yml
-docker/Dockerfile
-compose.yaml
-docs/CI.md
-docs/WINDOWS.md
-tests/framework/test_ci_typed_selectors.php
-tests/powershell/run.ps1
-tests/powershell/test_store_driver_contract.ps1
+static
+windows-static
+framework-self-tests
+runtime-mysql
+browser-runner-smoke
 ```
 
-Contrato nuevo del CI:
+La restauración debe recuperar esa definición desde historia Git o desde un cambio explícito revisable. No reconstruirla de memoria.
 
-```text
-Ubuntu: ubuntu-24.04
-Windows: windows-2025
-Node host: 24 LTS
-Node Docker: 24
-Playwright Docker: 1.61.0
-checkout: v7
-setup-node: v7
-upload-artifact: v7
-```
-
-`runtime-mysql` mantiene su host fixture dedicado.
-
-`browser-runner-smoke` ahora usa:
-
-```text
-TESTKIT_PROJECT_ROOT=tests/fixtures/browser
-TESTKIT_ENV_FILE=tests/fixtures/browser/.env.test
-TEST_STORE_DRIVER=none
-TEST_STORE_PROVISION=external
-```
-
-El harness PowerShell incorpora `Store driver explicit contract` y valida `seed.ps1` y `db_clean.ps1` sin Docker:
-
-```text
-missing -> TEST_STORE_DRIVER_REQUIRED / exit 2
-invalid -> TEST_STORE_DRIVER_INVALID / exit 2
-exported none overrides env-file mysql -> exit 0 sin runtime
-```
-
-## Gate local antes de reactivar Actions
-
-Linux:
+## Gate local previo a una futura reactivación
 
 ```bash
-php -l tests/framework/test_ci_typed_selectors.php
 php tests/framework/test_ci_typed_selectors.php
 php tests/framework/test_store_driver_contract.php
 php tests/framework/run.php
-
 bash -n scripts/seed.sh
 bash -n scripts/db_clean.sh
+git diff --check
 ```
 
-Docker/browser, porque cambió Node/Playwright:
+En un host con PowerShell 7:
 
-```bash
-ROOT="$PWD"
-FIXTURE="$ROOT/tests/fixtures/browser"
-
-cp .env.test.example "$FIXTURE/.env.test"
-sed -i 's/^TESTKIT_STACK=.*/TESTKIT_STACK=/' "$FIXTURE/.env.test"
-sed -i 's/^TEST_STORE_DRIVER=.*/TEST_STORE_DRIVER=none/' "$FIXTURE/.env.test"
-sed -i 's/^TEST_STORE_PROVISION=.*/TEST_STORE_PROVISION=external/' "$FIXTURE/.env.test"
-
-export TESTKIT_PROJECT_ROOT="$FIXTURE"
-export TESTKIT_ENV_FILE="$FIXTURE/.env.test"
-export TESTKIT_STACK=
-
-./bin/testkit run --rm \
-  -e TESTKIT_BROWSER_BASE_URL=http://127.0.0.1:4173 \
-  -e TESTKIT_BROWSER_HEADLESS=1 \
-  -e TESTKIT_BROWSER_TRACE=retain-on-failure \
-  -e TESTKIT_BROWSER_SCREENSHOT=only-on-failure \
-  -e TESTKIT_BROWSER_VIDEO=off \
-  -e TESTKIT_BROWSER_TIMEOUT_MS=10000 \
-  -e TESTKIT_BROWSER_ARTIFACTS_DIR=/workspace/project/test-results/browser \
-  testkit bash -lc '
-    set -euo pipefail
-    mkdir -p /workspace/project/test-results/browser
-    php -S 127.0.0.1:4173 -t /workspace/project/public > /workspace/project/test-results/browser/fixture-server.log 2>&1 &
-    server_pid="$!"
-    trap "kill ${server_pid} >/dev/null 2>&1 || true" EXIT
-    for i in $(seq 1 50); do
-      if curl -fsS http://127.0.0.1:4173/health.json >/dev/null; then break; fi
-      sleep 0.2
-    done
-    node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs
-  '
-
-unset TESTKIT_PROJECT_ROOT TESTKIT_ENV_FILE TESTKIT_STACK
-rm -f "$FIXTURE/.env.test"
+```powershell
+pwsh -NoProfile -NonInteractive -File tests\powershell\run.ps1
 ```
 
-PowerShell local puede seguir BLOCKED si `pwsh` no está disponible en Ubuntu. La evidencia real debe venir de `windows-static` tras reactivar el workflow.
+La deuda de `ProcessRunner` Windows permanece separada en `docs/pendientes/processrunner-timeout-windows.md` y no debe mezclarse con el contrato de store explícito.
 
-## Reactivación — NO EJECUTADA
+## PASS remoto requerido
 
-La reactivación es una acción remota separada y no forma parte de esta normalización.
+Cuando Actions vuelva a estar disponible y se autorice restaurar/reactivar el workflow completo, esta verificación puede cerrarse únicamente si un run nuevo asociado al SHA candidato demuestra éxito en todos los gates contractuales aplicables.
 
-Cuando los gates locales anteriores pasen y exista autorización:
-
-```bash
-gh workflow enable ci.yml --repo lucasborges2001/testKit
-gh workflow run ci.yml --repo lucasborges2001/testKit --ref main
-```
-
-PASS remoto requiere observar:
+Como mínimo:
 
 ```text
 static                 success
@@ -222,23 +147,17 @@ runtime-mysql          success
 browser-runner-smoke   success
 ```
 
-## Deuda fuera de este cambio
+## Después de PASS
 
-El inventario detectó documentación histórica adicional con ejemplos posicionales, entre otros `README.md`, `docs/USO.md` y documentos de profiling. No se corrigió aquí para evitar mezclar la normalización de CI/I2 con una limpieza documental transversal.
+1. cerrar esta verificación;
+2. fijar el SHA verificado donde corresponda en consumidores mediante cambios separados;
+3. validar cada consumidor con su propio baseline;
+4. continuar las fases internas restantes desde `docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md`.
 
-Tampoco se modifican:
+## Acciones excluidas
 
-- I3 stack estricto;
-- I4 selección única;
-- I5 coverage único;
-- I6-I9;
-- consumidores externos;
-- gitlinks de `Base` o `Pruebas`.
-
-## Acción después de PASS remoto
-
-1. cerrar/eliminar esta verificación según la política vigente;
-2. actualizar `Base/testkit`;
-3. validar `Base`;
-4. actualizar `Pruebas/submodules/Base` en fase separada;
-5. continuar con I3.
+- reactivar Actions desde este documento;
+- modificar `Base`, `Pruebas` o consumidores;
+- actualizar gitlinks;
+- declarar runtime Windows completo por un gate estático;
+- presentar `BLOCKED` como `PASS`.
