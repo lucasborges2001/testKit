@@ -48,10 +48,12 @@ Usage:
 
 reset:
   Removes TestKit containers/orphans and purges reports, profiling shards,
-  coverage and locks. Preserves Docker volumes, history and baselines.
+  coverage and stale locks. Preserves Docker volumes, history, active locks
+  and baselines.
 
 reset --hard:
-  Also removes Docker volumes and TestKit history. Baselines remain preserved.
+  Also removes Docker volumes, TestKit history and all TestKit locks.
+  Baselines remain preserved.
 '@
 }
 
