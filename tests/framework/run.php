@@ -62,6 +62,7 @@ $tests = [
     'SQL observability public exit code 5'  => __DIR__ . '/test_sql_observability_exit_code_5.php',
     'Declarative suite output contract'     => __DIR__ . '/test_run_suite_config_output_contract.php',
     'Declarative suite compact contract'    => __DIR__ . '/test_run_suite_config_compact_contract.php',
+    'Reset CLI contract'                    => __DIR__ . '/test_reset_cli.sh',
 ];
 
 $started = microtime(true);
