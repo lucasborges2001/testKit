@@ -75,6 +75,84 @@ testkit_dispatch_cleanup() {
     testkit php /workspace/testkit/scripts/cleanup.php "$@"
 }
 
+testkit_reset_usage() {
+  cat <<'TXT'
+Usage:
+  testkit reset [--hard] [--json]
+
+reset:
+  Removes TestKit containers/orphans and purges reports, profiling shards,
+  coverage and locks. Preserves Docker volumes, history and baselines.
+
+reset --hard:
+  Also removes Docker volumes and TestKit history. Baselines remain preserved.
+TXT
+}
+
+testkit_dispatch_reset() {
+  local env_file="$1"
+  shift || true
+
+  local hard=0
+  local reset_args=()
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      --hard)
+        hard=1
+        reset_args+=("--hard")
+        ;;
+      --json)
+        reset_args+=("--json")
+        ;;
+      --help|-h)
+        testkit_reset_usage
+        return 0
+        ;;
+      *)
+        echo "reset: argumento no reconocido: ${arg}" >&2
+        testkit_reset_usage >&2
+        return 2
+        ;;
+    esac
+  done
+
+  local stack_csv
+  stack_csv="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || return 1
+  export TESTKIT_DB_ENV_PATH
+  TESTKIT_DB_ENV_PATH="$(testkit_env_file_to_container_path "${env_file}")"
+  export TESTKIT_PROJECT_ROOT="${PROJECT_ROOT}"
+  export TESTKIT_ROOT="${TESTKIT_ROOT_HOST}"
+
+  local files=()
+  testkit_resolve_compose_files "${stack_csv}" files
+
+  local down_cmd=(docker compose --env-file "${env_file}" "${files[@]}" down)
+  if [[ "${hard}" -eq 1 ]]; then
+    down_cmd+=("-v")
+  fi
+  down_cmd+=("--remove-orphans")
+  "${down_cmd[@]}" || return $?
+
+  local passthrough_env=()
+  mapfile -d '' -t passthrough_env < <(testkit_docker_passthrough_env_args)
+
+  local reset_rc=0
+  docker compose --env-file "${env_file}" "${files[@]}" run --rm --no-deps \
+    -e TESTKIT_WRAPPER_KIND="bash" \
+    -e TESTKIT_RESET_CONTAINERS_STOPPED="1" \
+    "${passthrough_env[@]}" \
+    testkit php /workspace/testkit/scripts/reset.php "${reset_args[@]}" || reset_rc=$?
+
+  local final_rc=0
+  docker compose --env-file "${env_file}" "${files[@]}" down --remove-orphans || final_rc=$?
+
+  if [[ "${reset_rc}" -ne 0 ]]; then
+    return "${reset_rc}"
+  fi
+  return "${final_rc}"
+}
+
 testkit_dispatch_runtime() {
   local env_file="$1"
   shift || true
@@ -180,6 +258,11 @@ main() {
     cleanup)
       shift || true
       testkit_dispatch_cleanup "${env_file}" "$@"
+      return $?
+      ;;
+    reset)
+      shift || true
+      testkit_dispatch_reset "${env_file}" "$@"
       return $?
       ;;
     *)
