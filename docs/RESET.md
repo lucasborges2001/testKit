@@ -24,7 +24,7 @@ The safe mode:
 - removes `.testkit/reports` completely, including stale `latest_run.json` and `*_latest.json` pointers;
 - removes MySQL and Influx profiling shards;
 - removes TestKit coverage artifacts under the allowed coverage roots;
-- removes TestKit lock directories after the stack is down;
+- removes stale TestKit lock directories after the stack is down, while preserving locks that still appear active;
 - preserves Docker volumes and database state;
 - preserves `.testkit/history`;
 - preserves baseline manifests;
@@ -43,7 +43,8 @@ The safe mode:
 Hard mode performs the safe reset and additionally:
 
 - uses `docker compose down -v --remove-orphans` to remove disposable Compose volumes for the resolved stack;
-- removes `.testkit/history`.
+- removes `.testkit/history`;
+- removes all TestKit lock directories.
 
 Baselines remain preserved even in hard mode. `reset --hard` is a TestKit runtime reset, not a Git reset: it never runs `git clean`, never rewrites the checkout and never deletes source tests, seeds or env files.
 
@@ -92,4 +93,4 @@ Do not use hard reset merely to make a failing test green. A reset removes state
 bash tests/framework/test_reset_cli.sh
 ```
 
-The contract covers safe/hard artifact preservation, the stopped-container guard, Docker wrapper sequencing, volume preservation/removal semantics, unknown-option fail-fast behavior and PowerShell wrapper parity markers.
+The contract covers safe/hard artifact preservation, stale-versus-active lock handling, the stopped-container guard, Docker wrapper sequencing, volume preservation/removal semantics, unknown-option fail-fast behavior and PowerShell wrapper parity markers.
