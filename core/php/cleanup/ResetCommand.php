@@ -8,6 +8,7 @@ use Testkit\Core\Common\Paths;
 
 require_once __DIR__ . '/CleanupFilesystem.php';
 require_once __DIR__ . '/CleanupSafety.php';
+require_once __DIR__ . '/CleanupLockInspector.php';
 
 /**
  * Purges disposable TestKit artifacts after the wrapper has stopped the compose stack.
@@ -90,7 +91,6 @@ final class ResetCommand
             ['name' => 'influx_profile_shards', 'group' => 'profiles', 'path' => $artifactsRoot . '/influx_profile/shards'],
             ['name' => 'artifact_coverage', 'group' => 'coverage', 'path' => $artifactsRoot . '/coverage'],
             ['name' => 'legacy_coverage', 'group' => 'coverage', 'path' => Paths::testRoot() . '/coverage'],
-            ['name' => 'locks', 'group' => 'locks', 'path' => $artifactsRoot . '/locks'],
         ];
 
         foreach (['TEST_COVERAGE_ROOT', 'TEST_COVERAGE_DIR'] as $key) {
@@ -104,8 +104,16 @@ final class ResetCommand
             }
         }
 
+        $locksRoot = Paths::normalize($artifactsRoot . '/locks');
         if ($hard) {
+            $targets[] = ['name' => 'locks', 'group' => 'locks', 'path' => $locksRoot];
             $targets[] = ['name' => 'history', 'group' => 'history', 'path' => Paths::historyRoot()];
+        } else {
+            foreach (CleanupFilesystem::listChildDirs($locksRoot) as $lockDir) {
+                if (CleanupLockInspector::isStaleLock($lockDir)) {
+                    $targets[] = ['name' => 'stale_lock', 'group' => 'locks', 'path' => $lockDir];
+                }
+            }
         }
 
         $seen = [];
@@ -154,6 +162,7 @@ final class ResetCommand
             'preserved' => [
                 'baselines' => true,
                 'history' => !$hard,
+                'active_locks' => !$hard,
                 'env_files' => true,
                 'test_sources' => true,
                 'test_seeds' => true,
@@ -196,8 +205,9 @@ Usage:
 
 Modes:
   reset         Stops TestKit containers and purges reports, profiling shards,
-                coverage and locks. Docker volumes, history and baselines remain.
-  reset --hard  Also removes Docker volumes (wrapper responsibility) and history.
+                coverage and stale locks. Docker volumes, history, active locks
+                and baselines remain.
+  reset --hard  Also removes Docker volumes, history and all TestKit locks.
 
 Safety:
   - baselines are preserved in both modes;
