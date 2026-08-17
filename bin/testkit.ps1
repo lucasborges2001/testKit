@@ -41,6 +41,94 @@ function Invoke-TestkitCleanup([string]$EnvFilePath, [string[]]$CleanupArgs) {
   return $LASTEXITCODE
 }
 
+function Write-TestkitResetUsage {
+  Write-Output @'
+Usage:
+  testkit.ps1 reset [--hard] [--json]
+
+reset:
+  Removes TestKit containers/orphans and purges reports, profiling shards,
+  coverage and locks. Preserves Docker volumes, history and baselines.
+
+reset --hard:
+  Also removes Docker volumes and TestKit history. Baselines remain preserved.
+'@
+}
+
+function Invoke-TestkitReset([string]$EnvFilePath, [string[]]$ResetArgs) {
+  $hard = $false
+  $forwardArgs = New-Object System.Collections.Generic.List[string]
+  foreach ($arg in @($ResetArgs)) {
+    switch ($arg) {
+      '--hard' {
+        $hard = $true
+        $forwardArgs.Add('--hard') | Out-Null
+      }
+      '--json' {
+        $forwardArgs.Add('--json') | Out-Null
+      }
+      '--help' {
+        Write-TestkitResetUsage
+        return 0
+      }
+      '-h' {
+        Write-TestkitResetUsage
+        return 0
+      }
+      default {
+        Write-Error "reset: argumento no reconocido: $arg"
+        Write-TestkitResetUsage
+        return 2
+      }
+    }
+  }
+
+  $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
+  $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
+  $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
+  $env:TESTKIT_ROOT = $script:ResolvedTestkitRoot.Path
+  $files = Get-TestkitComposeFiles $stackCsv
+
+  $downCmd = @('compose','--env-file',$EnvFilePath) + $files + @('down')
+  if ($hard) {
+    $downCmd += '-v'
+  }
+  $downCmd += '--remove-orphans'
+  & docker @downCmd
+  $downStatus = $LASTEXITCODE
+  if ($downStatus -ne 0) {
+    return $downStatus
+  }
+
+  $passthrough = @()
+  foreach ($key in @('TEST_COVERAGE_DIR','TEST_COVERAGE_ROOT')) {
+    $value = [Environment]::GetEnvironmentVariable($key)
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      $passthrough += @('-e', $key)
+    }
+  }
+
+  $resetCmd = @('compose','--env-file',$EnvFilePath) + $files + @(
+    'run','--rm','--no-deps',
+    '-e','TESTKIT_WRAPPER_KIND=powershell',
+    '-e','TESTKIT_RESET_CONTAINERS_STOPPED=1'
+  ) + $passthrough + @(
+    'testkit','php','/workspace/testkit/scripts/reset.php'
+  ) + $forwardArgs.ToArray()
+
+  & docker @resetCmd
+  $resetStatus = $LASTEXITCODE
+
+  $finalDownCmd = @('compose','--env-file',$EnvFilePath) + $files + @('down','--remove-orphans')
+  & docker @finalDownCmd
+  $finalStatus = $LASTEXITCODE
+
+  if ($resetStatus -ne 0) {
+    return $resetStatus
+  }
+  return $finalStatus
+}
+
 function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$CliArgs) {
   $legacyPg = $false
   $runtimeArgs = @($CliArgs)
@@ -93,5 +181,9 @@ if ($Args.Count -gt 0 -and $Args[0] -eq 'inspect') {
 if ($Args.Count -gt 0 -and $Args[0] -eq 'cleanup') {
   $cleanupArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
   exit (Invoke-TestkitCleanup $envFile.Path $cleanupArgs)
+}
+if ($Args.Count -gt 0 -and $Args[0] -eq 'reset') {
+  $resetArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+  exit (Invoke-TestkitReset $envFile.Path $resetArgs)
 }
 exit (Invoke-TestkitRuntime $envFile.Path $Args)
