@@ -18,11 +18,14 @@ mkdir -p \
   "${artifacts_root}/influx_profile/shards/old_run" \
   "${artifacts_root}/coverage/back_php" \
   "${artifacts_root}/locks/old_lock" \
+  "${artifacts_root}/locks/active_lock" \
   "${artifacts_root}/history" \
   "${artifacts_root}/baselines" \
   "${host_root}/test/coverage/front_php" \
   "${host_root}/test/back/example" \
   "${host_root}/test/seeds"
+
+touch -t 202001010000.00 "${artifacts_root}/locks/old_lock"
 
 printf '{}\n' > "${artifacts_root}/reports/latest_run.json"
 printf '{}\n' > "${artifacts_root}/reports/runs/old_run/result.json"
@@ -58,6 +61,7 @@ if (!is_array($payload)) { fwrite(STDERR, "safe reset output is not JSON\n"); ex
 if (($payload["ok"] ?? null) !== true) { fwrite(STDERR, "safe reset should be ok\n"); exit(1); }
 if (($payload["mode"] ?? null) !== "safe") { fwrite(STDERR, "safe reset mode mismatch\n"); exit(1); }
 if (($payload["preserved"]["history"] ?? null) !== true) { fwrite(STDERR, "safe reset must preserve history\n"); exit(1); }
+if (($payload["preserved"]["active_locks"] ?? null) !== true) { fwrite(STDERR, "safe reset must preserve active locks\n"); exit(1); }
 if (($payload["preserved"]["baselines"] ?? null) !== true) { fwrite(STDERR, "safe reset must preserve baselines\n"); exit(1); }
 ' <<< "${safe_json}"
 
@@ -66,8 +70,8 @@ for deleted_path in \
   "${artifacts_root}/mysql_profile/shards" \
   "${artifacts_root}/influx_profile/shards" \
   "${artifacts_root}/coverage" \
-  "${artifacts_root}/locks" \
-  "${host_root}/test/coverage"; do
+  "${host_root}/test/coverage" \
+  "${artifacts_root}/locks/old_lock"; do
   if [[ -e "${deleted_path}" ]]; then
     echo "safe reset should delete ${deleted_path}" >&2
     exit 1
@@ -76,6 +80,7 @@ done
 
 for preserved_path in \
   "${artifacts_root}" \
+  "${artifacts_root}/locks/active_lock" \
   "${artifacts_root}/history/history_20260817_120000.json" \
   "${artifacts_root}/baselines/keep.manifest.json" \
   "${host_root}/.env.test" \
@@ -98,11 +103,12 @@ if (!is_array($payload)) { fwrite(STDERR, "hard reset output is not JSON\n"); ex
 if (($payload["ok"] ?? null) !== true) { fwrite(STDERR, "hard reset should be ok\n"); exit(1); }
 if (($payload["mode"] ?? null) !== "hard") { fwrite(STDERR, "hard reset mode mismatch\n"); exit(1); }
 if (($payload["preserved"]["history"] ?? null) !== false) { fwrite(STDERR, "hard reset must remove history\n"); exit(1); }
+if (($payload["preserved"]["active_locks"] ?? null) !== false) { fwrite(STDERR, "hard reset must remove all locks\n"); exit(1); }
 if (($payload["preserved"]["baselines"] ?? null) !== true) { fwrite(STDERR, "hard reset must preserve baselines\n"); exit(1); }
 ' <<< "${hard_json}"
 
-if [[ -e "${artifacts_root}/reports" || -e "${artifacts_root}/history" ]]; then
-  echo "hard reset should remove reports and history" >&2
+if [[ -e "${artifacts_root}/reports" || -e "${artifacts_root}/history" || -e "${artifacts_root}/locks" ]]; then
+  echo "hard reset should remove reports, history and locks" >&2
   exit 1
 fi
 if [[ ! -f "${artifacts_root}/baselines/keep.manifest.json" ]]; then
