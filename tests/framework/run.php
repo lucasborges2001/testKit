@@ -27,6 +27,7 @@ $tests = [
     'No-store contract'                     => __DIR__ . '/test_no_store_contract.php',
     'Wrapper runtime contract'              => __DIR__ . '/test_wrapper_runtime_contract.sh',
     'Core domain boundary'                  => __DIR__ . '/test_core_domain_boundary.php',
+    'PLC Modbus read-only profiles'         => __DIR__ . '/test_plc_modbus_readonly_profiles.php',
     'Contract registry parity'              => __DIR__ . '/test_contract_registry.php',
     'Strict run request'                    => __DIR__ . '/test_strict_run_request.php',
     'CI typed selector contract'            => __DIR__ . '/test_ci_typed_selectors.php',
