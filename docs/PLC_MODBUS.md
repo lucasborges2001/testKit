@@ -2,41 +2,47 @@
 
 ## Scope
 
-TestKit owns reusable PLC transport diagnostics. Host projects own application register maps and business semantics.
+TestKit owns reusable PLC transport diagnostics and read-only application-map execution. Host projects own concrete register maps, meanings and business assertions.
 
-The closed capability in this phase is deliberately read-only:
+Closed path:
 
 ```text
-host project
+host project descriptor
 -> TestKit
--> Modbus TCP
--> FC03 Read Holding Registers
 -> runtime-map detection
--> persisted neutral evidence
+-> runtime gate
+-> bounded FC03 read plan
+-> neutral structural evidence
 ```
 
 TestKit does **not** define project-specific PLC variables, `%MW` application contracts, PINs, boxes, workflows, output control or domain assertions.
 
+`runtime profile != application map`.
+
+A runtime profile identifies the Modbus/runtime contract exposed by the PLC. An application map is a host-owned descriptor that declares which FC03 windows belong to that application and on which runtime profiles that exact map is valid.
+
 ## Public PHP API
 
-Host projects may load:
+Load:
 
 ```php
 require_once $testkitRoot . '/core/php/plc/bootstrap.php';
 ```
 
-Classes:
+Public classes:
 
 ```text
 Testkit\Core\Plc\ModbusTcpReadOnlyClient
 Testkit\Core\Plc\ModbusTcpReadOnlyException
 Testkit\Core\Plc\RuntimeProfileCatalog
 Testkit\Core\Plc\RuntimeProfileDetector
+Testkit\Core\Plc\ReadOnlyApplicationMapValidator
+Testkit\Core\Plc\ReadOnlyApplicationMapProbe
 ```
 
 `ModbusTcpReadOnlyClient` only constructs FC03 requests. It exposes no register/coil write method and no configurable Modbus function code.
 
-If write-capable PLC testing is added later, it must use a separate capability/API with explicit opt-in. It must not be added to the read-only client.
+If write-capable PLC testing is added later, it must use a separate capability/API with explicit opt-in. It must not be added to this read-only client or probe.
 
 ## Runtime-map profiles
 
@@ -47,42 +53,42 @@ wago-pfc200-codesys2
 wago-pfc200-eruntime
 ```
 
-Profiles describe the runtime/map exposed through Modbus. They are not application profiles.
+Profiles describe infrastructure/runtime, not applications.
 
 ### `wago-pfc200-codesys2`
 
-Required read-only signatures:
+Required signatures:
 
 ```text
 0x2002..0x2004 => 0x1234, 0xAAAA, 0x5555
 0x1040         => PLC state 1 or 2
 ```
 
-The WAGO PFC200 CODESYS V2 mapping also documents the `%MW` flag area under `0x3000..0xFFFF`, but the actual addressable extent depends on the current CODESYS memory arrangement. Host projects must therefore validate their own application range rather than assuming the maximum documented range is allocated.
+WAGO documents the CODESYS V2 `%MW` flag area under `0x3000..0xFFFF`, but explicitly states that the actual addressable flag area depends on the current CODESYS memory arrangement. A host must validate its own range; TestKit does not turn the maximum range into an application guarantee.
 
 ### `wago-pfc200-eruntime`
 
-Required read-only signatures:
+Required signatures:
 
 ```text
 0xFAA0..0xFAA2 => 0x1234, 0xAAAA, 0x5555
 0xFA0D         => PLC state 1 or 2
 ```
 
-Additional evidence:
+Additional neutral evidence:
 
 ```text
 0xFA17         Modbus process-image version
-0xFA40..0xFA45 process-image sizes
+0xFA40..0xFA45 process-image size information
 ```
 
-These are runtime/system probes only. They do not identify an application register map.
+These registers identify runtime/process-image metadata. They do **not** establish where a particular host application's variables live.
 
-## Detection semantics
+Reference: WAGO I/O System 750 PFC200 manuals, sections `Modbus – CODESYS V2` and `Modbus – e!RUNTIME`; for e!RUNTIME, sections `12.2.4 Modbus Process Image Version` and `12.2.5 Modbus Process Image Registers`.
 
-`RuntimeProfileDetector` always fails closed.
+## Runtime detection semantics
 
-Possible states:
+`RuntimeProfileDetector` fails closed.
 
 ```text
 DETECTED
@@ -93,95 +99,154 @@ PROFILE_MISMATCH
 
 Rules:
 
-- `auto`: exactly one matching profile is required.
-- explicit profile: the detected profile must equal the requested profile.
+- `auto`: exactly one profile must match.
+- explicit profile: detected profile must equal the requested profile.
 - no matches: `UNKNOWN`.
 - multiple matches: `AMBIGUOUS`; no profile is selected.
-- explicit profile contradicted by one detected profile: `PROFILE_MISMATCH`.
-- there is no silent fallback from an explicit profile to another runtime.
+- explicit contradiction: `PROFILE_MISMATCH`.
+- no silent fallback.
 
-## Generic CLI
+## Read-only application map descriptor
 
-Run through the TestKit wrapper so the host project's selected test env is available:
+Host projects pass a plain PHP array, typically stored in host-owned test support code:
 
-```bash
-export TESTKIT_PROJECT_ROOT=/absolute/path/to/project
-
-./bin/testkit run --rm \
-  -e TESTKIT_PLC_ENABLED \
-  -e TESTKIT_PLC_HOST \
-  -e TESTKIT_PLC_PORT \
-  -e TESTKIT_PLC_UNIT_ID \
-  -e TESTKIT_PLC_TIMEOUT_MS \
-  -e TESTKIT_PLC_PROFILE \
-  testkit php scripts/plc_modbus_profile.php --json
+```php
+[
+    'id' => 'example-app-map-v1',
+    'supportedRuntimeProfiles' => [
+        'wago-pfc200-codesys2',
+    ],
+    'windows' => [
+        [
+            'id' => 'main-block',
+            'function' => 3,
+            'startAddress' => 12416,
+            'quantity' => 27,
+        ],
+    ],
+    'interRequestDelayMs' => 0,
+]
 ```
 
-Configuration:
+TestKit treats `id` values as opaque identifiers. It does not infer semantics from them.
 
-```env
-TESTKIT_PLC_ENABLED=1
-TESTKIT_PLC_HOST=192.168.x.x
-TESTKIT_PLC_PORT=502
-TESTKIT_PLC_UNIT_ID=1
-TESTKIT_PLC_TIMEOUT_MS=1500
-TESTKIT_PLC_PROFILE=auto
+Validation is fail-closed:
+
+```text
+plan id: non-empty safe identifier
+supportedRuntimeProfiles: non-empty, unique, all present in RuntimeProfileCatalog
+windows: non-empty, unique ids
+function: integer 3 only
+startAddress: 0..65535
+quantity: 1..125
+startAddress + quantity - 1: <=65535
 ```
 
-Supported explicit profile examples:
+No wildcard ranges, auto-address discovery, negative offsets or scan-all mode exist.
 
-```env
-TESTKIT_PLC_PROFILE=wago-pfc200-codesys2
-TESTKIT_PLC_PROFILE=wago-pfc200-eruntime
+## Safety budgets
+
+A one-shot application-map probe is bounded to:
+
+```text
+max windows:               16
+max registers/request:     125   (Modbus FC03 protocol limit)
+max total registers/plan:  1024  (2 KiB register payload)
+inter-request delay:       0..1000 ms
 ```
 
-Real PLC addresses belong in the host project's ignored `test/.env.test` or `.env.test`, not in TestKit.
+The 16-window/1024-register policy keeps a diagnostic run deterministic and well below a full address-space scan while leaving substantial headroom over current small application maps. It is a TestKit safety policy, not a PLC address-space claim.
 
-## Artifact
+## Runtime gate and execution order
 
-Default host-project artifact:
+Schema validation happens before hardware I/O so malformed descriptors fail without touching a PLC. Once a plan is valid, application reads follow this gate:
+
+```text
+runtime detection
+-> DETECTED required
+-> detected profile must be in supportedRuntimeProfiles
+-> only then execute application windows
+```
+
+Status mapping:
+
+```text
+DETECTED + supported   -> execute plan
+DETECTED + unsupported -> BLOCKED
+UNKNOWN                -> FAIL
+AMBIGUOUS              -> FAIL
+PROFILE_MISMATCH       -> FAIL
+```
+
+A blocked/failed runtime gate executes zero application windows.
+
+## Application-map probe API
+
+```php
+$client = new ModbusTcpReadOnlyClient($host, $port, $unitId, $timeoutMs);
+$detector = new RuntimeProfileDetector();
+$probe = ReadOnlyApplicationMapProbe::fromClient($client, $detector);
+
+$result = $probe->run($applicationMap, $requestedRuntimeProfile);
+```
+
+Return shape:
+
+```text
+result.evidence
+result.valuesByWindow
+```
+
+`evidence` is safe structural evidence and contains no application register dump. It includes:
+
+```text
+status
+mode=readonly
+transport=modbus-tcp
+readonlyInvariant=true
+runtime
+plan id / supported profiles / budgets
+windows:
+  id
+  function
+  startAddress
+  endAddress
+  quantity
+  registerCount
+  valid
+  failureStage
+  durationMs
+durationMs
+failureStage
+failureReason
+```
+
+`valuesByWindow` exists only in-memory for host-owned assertions. The host decides whether any application value is safe to persist in its own evidence.
+
+## Neutral artifacts and reporting
+
+The existing runtime-profile CLI persists:
 
 ```text
 .testkit/plc/modbus-readonly-profile/latest.json
 ```
 
-Stable top-level intent:
+The application-map executor itself is a PHP API in this phase. No second file-based read-plan CLI is added in 02A because the real consumer already runs host PHP tests through TestKit's `infra-php` suite. Adding JSON file loading/path policy now would create a second public configuration surface without a second concrete consumer. A generic CLI can be added later if another project needs it.
 
-```text
-schema=testkit.plc-modbus-readonly-profile.v1
-mode=readonly
-transport=modbus-tcp
-status=PASS|FAIL|BLOCKED
-result.readonlyInvariant=true
-result.requestedProfile
-result.detectionStatus
-result.detectedProfile
-```
+Host projects may persist the probe's `evidence` using TestKit's existing artifact/report infrastructure. They must not persist the full `valuesByWindow` result by default.
 
-The artifact records only neutral profile probes defined by TestKit. It does not perform arbitrary host-project register dumps.
+## WAGO e!RUNTIME process-image boundary
 
-## Exit behavior
+Documented generic facts:
 
-```text
-0  profile detected and accepted
-1  FAIL: unknown, ambiguous, mismatch, configuration/resolution or transport/profile failure
-2  BLOCKED: TESTKIT_PLC_ENABLED is not exactly 1
-```
+- `0xFA17` reports the Modbus process-image version.
+- `0xFA40..0xFA45` report process-image size information.
+- `0xFAA0..0xFAA2` are fixed constants.
+- `0xFA0D` reports PLC state.
 
-`BLOCKED` is not PASS.
+Observed values can confirm a runtime/profile and process-image dimensions, but **size metadata alone does not map host variables to Modbus addresses**. TestKit therefore does not derive an application map from these registers and does not scan `0..65535` looking for one.
 
-## Host-project responsibility
-
-A consuming repository may map its own contract after detection, for example:
-
-```text
-profile A -> application register map A
-profile B -> application register map B
-```
-
-That mapping, its expected values, and any domain workflow remain in the consuming repository.
-
-The consumer must not modify TestKit's runtime detector to encode project-specific variables.
+If a host cannot produce documented application windows for e!RUNTIME, application-map discovery remains `BLOCKED` rather than guessed.
 
 ## Framework self-test
 
@@ -189,13 +254,46 @@ The consumer must not modify TestKit's runtime detector to encode project-specif
 php tests/framework/test_plc_modbus_readonly_profiles.php
 ```
 
-The test covers:
+Coverage includes:
 
-- FC03 MBAP/PDU encoding and decoding;
-- Modbus exception propagation;
-- absence of write-like public methods/markers;
-- CODESYS2 profile detection;
-- e!RUNTIME profile detection;
-- `UNKNOWN`;
-- `AMBIGUOUS`;
-- `PROFILE_MISMATCH`.
+- FC03 encoding/decoding and Modbus exception propagation;
+- CODESYS2 and e!RUNTIME detection;
+- `UNKNOWN`, `AMBIGUOUS`, `PROFILE_MISMATCH`;
+- one and multiple application windows;
+- `quantity=125`;
+- rejection of FC06, FC16 and unknown functions;
+- invalid/overflowing addresses and quantities;
+- unknown runtime profiles and duplicate ids;
+- window and total-register budgets;
+- `BLOCKED` detected-but-unsupported runtime;
+- absence of public write-like methods;
+- local fake TCP/MBAP execution of an e!RUNTIME read plan.
+
+A local fake server PASS is infrastructure evidence only. It is not hardware PASS.
+
+## Ownership boundary
+
+### TestKit owns
+
+- Modbus TCP transport and MBAP framing;
+- FC03 read-only primitive;
+- timeout/range validation;
+- runtime detection;
+- application-map schema validation;
+- runtime gate;
+- bounded read-plan execution;
+- neutral evidence shape and structural validation.
+
+### Host project owns
+
+- concrete application maps;
+- which runtime profiles support each map;
+- register meanings;
+- domain fixtures and assertions;
+- decisions about persisting application values.
+
+## Future direction — not implemented here
+
+Potential later capabilities include HMI, serial/scanner and multi-device orchestration, but they are not part of this contract.
+
+For HMI specifically, reading variables does not demonstrate that a downloaded touchscreen screen works visually/interactively. Any future HMI capability must have a verifiable observation surface and an interaction-injection surface supported by the actual hardware/software. TestKit does not assume Vijeo Designer or HMIS5T exposes such an API.
