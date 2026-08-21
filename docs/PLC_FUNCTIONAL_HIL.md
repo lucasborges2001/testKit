@@ -48,6 +48,8 @@ A host must perform its runtime/application identity gate **before** enabling wr
 
 A host must not point this capability at WAGO special registers or process-image output registers.
 
+The host bridge must implement a **PLC-local lease/timeout**. Loss of network, runner crash or missing heartbeat must release synthetic ownership locally without depending on TestKit, the server or Internet. The released state must not be interpreted as a safe physical state; it should return the synthetic observation to the host-defined unknown/unowned condition.
+
 ## Industrial safety boundary
 
 Functional HIL writes are not authorization for physical actuation. A host using this API must keep its physical output path inhibited or absent while driving synthetic inputs. Interlocks required for people/equipment remain local and independent of TestKit.
@@ -56,7 +58,7 @@ The intended flow is:
 
 ```text
 TestKit FC06 allowlisted stimulus
--> host test bridge
+-> host test bridge with local lease
 -> abstract logical input
 -> host domain logic
 -> shadow/effective state observation
