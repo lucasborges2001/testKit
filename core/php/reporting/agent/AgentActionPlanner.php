@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting\Agent;
 
+require_once __DIR__ . '/../../execution/CommandSpec.php';
+
 use Testkit\Core\Config\ContractRegistry;
+use Testkit\Core\Execution\CommandSpec;
 
 final class AgentActionPlanner
 {
@@ -43,6 +46,7 @@ final class AgentActionPlanner
             }
             return self::action(
                 'inspect_concurrency',
+                self::inspectCommandSpec('concurrency', $runId, $agentMode),
                 self::inspectCommand('concurrency', $runId, $agentMode),
                 'El resultado indica contención/lock; primero hay que inspeccionar concurrencia y ownership.',
                 $evidenceValid ? 'high' : 'medium',
@@ -60,6 +64,7 @@ final class AgentActionPlanner
             ];
             return self::action(
                 'inspect_latest',
+                self::inspectCommandSpec('latest', $runId, $agentMode),
                 self::inspectCommand('latest', $runId, $agentMode),
                 'No hay evidencia confiable para inferir causa; se debe inspeccionar la corrida antes de actuar.',
                 'low',
@@ -73,6 +78,7 @@ final class AgentActionPlanner
             $basis['rules'][] = 'outcome_bootstrap_error_then_inspect_seed_state';
             return self::action(
                 'inspect_seed_state',
+                self::inspectCommandSpec('seed-state', $runId, $agentMode),
                 self::inspectCommand('seed-state', $runId, $agentMode),
                 'El fallo pertenece a bootstrap/seeding; un test aislado ocultaría la causa.',
                 'high',
@@ -86,6 +92,7 @@ final class AgentActionPlanner
             $basis['rules'][] = 'outcome_discovery_error_then_inspect_latest';
             return self::action(
                 'inspect_latest',
+                self::inspectCommandSpec('latest', $runId, $agentMode),
                 self::inspectCommand('latest', $runId, $agentMode),
                 'El fallo ocurrió en discovery; revisar selección y artefactos antes de tocar tests.',
                 'medium',
@@ -99,6 +106,7 @@ final class AgentActionPlanner
             $basis['rules'][] = 'outcome_timeout_with_file_then_rerun_single_file';
             return self::action(
                 'rerun_single_file',
+                self::rerunSingleFileCommandSpec($suiteName, $file, $agentMode),
                 self::rerunSingleFileCommand($suiteName, $file, $agentMode),
                 'Timeout con archivo identificado; rerun focalizado preserva evidencia y acota duración.',
                 'medium',
@@ -112,6 +120,7 @@ final class AgentActionPlanner
             $basis['rules'][] = 'outcome_failed_with_file_then_rerun_single_file';
             return self::action(
                 'rerun_single_file',
+                self::rerunSingleFileCommandSpec($suiteName, $file, $agentMode),
                 self::rerunSingleFileCommand($suiteName, $file, $agentMode),
                 'Fallo de dominio/ejecución con archivo disponible; el siguiente paso más barato es aislar ese archivo.',
                 'high',
@@ -126,6 +135,7 @@ final class AgentActionPlanner
             [$selectorKind, $selectorName] = self::selectorForSelection($selection, $suiteReports);
             return self::action(
                 'list_tests',
+                self::listTestsCommandSpec($selectorKind, $selectorName, $agentMode),
                 self::listTestsCommand($selectorKind, $selectorName, $agentMode),
                 'La selección no encontró tests; validar filtros/listado, no arreglar tests inexistentes.',
                 'high',
@@ -139,6 +149,7 @@ final class AgentActionPlanner
             $basis['rules'][] = 'outcome_' . $outcomeStatus . '_then_no_action';
             return self::action(
                 'no_action',
+                null,
                 null,
                 $outcomeStatus === 'passed'
                     ? 'La corrida pasó con evidencia válida.'
@@ -164,6 +175,7 @@ final class AgentActionPlanner
         return self::action(
             'no_action',
             null,
+            null,
             'No hay fallo accionable suficiente para sugerir una mutación o rerun específico sin inventar causalidad.',
             'low',
             null,
@@ -172,11 +184,20 @@ final class AgentActionPlanner
         );
     }
 
-    /** @return array<string,mixed> */
-    public static function action(string $kind, ?string $command, string $reason, string $confidence, mixed $target, ?string $suiteId, ?string $file): array
-    {
+    /** @param array<string,mixed>|null $commandSpec @return array<string,mixed> */
+    public static function action(
+        string $kind,
+        ?array $commandSpec,
+        ?string $command,
+        string $reason,
+        string $confidence,
+        mixed $target,
+        ?string $suiteId,
+        ?string $file
+    ): array {
         $action = [
             'kind' => $kind,
+            'command_spec' => $commandSpec !== null ? CommandSpec::normalize($commandSpec) : null,
             'command' => $command,
             'reason' => $reason,
             'confidence' => $confidence,
@@ -189,6 +210,36 @@ final class AgentActionPlanner
             $action['file'] = $file;
         }
         return $action;
+    }
+
+    /** @param array<string,mixed> $agentMode @return array<string,mixed> */
+    public static function inspectCommandSpec(string $inspectCommand, string $runId, array $agentMode): array
+    {
+        $argv = ['php', 'scripts/inspect.php', $inspectCommand];
+        if ($runId !== '') {
+            $argv[] = '--run=' . $runId;
+        }
+        $argv[] = '--json';
+
+        return CommandSpec::create($argv, self::agentModeEnv($agentMode), '.', true);
+    }
+
+    /** @param array<string,mixed> $agentMode @return array<string,mixed> */
+    public static function listTestsCommandSpec(string $selectorKind, string $selectorName, array $agentMode): array
+    {
+        return CommandSpec::create(
+            ['php', 'runTest.php', '--' . $selectorKind, $selectorName, '--list'],
+            self::agentModeEnv($agentMode)
+        );
+    }
+
+    /** @param array<string,mixed> $agentMode @return array<string,mixed> */
+    public static function rerunSingleFileCommandSpec(string $suiteName, string $file, array $agentMode): array
+    {
+        return CommandSpec::create(
+            ['php', 'runTest.php', '--suite', $suiteName, '--test', $file],
+            self::agentModeEnv($agentMode)
+        );
     }
 
     /** @param array<string,mixed> $agentMode */
@@ -261,19 +312,26 @@ final class AgentActionPlanner
         return is_array($suite) ? (string)($suite['public_name'] ?? '') : '';
     }
 
-    /** @param array<string,mixed> $agentMode */
-    public static function commandWithAgentMode(string $command, array $agentMode): string
+    /** @param array<string,mixed> $agentMode @return array<string,string> */
+    private static function agentModeEnv(array $agentMode): array
     {
         if (!(bool)($agentMode['enabled'] ?? false)) {
-            return $command;
+            return [];
         }
 
         $mode = trim((string)($agentMode['mode'] ?? ''));
-        if ($mode === '') {
-            $mode = 'agent';
+        return ['TESTKIT_MODE' => $mode !== '' ? $mode : 'agent'];
+    }
+
+    /** @param array<string,mixed> $agentMode */
+    public static function commandWithAgentMode(string $command, array $agentMode): string
+    {
+        $env = self::agentModeEnv($agentMode);
+        if ($env === []) {
+            return $command;
         }
 
-        return 'TESTKIT_MODE=' . self::shellArgBare($mode) . ' ' . $command;
+        return 'TESTKIT_MODE=' . self::shellArgBare($env['TESTKIT_MODE']) . ' ' . $command;
     }
 
     public static function shellArg(string $value): string

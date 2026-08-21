@@ -3,47 +3,46 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+require_once __DIR__ . '/../execution/CommandSpec.php';
+
 use Testkit\Core\Common\Paths;
+use Testkit\Core\Execution\CommandSpec;
 use Testkit\Core\Execution\ProcessRunner;
 
 final class AgentRunExecute
 {
     /**
+     * Execute only the versioned command_spec emitted by the planner.
+     * Human-readable `next_action.command` is presentation and is never parsed.
+     *
      * @param array<string,mixed> $decision
      * @return array<string,mixed>
      */
     public static function execute(array $decision): array
     {
         $nextAction = is_array($decision['next_action'] ?? null) ? $decision['next_action'] : [];
-        $plan = self::buildExecutionPlan($decision, $nextAction);
+        $kind = trim((string)($nextAction['kind'] ?? 'no_action'));
+        $rawSpec = $nextAction['command_spec'] ?? null;
 
-        if (!(bool)($plan['should_execute'] ?? false)) {
-            return [
-                'executed' => false,
-                'kind' => (string)($nextAction['kind'] ?? 'stop'),
-                'reason' => (string)($nextAction['reason'] ?? 'no_execution_required'),
-                'command' => [
-                    'argv' => [],
-                    'cwd' => Paths::relativeToRepo((string)($plan['cwd'] ?? Paths::testkitRoot())),
-                    'env_overrides' => self::normalizeEnvOverrides($plan['env_overrides'] ?? []),
-                    'display' => null,
-                ],
-                'result' => [
-                    'exit_code' => 0,
-                    'duration_ms' => 0,
-                    'stdout_excerpt' => null,
-                    'stderr_excerpt' => null,
-                ],
-                'child_payload' => null,
-            ];
+        if ($rawSpec === null) {
+            return self::notExecuted($kind, (string)($nextAction['reason'] ?? 'no_execution_required'));
+        }
+        if (!is_array($rawSpec)) {
+            return self::rejected($kind, 'command_spec must be an object/map.');
         }
 
-        $argv = array_values(array_map('strval', (array)($plan['argv'] ?? [])));
-        $cwd = (string)($plan['cwd'] ?? Paths::testkitRoot());
-        $envOverrides = self::normalizeEnvOverrides($plan['env_overrides'] ?? []);
+        try {
+            $commandSpec = CommandSpec::normalize($rawSpec);
+            $cwd = self::resolveCwd((string)$commandSpec['cwd']);
+        } catch (\Throwable $e) {
+            return self::rejected($kind, $e->getMessage(), $rawSpec);
+        }
+
+        $argv = array_values($commandSpec['argv']);
+        $envOverrides = self::normalizeEnvOverrides($commandSpec['env']);
         $env = self::currentEnv();
-        foreach ($envOverrides as $k => $v) {
-            $env[$k] = $v;
+        foreach ($envOverrides as $key => $value) {
+            $env[$key] = $value;
         }
 
         $job = ProcessRunner::start($argv, $cwd, $env);
@@ -52,14 +51,21 @@ final class AgentRunExecute
         $stdout = (string)($finished['stdout'] ?? '');
         $stderr = (string)($finished['stderr'] ?? '');
         $childPayload = null;
-        if ((bool)($plan['expects_json'] ?? false)) {
+        if ((bool)$commandSpec['expects_json']) {
             $childPayload = self::decodeJsonPayload($stdout);
         }
 
         return [
             'executed' => true,
-            'kind' => (string)($nextAction['kind'] ?? 'unknown'),
+            'kind' => $kind,
             'reason' => (string)($nextAction['reason'] ?? ''),
+            'admission' => [
+                'accepted' => true,
+                'schema' => (string)$commandSpec['schema'],
+                'executor' => (string)$commandSpec['executor'],
+                'error' => null,
+            ],
+            'command_spec' => $commandSpec,
             'command' => [
                 'argv' => $argv,
                 'cwd' => Paths::relativeToRepo($cwd),
@@ -76,140 +82,91 @@ final class AgentRunExecute
         ];
     }
 
-    /**
-     * @param array<string,mixed> $execution
-     */
+    /** @param array<string,mixed> $execution */
     public static function exitCode(array $execution): int
     {
+        $result = is_array($execution['result'] ?? null) ? $execution['result'] : [];
         if (!(bool)($execution['executed'] ?? false)) {
-            return 0;
+            $admission = is_array($execution['admission'] ?? null) ? $execution['admission'] : [];
+            return (($admission['accepted'] ?? true) === false)
+                ? max(2, (int)($result['exit_code'] ?? 2))
+                : 0;
         }
 
-        $result = is_array($execution['result'] ?? null) ? $execution['result'] : [];
         return (int)($result['exit_code'] ?? 0);
     }
 
-    /**
-     * @param array<string,mixed> $decision
-     * @param array<string,mixed> $nextAction
-     * @return array<string,mixed>
-     */
-    private static function buildExecutionPlan(array $decision, array $nextAction): array
+    /** @return array<string,mixed> */
+    private static function notExecuted(string $kind, string $reason): array
     {
-        $kind = trim((string)($nextAction['kind'] ?? ''));
-        $runId = trim((string)($decision['run_id'] ?? ''));
-        $selection = is_array($decision['selection'] ?? null) ? $decision['selection'] : [];
-        $firstFailure = is_array($decision['first_failure'] ?? null) ? $decision['first_failure'] : [];
-        $php = PHP_BINARY;
-        $cwd = Paths::testkitRoot();
-        $envOverrides = self::agentModeEnvOverrides($decision);
-
-        return match ($kind) {
-            'stop' => [
-                'should_execute' => false,
-                'cwd' => $cwd,
-                'env_overrides' => $envOverrides,
+        return [
+            'executed' => false,
+            'kind' => $kind !== '' ? $kind : 'no_action',
+            'reason' => $reason !== '' ? $reason : 'no_execution_required',
+            'admission' => [
+                'accepted' => true,
+                'schema' => null,
+                'executor' => null,
+                'error' => null,
             ],
-            'inspect_concurrency' => [
-                'should_execute' => true,
-                'cwd' => $cwd,
-                'argv' => [$php, 'scripts/inspect.php', 'concurrency', '--run=' . $runId, '--json'],
-                'env_overrides' => $envOverrides,
-                'expects_json' => true,
+            'command_spec' => null,
+            'command' => [
+                'argv' => [],
+                'cwd' => Paths::relativeToRepo(Paths::testkitRoot()),
+                'env_overrides' => [],
+                'display' => null,
             ],
-            'inspect_failure' => [
-                'should_execute' => true,
-                'cwd' => $cwd,
-                'argv' => [$php, 'scripts/inspect.php', 'failure', '--run=' . $runId, '--json'],
-                'env_overrides' => $envOverrides,
-                'expects_json' => true,
+            'result' => [
+                'exit_code' => 0,
+                'duration_ms' => 0,
+                'stdout_excerpt' => null,
+                'stderr_excerpt' => null,
             ],
-            'refine_selection' => [
-                'should_execute' => true,
-                'cwd' => $cwd,
-                'argv' => [$php, 'scripts/inspect.php', 'latest', '--run=' . $runId, '--json'],
-                'env_overrides' => $envOverrides,
-                'expects_json' => true,
-            ],
-            'run_selected_tests' => [
-                'should_execute' => true,
-                'cwd' => $cwd,
-                'argv' => [$php, 'runTest.php', self::selectionTargetHint($selection)],
-                'env_overrides' => $envOverrides,
-                'expects_json' => false,
-            ],
-            'rerun_single_file' => [
-                'should_execute' => true,
-                'cwd' => $cwd,
-                'argv' => [$php, 'runTest.php', self::suiteTargetHint($nextAction, $selection)],
-                'env_overrides' => array_merge($envOverrides, [
-                    'TEST_MATCH' => trim((string)($nextAction['target'] ?? $firstFailure['file'] ?? '')),
-                ]),
-                'expects_json' => false,
-            ],
-            default => [
-                'should_execute' => false,
-                'cwd' => $cwd,
-                'env_overrides' => $envOverrides,
-            ],
-        };
+            'child_payload' => null,
+        ];
     }
 
-    /**
-     * @param array<string,mixed> $decision
-     * @return array<string,string>
-     */
-    private static function agentModeEnvOverrides(array $decision): array
+    /** @param array<string,mixed>|null $rawSpec @return array<string,mixed> */
+    private static function rejected(string $kind, string $error, ?array $rawSpec = null): array
     {
-        $agentMode = is_array($decision['agent_mode'] ?? null) ? $decision['agent_mode'] : [];
-        if (!(bool)($agentMode['enabled'] ?? false)) {
-            return [];
-        }
-
-        $mode = trim((string)($agentMode['mode'] ?? ''));
-        if ($mode === '') {
-            $mode = 'agent';
-        }
-
-        return ['TESTKIT_MODE' => $mode];
+        return [
+            'executed' => false,
+            'kind' => $kind !== '' ? $kind : 'unknown',
+            'reason' => 'command_spec_rejected',
+            'admission' => [
+                'accepted' => false,
+                'schema' => is_array($rawSpec) ? ($rawSpec['schema'] ?? null) : null,
+                'executor' => is_array($rawSpec) ? ($rawSpec['executor'] ?? null) : null,
+                'error' => $error,
+            ],
+            'command_spec' => $rawSpec,
+            'command' => [
+                'argv' => [],
+                'cwd' => Paths::relativeToRepo(Paths::testkitRoot()),
+                'env_overrides' => [],
+                'display' => null,
+            ],
+            'result' => [
+                'exit_code' => 2,
+                'duration_ms' => 0,
+                'stdout_excerpt' => null,
+                'stderr_excerpt' => $error !== '' ? $error : 'command_spec rejected',
+            ],
+            'child_payload' => null,
+        ];
     }
 
-    /**
-     * @param array<string,mixed> $nextAction
-     * @param array<string,mixed> $selection
-     */
-    private static function suiteTargetHint(array $nextAction, array $selection): string
+    private static function resolveCwd(string $relativeCwd): string
     {
-        $suiteId = trim((string)($nextAction['suite_id'] ?? $selection['primary_suite_id'] ?? ''));
-        if ($suiteId !== '') {
-            return str_replace('_', '-', $suiteId);
+        $root = rtrim(Paths::normalize(Paths::testkitRoot()), '/\\');
+        if ($relativeCwd === '.') {
+            return $root;
         }
 
-        return self::selectionTargetHint($selection);
+        return Paths::normalize($root . '/' . $relativeCwd);
     }
 
-    /**
-     * @param array<string,mixed> $selection
-     */
-    private static function selectionTargetHint(array $selection): string
-    {
-        $target = trim((string)($selection['target'] ?? ''));
-        if ($target !== '') {
-            return $target;
-        }
-
-        $suiteId = trim((string)($selection['primary_suite_id'] ?? ''));
-        if ($suiteId !== '') {
-            return str_replace('_', '-', $suiteId);
-        }
-
-        return 'all';
-    }
-
-    /**
-     * @param mixed $value
-     * @return array<string,string>
-     */
+    /** @param mixed $value @return array<string,string> */
     private static function normalizeEnvOverrides(mixed $value): array
     {
         if (!is_array($value)) {
@@ -217,48 +174,44 @@ final class AgentRunExecute
         }
 
         $normalized = [];
-        foreach ($value as $k => $v) {
-            if (!is_string($k) || trim($k) === '') {
+        foreach ($value as $key => $envValue) {
+            if (!is_string($key) || !is_string($envValue)) {
                 continue;
             }
-            $normalized[$k] = (string)$v;
+            $normalized[$key] = $envValue;
         }
-
+        ksort($normalized, SORT_STRING);
         return $normalized;
     }
 
-    /**
-     * @return array<string,string>
-     */
+    /** @return array<string,string> */
     private static function currentEnv(): array
     {
         $env = [];
 
         $raw = getenv();
         if (is_array($raw)) {
-            foreach ($raw as $k => $v) {
-                if (!is_string($k) || $k === '' || !is_scalar($v)) {
+            foreach ($raw as $key => $value) {
+                if (!is_string($key) || $key === '' || !is_scalar($value)) {
                     continue;
                 }
-                $env[$k] = (string)$v;
+                $env[$key] = (string)$value;
             }
         }
 
-        foreach (array_merge($_SERVER, $_ENV) as $k => $v) {
-            if (!is_string($k) || $k === '' || !is_scalar($v)) {
+        foreach (array_merge($_SERVER, $_ENV) as $key => $value) {
+            if (!is_string($key) || $key === '' || !is_scalar($value)) {
                 continue;
             }
-            if (!array_key_exists($k, $env)) {
-                $env[$k] = (string)$v;
+            if (!array_key_exists($key, $env)) {
+                $env[$key] = (string)$value;
             }
         }
 
         return $env;
     }
 
-    /**
-     * @return array<string,mixed>|null
-     */
+    /** @return array<string,mixed>|null */
     private static function decodeJsonPayload(string $stdout): ?array
     {
         $stdout = trim($stdout);
@@ -277,7 +230,10 @@ final class AgentRunExecute
         }
 
         $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
-        $lines = array_values(array_filter(array_map(static fn(string $line): string => rtrim($line), $lines), static fn(string $line): bool => $line !== ''));
+        $lines = array_values(array_filter(
+            array_map(static fn(string $line): string => rtrim($line), $lines),
+            static fn(string $line): bool => $line !== ''
+        ));
         if ($lines === []) {
             return null;
         }
