@@ -6,6 +6,38 @@ This capability exists to drive **host-owned logical test bridges** during contr
 
 The existing `ModbusTcpReadOnlyClient` and `ReadOnlyApplicationMapProbe` remain FC03-only and expose no write API.
 
+## Current implementation status
+
+Implemented:
+
+```text
+ModbusTcpFunctionalHilClient
+FC06 single holding register
+logical stimulus id -> exact host-owned register
+explicit write enable
+bounded allowlist
+no coils
+no FC16
+no wildcard/range writes
+no address scanning
+```
+
+Not implemented in the current baseline:
+
+```text
+versioned application/bridge identity gate envelope
+public session/factory that refuses write enable unless runtime+application+bridge identity all PASS
+host adapter for BasePLC PLC Test Model
+consumer application identity probes
+hardware HIL execution
+```
+
+The implementation gap above is tracked in:
+
+```text
+docs/pendientes/20260821-1432-p1-plc-functional-hil-identity-integration.md
+```
+
 ## Public API
 
 ```php
@@ -28,6 +60,8 @@ $client->writeStimulus('input.raw_known', 1);
 
 The address map is host-owned. TestKit never discovers or guesses writable registers.
 
+The example above demonstrates the current low-level public client. `writeEnabled: true` is **not** evidence that runtime/application/bridge identity was verified; callers remain responsible for the required host gate until the pending hardening contract is implemented.
+
 ## Fail-closed contract
 
 - write capability must be explicitly enabled by the host;
@@ -44,7 +78,18 @@ The address map is host-owned. TestKit never discovers or guesses writable regis
 
 ## Required host gate
 
-A host must perform its runtime/application identity gate **before** enabling writes. The host must also prove that every allowlisted register is mapped only to a dedicated test bridge and cannot directly address physical outputs.
+A host must perform its runtime/application identity gate **before** enabling writes. Runtime profile detection alone is insufficient evidence of application identity.
+
+The host must prove, using host/consumer-owned logic, that:
+
+```text
+runtime identity is expected
+application identity is expected
+logical test bridge identity is expected
+allowlisted registers map only to that dedicated test bridge
+```
+
+TestKit must not encode Locker, Cargador, BasePLC or other consumer-specific application semantics.
 
 A host must not point this capability at WAGO special registers or process-image output registers.
 
@@ -57,7 +102,9 @@ Functional HIL writes are not authorization for physical actuation. A host using
 The intended flow is:
 
 ```text
-TestKit FC06 allowlisted stimulus
+host identity probes
+-> runtime/application/bridge gate PASS
+-> TestKit FC06 allowlisted stimulus
 -> host test bridge with local lease
 -> abstract logical input
 -> host domain logic
@@ -67,8 +114,32 @@ TestKit FC06 allowlisted stimulus
 Not:
 
 ```text
+runtime DETECTED
+-> writeEnabled=true
+```
+
+and never:
+
+```text
 TestKit -> physical %Q / actuator
 ```
+
+## Relationship with BasePLC PLC Test Model
+
+BasePLC currently exposes a transport-neutral `PlcExecutionBackend` and generic PLC Test Model executor. TestKit remains the owner of PLC transport primitives.
+
+A future host integration should compose them as:
+
+```text
+BasePLC logical plan
+-> host adapter
+-> host/consumer identity + signal maps
+-> TestKit public Functional HIL/read-only APIs
+-> host adapter observations
+-> BasePLC snapshots/assertions/result
+```
+
+The PHP/Python bridge belongs to the host. TestKit must not import BasePLC internals and BasePLC must not copy TestKit Modbus clients.
 
 ## Framework self-test
 
@@ -77,3 +148,5 @@ php tests/framework/test_plc_modbus_functional_hil.php
 ```
 
 The framework test uses only a local fake Modbus server. It does not contact PLC hardware.
+
+The pending identity-gate hardening must also be testable without PLC hardware and must prove that a non-PASS gate produces zero FC06 writes.

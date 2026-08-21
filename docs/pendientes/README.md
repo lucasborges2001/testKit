@@ -7,8 +7,8 @@ Esta carpeta contiene únicamente trabajo que todavía requiere implementación 
 ```text
 Repositorio: lucasborges2001/testKit
 Rama: main
-Baseline documental: 8fd6cca8b91167c57bd4189e81365e5e4d34e3da
-Fecha de auditoría: 2026-08-15
+Baseline documental vigente: 5e63de167469ca89c5a7f5adcc0862e4484958b2
+Fecha de actualización: 2026-08-21
 ```
 
 ## Frontera documental
@@ -36,11 +36,35 @@ PENDIENTE
 
 ## Inventario activo verificado
 
+- `20260821-1432-p1-plc-functional-hil-identity-integration.md`: hardening del PLC Functional HIL para exigir evidencia versionada de runtime/application/bridge identity antes de habilitar writes, sin mover semántica de consumidores a TestKit;
 - `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
 - `normalizacion-contratos/pendiente-interno-testkit.md`: normalización interna restante, con estado por fase y sin mezclar trabajo ya cerrado;
 - `normalizacion-contratos/pendiente-integraciones-externas.md`: trabajo que exige cambios o evidencia fuera de testKit;
 - `external-runtime-executor.md`: executor genérico para runtimes externos todavía no implementado;
 - `processrunner-timeout-windows.md`: terminación/timeout de procesos PHP nativos en Windows todavía no implementada de forma verificable.
+
+## PLC Functional HIL
+
+Capacidad implementada hoy:
+
+```text
+FC06 single holding register
+logical stimulus ids host-owned
+allowlist bounded
+explicit write enable
+no coils
+no FC16
+no ranges
+no scanning
+```
+
+La documentación vigente exige que el host realice runtime/application identity gate antes de habilitar writes. El cliente actual no implementa por sí mismo un contrato versionado de application/bridge identity; esa deuda queda explícita en:
+
+```text
+docs/pendientes/20260821-1432-p1-plc-functional-hil-identity-integration.md
+```
+
+Esto no invalida la capability FC06 existente. Define el hardening requerido antes de usarla como pieza de una integración HIL real de un consumidor.
 
 ## Documentos históricos de normalización
 
