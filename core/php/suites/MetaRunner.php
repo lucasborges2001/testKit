@@ -120,7 +120,10 @@ final class MetaRunner
                     break;
                 }
 
-                if ($suiteEffectiveCode !== 0 && $suiteEffectiveCode !== 2) {
+                // Transitional I8-A bridge: 6 is the new NO_TESTS process code for
+                // migrated suite engines. Legacy front-js may still report 2 until
+                // its dedicated cutover. Neither condition should fail the meta run.
+                if ($suiteEffectiveCode !== 0 && $suiteEffectiveCode !== 2 && $suiteEffectiveCode !== 6) {
                     $overallFail = true;
                     if ((bool)$config['meta_fail_fast']) {
                         break;

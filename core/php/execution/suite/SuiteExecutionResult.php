@@ -68,14 +68,16 @@ final class SuiteExecutionResult
      */
     public static function resolveExitCode(array $result): int
     {
-        if ($result['fail'] > 0) {
+        if ((int)($result['timeout'] ?? 0) > 0) {
+            return SuiteExecutor::EXIT_TIMEOUT;
+        }
+
+        if ((int)($result['fail'] ?? 0) > 0) {
             return SuiteExecutor::EXIT_FAIL;
         }
 
-        if ($result['pass'] === 0 && $result['skip'] > 0) {
-            return SuiteExecutor::EXIT_SKIP;
-        }
-
+        // Per-test SKIP remains a child status. An otherwise valid suite whose
+        // selected tests all skipped is still a successful process operation.
         return SuiteExecutor::EXIT_PASS;
     }
 
@@ -109,6 +111,10 @@ final class SuiteExecutionResult
         $result['slow_tests'] = $slow;
         $result['progress_policy'] = SuiteProgressEmitter::progressPolicy();
         $result['execution_metrics'] = self::executionMetricsSnapshot($result);
+
+        // ReportDecorator consumes this internal marker and removes it before
+        // persistence. It prevents partially migrated engines from claiming v2.
+        $result['operation_result_v2_ready'] = true;
 
         return $result;
     }

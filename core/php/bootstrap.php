@@ -21,6 +21,7 @@ require_once __DIR__ . '/discovery/TestDiscovery.php';
 require_once __DIR__ . '/discovery/TestSeedMetadata.php';
 
 require_once __DIR__ . '/execution/ProcessRunner.php';
+require_once __DIR__ . '/execution/ExitCode.php';
 require_once __DIR__ . '/execution/SuiteExecutor.php';
 require_once __DIR__ . '/execution/IsolatedRerun.php';
 require_once __DIR__ . '/execution/ParallelGuard.php';
@@ -73,6 +74,7 @@ require_once __DIR__ . '/reporting/AgentSummaryBuilder.php';
 require_once __DIR__ . '/reporting/MetaReportBuilder.php';
 require_once __DIR__ . '/reporting/ReportLocator.php';
 require_once __DIR__ . '/reporting/ReportSummary.php';
+require_once __DIR__ . '/reporting/OperationResult.php';
 require_once __DIR__ . '/reporting/CanonicalReport.php';
 require_once __DIR__ . '/reporting/DefinitionOfDoneValidator.php';
 require_once __DIR__ . '/reporting/FailureClassifier.php';

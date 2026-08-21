@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Testkit\Core\Reporting;
 
+require_once __DIR__ . '/OperationResult.php';
+
 final class ReportDecorator
 {
     /**
@@ -57,7 +59,15 @@ final class ReportDecorator
         ];
 
         $report = ReportSummary::enrichReport($report);
-        return CanonicalReport::enrich($report);
+        $report = CanonicalReport::enrich($report);
+
+        $operationResultReady = ($report['operation_result_v2_ready'] ?? false) === true;
+        unset($report['operation_result_v2_ready']);
+        if ($operationResultReady) {
+            $report = OperationResult::attach($report, $kind === 'meta' ? 'run_meta' : 'run_suite');
+        }
+
+        return $report;
     }
 
     private static function buildRunId(): string

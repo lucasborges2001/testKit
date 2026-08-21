@@ -21,7 +21,7 @@ final class SuiteEntryFactory
         $timedOut = (bool)($finished['timeout'] ?? false);
         $status = $timedOut
             ? 'timeout'
-            : ($exitCode === SuiteExecutor::EXIT_PASS ? 'pass' : ($exitCode === SuiteExecutor::EXIT_SKIP ? 'skip' : 'fail'));
+            : ($exitCode === SuiteExecutor::EXIT_PASS ? 'pass' : ($exitCode === SuiteExecutor::CHILD_EXIT_SKIP ? 'skip' : 'fail'));
         $durationMs = (int)($finished['duration_ms'] ?? 0);
 
         $entry = self::baseEntry(
