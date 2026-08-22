@@ -4,29 +4,38 @@
 
 ```text
 ABIERTO
-IMPLEMENTACION PENDIENTE
+T1 IDENTITY GATE: IMPLEMENTADO / EXECUTION NOT_VERIFIED
+HOST INTEGRATION: PENDIENTE
+CONSUMER IDENTITY PROBES: PENDIENTE
 HARDWARE REAL: FUERA DE ALCANCE
 ```
 
-Baseline auditado:
+Baseline original auditado:
 
 ```text
-testKit/main: 5e63de167469ca89c5a7f5adcc0862e4484958b2
-BasePLC/main observado: f9e0ab03927fd5b178896949bb9675a036298622
-Pruebas/main observado: 2020e5638e11e97590e7ca7d090d4b8840c9a43d
-fecha: 2026-08-21
+testKit/main: 95e341bdc2095099a78bba29b00423b6fca7de37
+fecha de implementación T1: 2026-08-22
 ```
 
-## Evidencia verificada
+Implementación T1 publicada:
 
-TestKit ya expone una capacidad PLC Functional HIL deliberadamente acotada:
+```text
+2494f929e29013224422513676b62bc7afde65a0
+feat(plc): add fail-closed Functional HIL identity gate
+```
+
+Documentación alineada posteriormente en `docs/PLC_FUNCTIONAL_HIL.md`.
+
+## Evidencia implementada
+
+TestKit ya expone:
 
 ```text
 ModbusTcpFunctionalHilClient
 FC06 single holding register
 host-owned logical stimulus allowlist
 max 64 registros exactos
-writeEnabled explícito
+writeEnabled explícito en low-level compatibility client
 sin coil writes
 sin FC16
 sin ranges/wildcards
@@ -34,244 +43,204 @@ sin address scanning
 FC03 read-only delegado a ModbusTcpReadOnlyClient
 ```
 
-También existen capacidades separadas para:
+El corte T1 agrega:
 
 ```text
-RuntimeProfileDetector
-ReadOnlyApplicationMapValidator
-ReadOnlyApplicationMapProbe
-```
-
-La documentación vigente exige al host ejecutar un `runtime/application identity gate` antes de habilitar writes y exige un bridge PLC-local con lease/timeout.
-
-## Gap exacto
-
-El cliente Functional HIL recibe actualmente `writeEnabled: true|false`, pero TestKit no dispone de un contrato público versionado que permita verificar, antes de construir/habilitar la sesión de escritura, evidencia host-owned de:
-
-```text
-runtime identity
-application identity
-logical test bridge identity
-```
-
-`RuntimeProfileDetector` demuestra identidad/perfil de runtime. No demuestra por sí mismo que la aplicación esperada ni el bridge lógico correcto estén desplegados.
-
-La semántica de aplicación pertenece al host/consumidor y **no debe moverse a TestKit**. El gap de TestKit es una frontera reutilizable para consumir y validar evidencia de gate, no implementar reglas de Locker/Cargador/BasePLC.
-
-## Objetivo
-
-Agregar una frontera pública fail-closed para abrir una sesión Functional HIL sólo después de recibir evidencia explícita y válida del host.
-
-Diseño objetivo conceptual:
-
-```text
-host-owned identity probes
--> functional_hil_gate@1 evidence
--> TestKit validates gate envelope
--> all required identities PASS
--> allowlist validated
--> Functional HIL write session enabled
-```
-
-No:
-
-```text
-RuntimeProfileDetector == DETECTED
--> writeEnabled=true
-```
-
-## Ownership
-
-### TestKit
-
-Debe ser dueño de:
-
-- schema/DTO neutral del gate de habilitación HIL;
-- validación estructural y estados permitidos;
-- decisión fail-closed `writes_allowed` basada únicamente en evidencia explícita;
-- integración con su cliente Functional HIL/factory pública;
-- tests con fake Modbus server;
-- reporting machine-readable sanitizado cuando corresponda.
-
-### Host/consumidor
-
-Debe ser dueño de:
-
-- cómo se prueba application identity;
-- cómo se prueba bridge identity;
-- expected application id/version/hash cuando aplique;
-- stimulus map y observation map;
-- bridges, leases y heartbeat PLC-local;
-- escenarios e invariantes de dominio.
-
-TestKit no debe conocer conceptos de Locker, Cargador ni otro consumidor.
-
-### BasePLC
-
-BasePLC conserva su PLC Test Model y `PlcExecutionBackend`. La frontera Python/PHP con TestKit pertenece al host adapter; este pendiente no convierte TestKit en executor de BasePLC.
-
-## Contrato candidato
-
-Nombre conceptual:
-
-```text
+FunctionalHilGate
 functional_hil_gate@1
+FunctionalHilSession::open(...)
+runtime/application/bridge explicit statuses
+computed identities_pass
+write_requested + writes_allowed decision report
+bounded/sanitized scalar metadata
+blocked session -> write_disabled before transport
+fake Modbus request counter for negative-write evidence
 ```
 
-Debe distinguir al menos:
+## Regla implementada
+
+La nueva ruta segura habilita writes sólo si:
 
 ```text
-runtime: PASS | FAIL | UNKNOWN | UNAVAILABLE
-application: PASS | FAIL | UNKNOWN | UNAVAILABLE
-bridge: PASS | FAIL | UNKNOWN | UNAVAILABLE
-writes_allowed: boolean
+runtime.status == PASS
+and application.status == PASS
+and bridge.status == PASS
+and stimulus allowlist is valid
+and writeRequested == true
 ```
 
-Metadata permitida debe ser sanitizada y bounded. No incluir:
+Cualquier `FAIL`, `UNKNOWN`, `UNAVAILABLE` o envelope incompleto bloquea la nueva ruta.
+
+El mapa de registros continúa host-owned y no se incluye en `gateReport()`.
+
+## Compatibilidad deliberada
+
+El constructor histórico:
 
 ```text
-passwords
-secrets
-raw memory dumps
-arbitrary shell output
-unbounded register maps
-physical output addresses
+ModbusTcpFunctionalHilClient(..., writeEnabled: bool)
 ```
 
-Regla:
+se conserva para no introducir una ruptura pública incidental.
+
+Ese constructor low-level no constituye prueba de identidad. Nuevas integraciones host deben usar `FunctionalHilSession`.
+
+Eliminar o hacer breaking el constructor histórico requiere una decisión de compatibilidad separada.
+
+## Tests implementados
+
+Nuevo framework test:
 
 ```text
-writes_allowed == true
-iff
-runtime == PASS
-and application == PASS
-and bridge == PASS
-and allowlist válida
-and write opt-in explícito
+tests/framework/test_plc_functional_hil_gate.php
 ```
 
-Cualquier otro estado debe mantener writes deshabilitados.
+Cubre por diseño:
 
-## Integración pública candidata
+- tres identidades PASS;
+- `FAIL|UNKNOWN|UNAVAILABLE` bloquean;
+- envelope incompleto se rechaza;
+- metadata con claves secret-like se rechaza;
+- write opt-out bloquea;
+- allowlist duplicada sigue rechazándose;
+- gate report no expone el mapa físico;
+- application FAIL + write request produce `write_disabled`;
+- fake server registra 0 FC06 para gate bloqueado;
+- tres PASS + opt-in producen exactamente un FC06 en fake server.
 
-Preferir una factory/session API pública antes que ampliar `ModbusTcpFunctionalHilClient` con múltiples flags ambiguos.
+El fixture existente se amplió sólo con un contador opcional de requests FC06; su comportamiento previo sigue disponible sin `--count`.
 
-Ejemplo conceptual, no API implementada:
+## Validación pendiente
 
-```php
-$session = FunctionalHilSession::open(
-    gateEvidence: $hostEvidence,
-    stimulusMap: $hostOwnedMap,
-    writeRequested: true,
-    transport: $transportConfig,
-);
+No existe evidencia de ejecución local ni statuses GitHub observados para el commit T1 desde esta operación.
 
-$session->writeStimulus('input.raw_known', 1);
+Por lo tanto:
+
+```text
+IMPLEMENTED != VERIFIED PASS
 ```
 
-La API definitiva debe derivarse de los patrones reales del repo y mantener compatibilidad cuando sea razonable.
-
-## Criterios PASS
-
-### Contrato/gate
-
-- evidencia incompleta no habilita writes;
-- `UNKNOWN` y `UNAVAILABLE` no habilitan writes;
-- runtime PASS + application FAIL produce 0 writes;
-- runtime PASS + application PASS + bridge FAIL produce 0 writes;
-- sólo los tres PASS permiten continuar;
-- ningún estado se infiere desde texto libre.
-
-### Allowlist/transporte
-
-- logical id desconocido falla antes del socket write;
-- máximo 64 registros exactos se conserva;
-- direcciones duplicadas siguen rechazadas;
-- no aparece API arbitrary-address write;
-- no se agregan coils, FC16, ranges ni scanning;
-- errores Modbus siguen propagándose como fallo/unavailable explícito.
-
-### Bridge safety
-
-- el contrato sigue exigiendo lease/timeout PLC-local;
-- TestKit no afirma poder liberar ownership sintético remotamente tras una caída de red;
-- la ausencia de evidencia de lease/bridge válido bloquea writes.
-
-### Reporting
-
-- la evidencia puede registrarse sin secretos ni direcciones físicas arbitrarias;
-- si se integra con `operation_result@2`, no se redefine su semántica ni exit codes.
-
-### Tests
-
-- todo el gate se prueba con doubles/fake Modbus server;
-- 0 conexiones a PLC real;
-- test negativo confirma 0 FC06 cuando cualquier gate no es PASS.
-
-## Criterios FAIL
-
-- mantener únicamente `writeEnabled=true` como control suficiente;
-- asumir que runtime profile detectado implica application identity;
-- mover expected application ids de consumidores a TestKit;
-- crear un segundo modelo de dominio PLC paralelo a BasePLC;
-- permitir raw register address desde el escenario del consumidor;
-- ampliar la capability a outputs físicos;
-- requerir PLC real para validar el contrato base.
-
-## Dependencias
-
-- preservar API pública PLC existente durante el hardening o documentar cualquier ruptura explícita;
-- coordinar el adapter real con el host que consume TestKit;
-- el consumidor debe definir application/bridge identity antes de una ejecución HIL real;
-- el bridge PLC-local debe existir antes de cualquier write sobre hardware.
-
-## Validación reproducible futura
-
-Antes de implementar, desde testKit:
+Validación reproducible:
 
 ```bash
 cd ~/Escritorio/Pruebas/submodules/Base/testkit
+
 git status --short
-git branch --show-current
-```
-
-Luego, según archivos reales creados:
-
-```bash
-php -l <archivos-php-modificados>
+php -l core/php/plc/FunctionalHilGate.php
+php -l core/php/plc/FunctionalHilSession.php
+php -l core/php/plc/bootstrap.php
+php -l tests/framework/test_plc_functional_hil_gate.php
+php -l tests/framework/fixtures/fake_modbus_functional_hil_server.php
 php tests/framework/test_plc_modbus_functional_hil.php
-php tests/framework/<gate-contract-test>.php
-php tests/framework/<gate-negative-write-test>.php
+php tests/framework/test_plc_functional_hil_gate.php
 git diff --check
 ```
 
-La suite amplia debe reportarse con resultados exactos y distinguir fallos del baseline.
+La suite amplia debe ejecutarse posteriormente y sus fallos deben clasificarse entre baseline e introducidos.
 
-## Relación con BasePLC P4B
+## Ownership vigente
 
-BasePLC cerró P4A con un executor neutral de backend. Su P4B pendiente requiere un host adapter hacia TestKit.
+### TestKit
 
-Este pendiente de TestKit habilita una frontera más segura para ese adapter, pero no implementa:
+TestKit mantiene:
+
+- schema/DTO neutral del gate;
+- validación estructural;
+- decisión fail-closed;
+- sesión pública segura;
+- transporte FC03/FC06 acotado;
+- fake-server tests;
+- reporting sanitizado del gate.
+
+### Host/consumidor
+
+Continúa siendo dueño de:
+
+- cómo se prueba application identity;
+- cómo se prueba bridge identity;
+- expected application id/version/hash;
+- stimulus map y observation map;
+- bridges, leases y heartbeat PLC-local;
+- scenarios e invariantes de dominio.
+
+TestKit no debe conocer conceptos de Locker, CentroLogistico, Cargador ni otro consumidor.
+
+### BasePLC
+
+BasePLC conserva el PLC Test Model y `PlcExecutionBackend`. La frontera Python/PHP pertenece al host adapter.
+
+## Gap real restante
+
+T1 ya no es el bloqueo principal. Permanece abierto:
 
 ```text
 Pruebas PHP/Python bridge
-BasePLC PlcExecutionBackend adapter
-consumer signal map
-consumer application identity probe
-hardware HIL
+Pruebas PlcExecutionBackend adapter hacia TestKit
+consumer runtime/application/bridge identity probes
+consumer signal/stimulus maps
+PLC-local lease/heartbeat implementation where applicable
+pilot consumer
+hardware HIL validation
 ```
 
-Esos cambios pertenecen a sus repositorios/owners respectivos.
+También permanecen separados, fuera de T1:
+
+```text
+virtual serial/PTTY fixture
+FTP fixture
+deterministic HTTP/TCP fixtures
+fault injection cross-transport
+```
+
+No deben mezclarse con el identity gate en un único cambio.
+
+## Criterios PASS del siguiente corte host
+
+- el host produce `functional_hil_gate@1` sin inventar estados;
+- cualquier mismatch produce 0 writes;
+- stimulus desconocido produce 0 writes;
+- sólo logical ids allowlisted alcanzan FC06;
+- observaciones permanecen bounded/read-only;
+- pérdida del runner no deja ownership sintético indefinido porque el bridge posee lease local;
+- el adapter host produce snapshots/result compatibles con BasePLC;
+- tests de integración usan fake/doubles antes de PLC real.
+
+## Criterios FAIL
+
+- `RuntimeProfileDetector == DETECTED` habilita writes por sí solo;
+- host evita `FunctionalHilSession` sin una razón de compatibilidad documentada;
+- TestKit incorpora application ids de consumidores;
+- TestKit importa BasePLC internals;
+- dirección Modbus aparece en el plan lógico BasePLC;
+- se agregan coil/FC16/ranges/scanning;
+- se confunde gate PASS con autorización de outputs físicos;
+- se declara hardware PASS con fake server.
+
+## Relación con BasePLC
+
+BasePLC ya puede expresar escenarios lógicos mediante su PLC Test Model y mantiene la frontera `PlcExecutionBackend`.
+
+La composición pendiente es:
+
+```text
+BasePLC logical plan
+-> Pruebas adapter
+-> host/consumer identity evidence
+-> FunctionalHilSession
+-> TestKit FC06/FC03
+-> observations
+-> BasePLC snapshots/assertions/result
+```
+
+TestKit no se convierte en executor de BasePLC.
 
 ## Fuera de alcance
 
-Este pendiente no autoriza:
+Este pendiente no autoriza por sí solo:
 
 ```text
-modificar BasePLC
-modificar Pruebas
-modificar Locker/Cargador
-actualizar gitlinks
+modificar Pruebas gitlinks
+modificar consumidores
 red PLC activa
 PLC deploy
 CODESYS download
@@ -285,9 +254,9 @@ operación de hardware real
 
 Puede cerrarse cuando:
 
-1. existe un gate público/versionado y fail-closed;
-2. Functional HIL no puede habilitar writes mediante la nueva ruta sin runtime+application+bridge PASS;
-3. la semántica de application identity sigue host-owned;
-4. los negativos prueban 0 FC06 ante gate no PASS;
-5. no se amplió la superficie a I/O físico ni arbitrary writes;
-6. documentación y tests reflejan la API realmente implementada.
+1. los tests T1 sean ejecutados y exista evidencia PASS o fallos corregidos;
+2. `Pruebas` consuma la ruta pública segura mediante adapter;
+3. al menos un consumidor aporte application/bridge identity real sin mover su semántica a TestKit;
+4. los negativos prueben 0 FC06 ante gate no PASS también desde el host adapter;
+5. no se amplíe la superficie a I/O físico ni arbitrary writes;
+6. documentación y comportamiento permanezcan alineados.
