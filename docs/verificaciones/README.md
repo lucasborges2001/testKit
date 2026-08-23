@@ -30,11 +30,18 @@ BLOCKED    entorno o dependencia impide ejecutar el gate
 4. están definidos resultado esperado y evidencia;
 5. un `PASS` permite cerrar sin otra fase de implementación.
 
+## Inventario
+
+- `02_store_explicito.md`: cierre de I2; valida store explícito sin aliases, inferencias ni fallback de driver.
+- `i6-command-spec-v1.md`: verificación del contrato de command spec ya implementado.
+- `i8-a-operation-result-v2.md`: verificación del contrato OperationResult v2 ya implementado.
+- `plc-functional-hil-identity-integration.md`: gate/session Functional HIL + integración host + consumidor real; implementación cerrada, falta ejecutar gates owner/host/consumer sin requerir PLC real.
+
 ## Cierre
 
 Después de obtener `PASS`:
 
-1. registrar el baseline y resultado donde corresponda;
+1. registrar baseline y resultado donde corresponda;
 2. actualizar documentación estable si el gate descubre diferencias;
 3. borrar el documento de `docs/verificaciones/`;
 4. no mantener verificaciones cerradas como histórico.
@@ -45,7 +52,3 @@ Después de un `FAIL` reproducible:
 2. crear o reabrir un pendiente de implementación;
 3. definir archivos, contrato, pruebas y rollback;
 4. no conservar el defecto como simple verificación.
-
-## Inventario
-
-- `02_store_explicito.md`: cierre de I2; valida store explícito sin aliases, inferencias ni fallback de driver.
