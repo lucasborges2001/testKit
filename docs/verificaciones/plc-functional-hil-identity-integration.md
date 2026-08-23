@@ -16,10 +16,13 @@ HARDWARE_REAL: OUT_OF_SCOPE_FOR_THIS_VERIFICATION
 Baselines de referencia:
 
 ```text
-TestKit/main: 2ec99c34c8230b2dee34c261481fb36b1206740f
-Pruebas/main observado: fecd5075cafa061365f4ac8a60ac88b8ad66e32a
-CentroLogistico/main observado: e8c18aa67c28e4fc876414f153ca2f791d0d9076
+TestKit implementation baseline: 2ec99c34c8230b2dee34c261481fb36b1206740f
+TestKit docs HEAD previo a esta precisión: e7e557f9b609a2008ce680b034cfb58fb923bddc
+Pruebas implementation baseline observado: fecd5075cafa061365f4ac8a60ac88b8ad66e32a
+CentroLogistico implementation baseline observado: e8c18aa67c28e4fc876414f153ca2f791d0d9076
 ```
+
+Los hosts pueden seguir fijando `2ec99c34...` sin perder la implementación del gate: los commits posteriores de TestKit en este corte son exclusivamente documentales.
 
 ## Por qué es verificación y no pendiente
 
