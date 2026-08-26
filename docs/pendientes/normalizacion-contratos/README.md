@@ -1,25 +1,21 @@
-# Normalización contractual — índice histórico
+# Normalización contractual — backlog vigente
 
 ## Estado
 
 ```text
-HISTORICO
-NO ES BACKLOG ACTIVO
+ACTIVO
+BASELINE: 132ed52e49f530231206e6c4358fe6d3dedf8b19
+FECHA: 2026-08-26
 ```
 
-Este directorio conserva documentos producidos durante el corte de normalización contractual iniciado el 28 de julio de 2026.
+Este directorio contiene únicamente los dos frentes de normalización que siguen abiertos:
 
-El plan original ya no debe leerse como una lista de fases pendientes: varias etapas fueron implementadas, cerradas o reemplazadas por contratos posteriores.
+- [`pendiente-interno-testkit.md`](pendiente-interno-testkit.md): cambios que pertenecen a `testKit`;
+- [`pendiente-integraciones-externas.md`](pendiente-integraciones-externas.md): inventario, migración y cutover que requieren evidencia o cambios en consumidores.
 
-La autoridad actual del backlog es:
+## Autoridades vigentes
 
-```text
-docs/pendientes/README.md
-docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md
-docs/pendientes/normalizacion-contratos/pendiente-integraciones-externas.md
-```
-
-La autoridad del contrato público vigente es:
+Contrato público:
 
 ```text
 docs/CONTRACT_REGISTRY.md
@@ -27,132 +23,60 @@ docs/CONTRATO.md
 docs/USO.md
 ```
 
-`docs/CONTRACT_REGISTRY.md` es generado desde `Testkit\Core\Config\ContractRegistry` y no debe sustituirse por listas históricas mantenidas manualmente.
-
-## Baseline histórico
-
-El plan original comenzó sobre:
+Ejecución tipada:
 
 ```text
-Repositorio: lucasborges2001/testKit
-Commit base histórico: b5b09284c69728dfa93266300f405e3e57157684
-Rama histórica: agent/testkit-contract-normalization
+docs/COMMAND_SPEC.md
+docs/verificaciones/i6-command-spec-v1.md
 ```
 
-Esos SHAs sirven como evidencia histórica. No deben reutilizarse como baseline operativo para trabajo nuevo.
-
-## Decisión arquitectónica que se conserva
+Resultado operativo tipado:
 
 ```text
-testKit = plataforma genérica de ejecución, discovery, lifecycle y evidencia
-proyecto consumidor = tests, fixtures y reglas de dominio
-wrapper Bash/PowerShell = adapters de entrada
-JSON versionado = interfaz primaria para automatización
-consola = presentación humana no contractual
+docs/OPERATION_RESULT_V2.md
+docs/verificaciones/i8-a-operation-result-v2.md
 ```
 
-También se conserva la regla de diseño:
+`docs/CONTRACT_REGISTRY.md` se genera desde `Testkit\Core\Config\ContractRegistry`; no debe sustituirse por listas históricas mantenidas manualmente.
 
-- una operación pública debe tener un solo nombre;
-- no introducir aliases ni fallbacks silenciosos para evitar migrar consumidores;
-- el core no debe absorber dominio de proyectos externos;
-- documentación, runtime, schema y tests deben converger en una autoridad verificable.
+## Limpieza del corte histórico
 
-## Qué se cerró en el corte original
+El corte iniciado el 28 de julio de 2026 ya estaba documentado como cerrado. Los archivos `fase-*` y `cierre-corte-2026-07-28.md` se retiraron de `docs/pendientes/` porque eran evidencia histórica, no backlog operativo.
 
-El documento `cierre-corte-2026-07-28.md` registra, entre otros puntos:
+La trazabilidad de esas decisiones permanece disponible en el historial Git. No copiar comandos, aliases, variables o rutas de esos commits a integraciones nuevas sin revalidarlos contra el contrato actual.
 
-- inventario contractual inicial;
-- extracción de lógica específica de Tarifa del core;
-- registro contractual único para suites, grupos y categorías;
-- selector CLI tipado con `--suite`, `--group` y `--category`;
-- rechazo de targets posicionales y `TESTKIT_TARGET_*` en la superficie pública;
-- migración de comandos internos y UI PowerShell a selectores tipados en las subfases ejecutadas.
+## Deuda interna resumida
 
-Los documentos `fase-*` que describen esas implementaciones son evidencia histórica, no pendientes actuales.
+| Fase | Estado actual |
+|---|---|
+| I3 — Stack estricto | `ACTIVO` |
+| I4 — Selección única sin bridge `TEST_MATCH*` | `ACTIVO` |
+| I5 — Coverage único | `ACTIVO` |
+| I6 — `command_spec` | `IMPLEMENTADO / VERIFICACION_PENDIENTE` |
+| I7-A — Paridad contractual Bash/PowerShell | `ACTIVO` |
+| I7-B — Runtime Windows | `VERIFICACION_DEPENDIENTE_DE_I7_A` |
+| I8-A — `OperationResultV2` | `IMPLEMENTADO / VERIFICACION_PENDIENTE` |
+| I8-B — Convergencia de reporting | `ACTIVO` |
+| I9 — Gates finales | `PARCIAL` |
 
-## Deuda interna actual
-
-El backlog interno vigente está consolidado en `pendiente-interno-testkit.md`.
-
-A fecha de este corte documental, contiene como mínimo:
-
-```text
-I3  stack estricto
-I4  selección única sin bridges TEST_MATCH*
-I5  coverage único sin TEST_COVERAGE_DIR ni test/coverage legacy
-I6  protocolo de agentes con command_spec neutral
-I7  paridad real Bash/PowerShell
-I8  reportes y exit codes v2
-I9  documentación/gates sin drift
-```
-
-Cada fase debe revalidarse contra el HEAD actual antes de implementar. No inferir que sigue pendiente sólo porque aparece en un archivo histórico.
+El detalle ejecutable y la evidencia actual están en `pendiente-interno-testkit.md`.
 
 ## Deuda externa
 
-`pendiente-integraciones-externas.md` contiene trabajo que requiere cambios o evidencia en consumidores.
-
-Ese documento no autoriza modificar `Base`, `Pruebas` ni otros repositorios desde TestKit.
-
-## Cómo leer los archivos históricos
-
-Los documentos de este directorio pueden contener:
-
-- targets posicionales;
-- aliases eliminados;
-- variables legacy;
-- rutas de coverage antiguas;
-- nombres de clases o archivos que ya cambiaron;
-- planes de CI que no reflejan el workflow actual.
-
-Cuando un documento histórico contradice el runtime o la documentación vigente:
-
-```text
-runtime/registro vigente
-> documentación pública actual
-> pendiente activo actual
-> documento histórico
-```
-
-No copiar comandos históricos a nuevas integraciones sin revalidarlos.
+`pendiente-integraciones-externas.md` no autoriza modificar `Base`, `Pruebas` ni otros consumidores. E1 es inventario read-only; cualquier migración requiere autorización y baseline propios por repositorio.
 
 ## Regla para nuevas actualizaciones
 
-No agregar nuevas fases `fase-*` a este directorio.
+No volver a crear archivos `fase-*` en este directorio.
 
-Para deuda funcional nueva:
+- deuda nueva independiente: `docs/pendientes/<tema>.md`;
+- deuda de normalización interna: actualizar `pendiente-interno-testkit.md`;
+- implementación existente pendiente sólo de evidencia: `docs/verificaciones/`.
 
-```text
-docs/pendientes/<tema>.md
-```
+## No verificado por esta auditoría documental
 
-o, si pertenece estrictamente a la normalización interna ya consolidada, actualizar:
-
-```text
-docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md
-```
-
-Para implementación existente pendiente sólo de evidencia:
-
-```text
-docs/verificaciones/
-```
-
-## Limpieza futura
-
-Los documentos históricos podrían archivarse o eliminarse en una fase documental separada si existe autorización explícita para borrar archivos.
-
-Hasta entonces se conservan para trazabilidad, pero no forman parte del inventario activo de `docs/pendientes/README.md`.
-
-## No verificado
-
-Esta clasificación documental no demuestra por sí sola:
-
-- PASS de I3-I9;
-- CI remota actual;
-- runtime Windows completo;
-- migración de consumidores externos;
-- eliminación de todas las compatibilidades legacy del código.
-
-Esas afirmaciones requieren evidencia separada.
+- PASS de I3, I4, I5, I7-A, I8-B o I9;
+- runtime Windows real;
+- estado actual de consumidores externos;
+- CI completa sobre el baseline auditado;
+- cutover, release o tag.

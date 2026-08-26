@@ -2,82 +2,58 @@
 
 ## Estado
 
-Activo. Este documento contiene únicamente deuda interna todavía no cerrada en `lucasborges2001/testKit`.
+Activo. Sólo contiene deuda funcional/contractual todavía no cerrada dentro de `lucasborges2001/testKit`.
 
 ```text
-Baseline auditado: ed1a35b85f87cf124495941211d39c6e3b9b6906
-Fecha: 2026-08-15
+Baseline auditado: 132ed52e49f530231206e6c4358fe6d3dedf8b19
+Fecha: 2026-08-26
 ```
 
-La frontera documental vigente está en [`../README.md`](../README.md). Los documentos históricos `fase-*` son evidencia de decisiones anteriores y no forman parte del backlog activo.
-
-## Ownership
-
-Todo este pendiente pertenece a `testKit`. No autoriza modificar `Base`, `Pruebas`, consumidores externos, gitlinks, releases ni tags.
-
-## Objetivo
-
-Completar la normalización interna sin aliases públicos, fallbacks silenciosos ni contratos duales, manteniendo una única superficie pública verificable.
-
-## Dependencia externa previa al cutover
-
-Antes de eliminar bridges o aliases que puedan ser consumidos fuera de `testKit`, ejecutar el inventario read-only E1 de [`pendiente-integraciones-externas.md`](pendiente-integraciones-externas.md).
-
-E1 no bloquea auditorías ni diseño interno. Sí bloquea un cutover que pueda romper consumidores desconocidos.
+No autoriza cambios en `Base`, `Pruebas`, consumidores externos, gitlinks, releases ni tags. Antes de retirar un bridge o alias con posible consumo externo, ejecutar E1 read-only de [`pendiente-integraciones-externas.md`](pendiente-integraciones-externas.md).
 
 ## Estado resumido
 
-| Fase | Estado auditado | Evidencia principal |
+| Fase | Estado | Evidencia |
 |---|---|---|
-| I3 — Stack estricto | `ACTIVO` | Bash y PowerShell todavía normalizan aliases de stack. |
-| I4 — Selección única | `PARCIAL` | El contrato público ya usa `--test` / `--selection-file`; queda el bridge interno `TEST_MATCH*`. |
-| I5 — Coverage único | `ACTIVO` | `TEST_COVERAGE_DIR` y rutas legacy bajo `test/coverage` siguen resolviéndose. |
-| I6 — Protocolo de agentes v2 | `ACTIVO` | El planner todavía serializa comandos shell como contrato primario de acción. |
-| I7-A — Paridad contractual de wrappers | `ACTIVO` | Deben cerrarse vectores y resultados equivalentes Bash/PowerShell. |
-| I7-B — Evidencia runtime Windows | `VERIFICACION_PENDIENTE` | Requiere Windows real o runner equivalente; no se demuestra con parseo estático. |
-| I8 — Reportes y exit codes v2 | `ACTIVO` | `CanonicalReport` todavía normaliza campos/fallbacks legacy y deriva estado desde múltiples fuentes. |
-| I9 — Gates finales | `PARCIAL` | Ya existen registry generado y gates contractuales; falta convergencia final después de I3–I8. |
+| I3 — Stack estricto | `ACTIVO` | Bash y PowerShell aún normalizan aliases (`postgres/postgresql -> pg`, `influxdb -> influx`). |
+| I4 — Selección única | `ACTIVO` | `RunRequest` conserva `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE`. |
+| I5 — Coverage único | `ACTIVO` | `Paths` mantiene variables/rutas legacy de coverage. |
+| I6 — `command_spec` | `IMPLEMENTADO` | Existe `testkit.command_spec@1`; queda verificación de checkout completo. |
+| I7-A — Paridad wrappers | `ACTIVO` | Falta demostrar equivalencia contractual Bash/PowerShell. |
+| I7-B — Windows runtime | `VERIFICACION_DEPENDIENTE` | Requiere I7-A PASS y ejecución Windows real. |
+| I8-A — Resultado operativo v2 | `IMPLEMENTADO` | Existe `testkit.operation_result@2`; quedan gates de verificación. |
+| I8-B — Reporting canónico | `ACTIVO` | `CanonicalReport` aún deriva/normaliza campos y fallbacks legacy. |
+| I9 — Gates finales | `PARCIAL` | Registry/gates existen; falta convergencia después de la deuda activa. |
 
 ## I3 — Stack estricto
 
-### Evidencia actual
+**Evidencia:** `lib/bash/stack.sh` y `lib/powershell/Stack.ps1` normalizan aliases semánticos.
 
-`lib/bash/stack.sh` y `lib/powershell/Stack.ps1` todavía aceptan y normalizan equivalencias como:
+**Objetivo:** aceptar sólo nombres canónicos y fallar antes de Docker ante alias o valor desconocido.
 
-```text
-postgres | postgresql -> pg
-influxdb              -> influx
+**Dependencia:** E1 debe identificar consumidores externos de esos aliases.
+
+**PASS:**
+
+- Bash y PowerShell aceptan el mismo conjunto canónico;
+- no existen aliases semánticos;
+- entrada inválida falla antes de Docker;
+- tests de paridad cubren permitidos/rechazados.
+
+**Validación:**
+
+```bash
+git grep -n -E "postgresql|postgres|influxdb" -- lib/bash/stack.sh lib/powershell/Stack.ps1 tests
+bash -n lib/bash/stack.sh
 ```
 
-### Objetivo
-
-Aceptar únicamente los nombres canónicos del contrato de stack y fallar antes de Docker ante cualquier sinónimo o valor desconocido.
-
-### Dependencia
-
-- E1 debe identificar consumidores externos de aliases antes de eliminarlos del contrato efectivo.
-
-### PASS
-
-- Bash y PowerShell aceptan exactamente el mismo conjunto;
-- no existen normalizaciones semánticas de aliases;
-- valores inválidos fallan antes de invocar Docker;
-- tests de paridad cubren permitidos y rechazados.
-
-## I4 — Selección de tests única
-
-### Estado actual
-
-La superficie pública ya está tipada:
-
-```text
---test <repo-relative>
---selection-file <repo-relative>
+```powershell
+pwsh -NoProfile -NonInteractive -File tests/powershell/test_stack_resolution.ps1
 ```
 
-`core/php/config/RunRequest.php` valida rutas repo-relative, rechaza traversal y hace mutuamente excluyentes `--test` y `--selection-file`.
+## I4 — Selección única sin bridge `TEST_MATCH*`
 
-La parte pública de I4 está implementada. La deuda restante es exclusivamente el bridge interno que traduce esas entradas a:
+**Evidencia:** la superficie pública ya usa `--test`/`--selection-file`, pero `core/php/config/RunRequest.php` conserva:
 
 ```text
 TEST_MATCH_LIST
@@ -85,154 +61,120 @@ TEST_MATCH_FILE
 TEST_MATCH_LIST_MODE
 ```
 
-### Objetivo restante
+**Objetivo:** una sola representación tipada desde CLI/UI hasta ejecución, reporting y rerun.
 
-Eliminar el modelo de selección dual dentro de TestKit sin reintroducir compatibilidad pública.
+**Dependencia:** E1 debe identificar consumidores externos de `TEST_MATCH*`.
 
-### Dependencia
+**PASS:**
 
-- E1 debe identificar consumidores externos de `TEST_MATCH*` antes del cutover.
-
-### PASS
-
-- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas públicas y bridges internos de transición;
-- CLI, UI, reporting y rerun usan un mismo modelo de selección;
+- `TEST_MATCH`, `TEST_MATCH_LIST`, `TEST_MATCH_FILE`, `TEST_MATCH_LIST_MODE` y `TEST_SELECTION_MATCH_MODE` dejan de ser entradas/bridges activos;
 - no existe selección implícita por substring;
-- selección vacía o contradictoria falla explícitamente.
+- selección vacía o contradictoria falla explícitamente;
+- tests usan el modelo tipado canónico.
+
+**Validación:**
+
+```bash
+git grep -n -E "TEST_MATCH|TEST_SELECTION_MATCH_MODE" -- core lib runners tests docs
+php tests/framework/test_selection_sources.php
+```
 
 ## I5 — Coverage único
 
-### Evidencia actual
+**Evidencia:** `core/php/common/Paths.php` conserva `TEST_COVERAGE_DIR` y candidatos legacy bajo `test/coverage/`.
 
-`core/php/common/Paths.php` todavía resuelve:
+**Objetivo:** una sola raíz configurable y una sola ruta contractual.
 
-```text
-TEST_COVERAGE_ROOT
-TEST_COVERAGE_DIR     # legacy
-.testkit/coverage/
-test/coverage/       # candidatos legacy
-```
+**Dependencia:** E1 debe identificar consumidores de `TEST_COVERAGE_DIR`/`test/coverage/`.
 
-### Dependencia
-
-- E1 debe identificar consumidores externos de `TEST_COVERAGE_DIR` o rutas `test/coverage` antes del cutover.
-
-### PASS
+**PASS:**
 
 - `TEST_COVERAGE_ROOT` es la única raíz configurable;
 - `TEST_COVERAGE_DIR` deja de ser entrada;
-- no existen fallbacks bajo `test/coverage/`;
-- reporting publica una sola ruta canónica;
-- Linux y PowerShell generan el mismo plan.
+- no existen fallbacks `test/coverage/`;
+- wrappers/reporting convergen en la misma ruta.
 
-## I6 — Protocolo de agentes v2
+**Validación:**
 
-### Evidencia actual
-
-`AgentActionPlanner` todavía construye comandos textuales como `./bin/testkit ...` y trata una cadena shell como parte primaria de la acción sugerida.
-
-### Objetivo
-
-Sustituir el string shell como contrato primario por un `command_spec` neutral y versionado.
-
-### Dependencia
-
-El pendiente [`../external-runtime-executor.md`](../external-runtime-executor.md) depende de este contrato. No crear un segundo modelo de command specification dentro del executor externo.
-
-### PASS
-
-```text
-planner
--> command_spec versionado
--> schema validation
--> executor admission
--> argv/env/cwd exactos
--> exit code
--> artifact persistido
+```bash
+git grep -n -E "TEST_COVERAGE_DIR|test/coverage" -- core lib runners tests docs
 ```
 
-No es PASS si una acción solo publica una cadena ejecutable en Bash o PowerShell.
+## I6 — `command_spec`
 
-## I7-A — Paridad contractual de wrappers
+Estado: `IMPLEMENTADO`; se retira del backlog de implementación.
 
-### Objetivo
+Referencias:
 
-Cerrar la equivalencia contractual Bash/PowerShell sin confundirla con evidencia de una plataforma runtime real.
+```text
+docs/COMMAND_SPEC.md
+docs/verificaciones/i6-command-spec-v1.md
+core/php/config/CommandSpec.php
+core/php/config/AgentAdmissionResult.php
+```
 
-### PASS
+Un fallo de los gates puede reabrir un defecto concreto, no la fase general.
 
-- mismos vectores de entrada;
-- mismo selector, env, compose files y entrypoint;
-- mismo código de salida contractual;
-- divergencia de vectores provoca fallo automático.
+## I7-A — Paridad contractual Bash/PowerShell
 
-Cuando I7-A sea PASS, cualquier evidencia pendiente exclusivamente por entorno debe salir de este archivo y registrarse en `docs/verificaciones/`.
+**Objetivo:** mismos vectores de entrada, selector, env, compose files, entrypoint y código de salida contractual.
+
+**PASS:** cualquier divergencia relevante provoca fallo automático. La interfaz PowerShell entra por `bin/testkit.ps1` y reutiliza módulos bajo `lib/powershell/`.
 
 ## I7-B — Evidencia runtime Windows
 
-### Estado
+No es implementación autónoma mientras I7-A siga abierto. Después de I7-A PASS, registrar baseline, entorno, comandos, artifacts y `PASS|FAIL|BLOCKED` en `docs/verificaciones/`.
 
-Verificación pendiente. La CI remota actual no aporta evidencia Windows nueva y el runtime Docker Desktop/MySQL real debe demostrarse en un host Windows o runner equivalente.
+La terminación/timeout nativa permanece separada en [`../processrunner-timeout-windows.md`](../processrunner-timeout-windows.md).
 
-### Criterio de cierre
+## I8-A — `OperationResultV2`
 
-- ejecutar smokes reproducibles en Windows real o runner equivalente;
-- registrar baseline, entorno, comandos, artifacts y exit codes;
-- comparar el resultado contractual con Linux;
-- usar estado `PASS|FAIL|BLOCKED`, nunca inferir PASS desde parseo estático.
+Estado: `IMPLEMENTADO`; se retira del backlog de implementación.
 
-La deuda específica de terminación de procesos en Windows permanece separada en [`../processrunner-timeout-windows.md`](../processrunner-timeout-windows.md).
-
-## I8 — Reportes y códigos de salida v2
-
-### Evidencia actual
-
-`core/php/reporting/CanonicalReport.php` todavía acepta y normaliza varias representaciones anteriores. Entre otros casos:
+Referencias:
 
 ```text
-outcome_status
--> suite_status
--> final_status
--> exit_code como fallback
+docs/OPERATION_RESULT_V2.md
+docs/verificaciones/i8-a-operation-result-v2.md
 ```
 
-También reconstruye información canónica a partir de campos top-level legacy cuando el shape explícito no está presente.
+## I8-B — Convergencia de reporting y exit codes
 
-Esto confirma deuda real de normalización; I8 deja de estar clasificado como “no verificado como cerrado” y pasa a `ACTIVO`.
+**Evidencia:** `core/php/reporting/CanonicalReport.php` todavía acepta múltiples fuentes/fallbacks, por ejemplo:
 
-### Objetivo
+```text
+outcome_status -> suite_status -> final_status -> exit_code
+seed_state explícito -> campos top-level legacy
+```
 
-Definir un único schema canónico y versionado para reportes suite/meta y cerrar la semántica de exit codes sin fallbacks ambiguos.
+**Objetivo:** converger reporting alrededor de contratos versionados sin reconstruir semántica desde shapes legacy ambiguos.
 
-### PASS
+**Dependencias:** E1 antes de retirar shapes potencialmente externos; reutilizar `OperationResultV2`, no crear un segundo resultado operativo.
 
-- schema canónico versionado y validado;
-- tabla cerrada de exit codes;
-- campos duplicados o aliases de shape eliminados;
-- suite/meta/inspect/agente consumen el mismo significado contractual donde corresponda;
-- ningún significado depende de una suite de dominio;
-- consola es presentación, no contrato de máquina;
-- fixtures negativos prueban rechazo de payloads inválidos.
+**PASS:**
 
-## I9 — Gates finales de convergencia
+- schema canónico versionado/validado;
+- estados y exit codes sin semántica ambigua;
+- aliases/fallbacks eliminados o documentados como compatibilidad temporal con criterio de retiro;
+- suite/meta/inspect/agente consumen el mismo significado donde corresponda;
+- fixtures negativos rechazan payloads inválidos.
 
-### Estado actual
+**Validación focal existente:**
 
-Esta fase ya no representa “crear documentación contractual desde cero”. Actualmente existen:
+```bash
+php tests/framework/test_exit_code_v2_contract.php
+php tests/framework/test_operation_result_v2_contract.php
+php tests/framework/test_failure_classification_contracts.php
+php tests/framework/test_reporting_contract.php
+```
 
-- `docs/CONTRACT_REGISTRY.md` generado desde `ContractRegistry`;
-- validación del registry;
-- tests que comprueban selectores tipados y rechazo de aliases conocidos;
-- gate que detecta drift entre el documento generado y el registry.
+## I9 — Gates finales
 
-La deuda restante de I9 es convertir la convergencia final I3–I8 en gates permanentes y demostrar su ejecución en los entornos correspondientes.
+Estado: `PARCIAL`.
 
-### Dependencias
+**Objetivo:** convertir el cierre de I3/I4/I5/I7-A/I8-B en gates permanentes y obtener evidencia reproducible.
 
-- I3–I8 resueltos o convertidos explícitamente a verificaciones de entorno;
-- CI disponible para declarar evidencia remota; mientras permanezca deshabilitada, ese punto queda `BLOCKED`, no `PASS`.
-
-### PASS
+**PASS:**
 
 - test contractual ausente = FAIL;
 - alias semántico nuevo = FAIL;
@@ -240,43 +182,33 @@ La deuda restante de I9 es convertir la convergencia final I3–I8 en gates perm
 - documento generado desactualizado = FAIL;
 - schema inválido = FAIL;
 - vector Bash/PowerShell divergente = FAIL;
-- los gates requeridos se ejecutan y existe evidencia reproducible del corte.
+- gates ejecutados con evidencia del corte.
 
 ## Orden recomendado
 
 ```text
-E1 inventario read-only de consumidores
+E1 inventario read-only
 |
 +-> I3 stack
-+-> I4 bridge interno de selección
++-> I4 selección
 +-> I5 coverage
 |
 v
-I6 command_spec
-+-> I8 reportes/exit codes
+I8-B reporting
 |
 v
 I7-A paridad contractual
 |
 v
-I7-B evidencia Windows -> docs/verificaciones/
+I7-B -> docs/verificaciones/
 |
 v
 I9 gates finales
 ```
 
-I6 es además precondición arquitectónica del executor genérico de runtime externo.
+I6 e I8-A quedan fuera de este flujo porque ya existen y sólo conservan verificaciones.
 
-## Baseline obligatorio por fase
-
-```bash
-git branch --show-current
-git rev-parse HEAD
-git status --short
-git log --oneline -8
-```
-
-## Validación mínima por fase
+## Validación mínima futura
 
 ```bash
 git status --short
@@ -290,8 +222,8 @@ find bin scripts lib -type f \( -name '*.sh' -o -name 'testkit' \) -print0 | xar
 pwsh -NoProfile -NonInteractive -File tests/powershell/run.ps1
 ```
 
-Las pruebas de una fase deben ampliarse con tests focalizados sobre el contrato modificado. Estos comandos son un mínimo, no evidencia suficiente por sí solos.
+Estos comandos son criterios de fases futuras; esta auditoría documental remota no los ejecutó.
 
-## Conversión a verificación
+## Criterio de cierre
 
-Una fase sale de este archivo cuando el código requerido existe y únicamente queda obtener evidencia en un entorno concreto. En ese caso crear o actualizar `docs/verificaciones/` con baseline, entorno, comandos, resultado esperado y estado `PASS|FAIL|BLOCKED`.
+Una fase se elimina sólo cuando la deuda funcional deja de existir. Si sólo falta evidencia de un gate o entorno, el seguimiento debe pasar a `docs/verificaciones/`.
