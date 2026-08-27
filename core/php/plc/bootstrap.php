@@ -10,3 +10,4 @@ require_once __DIR__ . '/RuntimeProfileCatalog.php';
 require_once __DIR__ . '/RuntimeProfileDetector.php';
 require_once __DIR__ . '/ReadOnlyApplicationMapValidator.php';
 require_once __DIR__ . '/ReadOnlyApplicationMapProbe.php';
+require_once __DIR__ . '/PlcAuditProbe.php';
