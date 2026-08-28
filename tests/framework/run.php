@@ -59,6 +59,7 @@ $tests = [
     'Batch selection match file/list'       => __DIR__ . '/test_selection_match_file.php',
     'Batch isolated rerun contract'         => __DIR__ . '/test_rerun_failed_isolated.php',
     'Batch isolation tags contract'         => __DIR__ . '/test_isolation_tags.php',
+    'SQL static audit contract'             => __DIR__ . '/test_sql_static_audit.php',
     'MySQL query profiling contract'        => __DIR__ . '/test_mysql_query_profiling.php',
     'MySQL query instrumentation contract'  => __DIR__ . '/test_mysql_query_instrumentation.php',
     'MySQL query policy contract'           => __DIR__ . '/test_mysql_query_policy.php',
