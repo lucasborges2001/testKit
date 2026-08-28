@@ -1,8 +1,11 @@
 # SQL Static Audit
 
 TestKit expone una auditoría estática **read-only** para localizar consultas `SELECT`
-potencialmente costosas antes de ejecutar la aplicación o conectarse a una base.
-Complementa, no reemplaza, el profiling MySQL, `EXPLAIN`, policies, baselines y gates.
+potencialmente costosas, gaps de cobertura y patrones de uso sospechosos antes de
+conectarse a una base.
+
+Complementa, no reemplaza, profiling MySQL, `EXPLAIN`, policies, baselines runtime
+y quality gates.
 
 ## Entry point
 
@@ -10,9 +13,8 @@ Complementa, no reemplaza, el profiling MySQL, `EXPLAIN`, policies, baselines y 
 php scripts/sql_static_audit.php --root=/ruta/proyecto --path=back
 ```
 
-`--path` y `--exclude` son repetibles. Si no se declara `--path`, se audita `.`.
-Por defecto se excluyen `.git`, `.testkit`, `vendor`, `node_modules`, `testkit`,
-`test` y `tests`.
+`--path` y `--exclude` son repetibles. Por defecto se excluyen `.git`, `.testkit`,
+`vendor`, `node_modules`, `testkit`, `test` y `tests`.
 
 Formatos:
 
@@ -22,61 +24,141 @@ php scripts/sql_static_audit.php --root=. --path=src --format=json
 php scripts/sql_static_audit.php --root=. --path=src --json=.testkit/reports/sql_static_audit.json
 ```
 
-## Contrato v1
+Comparación informativa contra un reporte previo:
 
-Schema:
+```bash
+php scripts/sql_static_audit.php \
+  --root=. \
+  --path=src \
+  --baseline=.testkit/reports/sql_static_baseline.json \
+  --format=compact
+```
+
+## Contrato compatible
+
+El schema público sigue siendo:
 
 ```text
 testkit.sql-static-audit.v1
 ```
 
-Cada finding contiene:
+La evolución actual es aditiva: conserva `scanned_files`, `extracted_queries`,
+`summary` y `findings` y agrega cobertura, `stable_id` y `delta`.
 
-- `rule_id`;
-- `severity`;
-- `confidence`;
-- `path` y `line`;
-- `fingerprint` y `sample_sql` sanitizados;
-- evidencia;
-- recomendación.
+Campos de cobertura:
 
-Los literales SQL se sustituyen por `?` en los artefactos. El auditor no persiste
-parámetros de prepared statements ni ejecuta las consultas.
+```text
+sql_candidates
+extracted_queries
+unresolved_candidates
+coverage_status = best_effort|partial
+coverage_findings[]
+```
 
-## Reglas iniciales
+`best_effort` no significa cobertura total. Solo indica que el auditor no observó
+un callsite dinámico reconocido que quedara sin reconstruir.
+
+Cada finding SQL contiene:
+
+- `id`: identidad de ocurrencia, sensible a línea;
+- `stable_id`: identidad por regla + path + fingerprint para baseline;
+- `rule_id`, `severity`, `confidence`;
+- `path`, `line`;
+- `fingerprint`, `sample_sql` sanitizados;
+- evidencia y recomendación.
+
+Los literales SQL se sustituyen por `?`. No se persisten parámetros de prepared
+statements ni se ejecutan consultas.
+
+## Reglas SQL
 
 | Regla | Nivel | Confianza | Significado |
 |---|---|---|---|
 | `select_star` | warn | high | proyección `SELECT *` |
-| `unbounded_select` | watch | medium | lectura de tabla sin filtro/agregación/límite explícito |
-| `non_sargable_predicate` | warn | high | función como `YEAR(col)` o `LOWER(col)` en predicado |
+| `unbounded_select` | watch | medium | lectura sin filtro/agregación/límite explícito |
+| `non_sargable_predicate` | warn | high | función sobre columna en `WHERE`/`ON` |
 | `leading_wildcard_like` | warn | high | búsqueda `LIKE '%...'` |
+| `order_by_random` | watch | high | `ORDER BY RAND()`/`RANDOM()` |
+| `offset_pagination` | watch | medium | paginación basada en `OFFSET` |
+| `query_inside_loop` | watch | medium | query declarada dentro de `for`/`foreach`/`while`/`do` |
 
-`unbounded_select` es deliberadamente un `watch`: leer una tabla completa puede ser
-correcto para catálogos pequeños, exports o procesos batch. Del mismo modo, un
-finding de índices no se infiere estáticamente en esta fase.
+`query_inside_loop` no afirma N+1. El profiler runtime debe confirmar cantidad de
+calls/fingerprints antes de tratarlo como defecto.
+
+`offset_pagination` tampoco es un error automático: es una señal para revisar
+páginas profundas y considerar keyset/seek pagination cuando corresponda.
+
+## Gaps de cobertura
+
+`coverage_findings` se separa de los findings SQL. La señal inicial es:
+
+```text
+dynamic_sql_unresolved
+```
+
+Aparece cuando un callsite reconocido (`query`, `prepare`, wrappers Base, etc.)
+recibe una expresión que el auditor no puede reconstruir como `SELECT` literal.
+No se clasifica como defecto de SQL y no participa del gate.
+
+Asignaciones simples como:
+
+```php
+$sql = 'SELECT id FROM users WHERE id = ?';
+$pdo->query($sql);
+```
+
+se reconocen como SQL conocido para evitar ruido de cobertura.
+
+## Baseline / delta
+
+`--baseline=<report.json>` compara mediante `stable_id` y agrega:
+
+```text
+delta.status = compared
+new_findings
+resolved_findings
+unchanged_findings
+changes[]
+gate_enabled = false
+```
+
+El baseline es informativo: nuevos findings no cambian el exit code.
+
+## Arquitectura
+
+Las reglas SQL viven separadas en:
+
+```text
+core/php/sqlstatic/rules/
+```
+
+`SqlRuleRegistry` las compone. `SqlRuleSet` se mantiene como facade compatible para
+consumidores existentes.
+
+El contexto PHP, cobertura y baseline están separados de las reglas SQL para que
+el auditor no derive en un único archivo monolítico.
 
 ## Límites
 
-La extracción PHP reconstruye expresiones SQL formadas por strings concatenados y
-reemplaza partes dinámicas por `?`. SQL construido mediante builders complejos,
-metaprogramación o archivos generados puede quedar fuera de cobertura.
+Builders complejos, metaprogramación, SQL generado fuera de PHP/SQL reconocido o
+flujo de variables no trivial pueden quedar fuera de cobertura.
 
 No se afirma:
 
 - que todo `SELECT` necesite `WHERE`;
 - que una columna filtrada necesite automáticamente un índice;
 - que un finding implique un problema runtime;
-- que no tener findings pruebe cobertura SQL total.
+- que `best_effort` pruebe cobertura SQL total;
+- que una query dentro de un loop sea necesariamente N+1.
 
-N+1, full table scans, uso real de índices, latencia y regresiones deben validarse
-con el profiling/`EXPLAIN` runtime existente.
+N+1 real, full scans, índices usados, latencia y regresiones deben confirmarse con
+profiling/`EXPLAIN` runtime.
 
 ## Exit codes
 
 ```text
-0 = auditoría ejecutada, incluso con findings
+0 = auditoría ejecutada, incluso con findings/delta
 2 = entrada inválida o error operacional
 ```
 
-No existe gate en v1.
+No existe gate SQL estático en esta fase.
