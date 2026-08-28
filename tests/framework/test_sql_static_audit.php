@@ -31,6 +31,10 @@ PHP_SOURCE
 file_put_contents($tmp . '/src/report.sql', "SELECT id FROM audit_log;\nSELECT COUNT(*) FROM audit_log;\n");
 file_put_contents($tmp . '/testkit/ignored.php', "<?php \$sql = 'SELECT * FROM ignored';\n");
 
+$projectionOnly = Testkit\Core\SqlStatic\SqlRuleSet::analyze('SELECT YEAR(created_at) AS year_value FROM users WHERE id = 1');
+$projectionRules = array_column($projectionOnly, 'ruleId');
+sql_static_assert(!in_array('non_sargable_predicate', $projectionRules, true), 'projection function must not be treated as predicate', $errors);
+
 $report = SqlStaticAuditor::audit($tmp, ['src']);
 sql_static_assert(($report['schema_version'] ?? '') === SqlStaticAuditor::SCHEMA, 'schema version', $errors);
 sql_static_assert((int)($report['scanned_files'] ?? 0) === 2, 'two source files scanned', $errors);

@@ -30,21 +30,23 @@ final class SqlRuleSet
             );
         }
 
-        foreach (self::nonSargableFunctions($sql) as $row) {
-            $findings[] = self::finding(
-                'non_sargable_predicate', 'warn', 'high',
-                'Function applied to a predicate column can block normal B-tree index use.',
-                'Prefer a range/comparison on the raw column or verify a compatible functional index.',
-                ['function' => $row['function'], 'column' => $row['column']]
-            );
-        }
+        foreach (self::predicateSegments($sql) as $predicate) {
+            foreach (self::nonSargableFunctions($predicate) as $row) {
+                $findings[] = self::finding(
+                    'non_sargable_predicate', 'warn', 'high',
+                    'Function applied to a predicate column can block normal B-tree index use.',
+                    'Prefer a range/comparison on the raw column or verify a compatible functional index.',
+                    ['function' => $row['function'], 'column' => $row['column']]
+                );
+            }
 
-        if (preg_match("/\\bLIKE\\s+(?:CONCAT\\s*\\(\\s*)?['\"]%/i", $sql) === 1) {
-            $findings[] = self::finding(
-                'leading_wildcard_like', 'warn', 'high',
-                'LIKE pattern starts with %, so a conventional prefix index is usually not selective.',
-                'Use a prefix-searchable pattern or a search strategy designed for contains matching.'
-            );
+            if (preg_match("/\\bLIKE\\s+(?:CONCAT\\s*\\(\\s*)?['\"]%/i", $predicate) === 1) {
+                $findings[] = self::finding(
+                    'leading_wildcard_like', 'warn', 'high',
+                    'LIKE pattern starts with %, so a conventional prefix index is usually not selective.',
+                    'Use a prefix-searchable pattern or a search strategy designed for contains matching.'
+                );
+            }
         }
 
         return $findings;
@@ -61,16 +63,25 @@ final class SqlRuleSet
         return preg_match('/\bSELECT\s+(?:COUNT|MIN|MAX|AVG|SUM)\s*\(/i', $sql) !== 1;
     }
 
-    /** @return array<int,array{function:string,column:string}> */
-    private static function nonSargableFunctions(string $sql): array
+    /** @return array<int,string> */
+    private static function predicateSegments(string $sql): array
     {
-        if (preg_match('/\b(?:WHERE|ON)\b/i', $sql) !== 1) {
-            return [];
-        }
+        $matches = [];
+        preg_match_all(
+            '/\b(?:WHERE|ON)\b(.*?)(?=\b(?:JOIN|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|UNION)\b|$)/is',
+            $sql,
+            $matches
+        );
+        return array_values(array_filter(array_map('trim', $matches[1] ?? []), static fn(string $part): bool => $part !== ''));
+    }
+
+    /** @return array<int,array{function:string,column:string}> */
+    private static function nonSargableFunctions(string $predicate): array
+    {
         $matches = [];
         preg_match_all(
             '/\b(YEAR|DATE|MONTH|DAY|LOWER|UPPER|TRIM)\s*\(\s*([`"]?[A-Za-z_][A-Za-z0-9_$.`"]*)\s*\)/i',
-            $sql,
+            $predicate,
             $matches,
             PREG_SET_ORDER
         );
