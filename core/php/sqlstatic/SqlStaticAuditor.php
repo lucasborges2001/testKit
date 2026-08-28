@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Testkit\Core\SqlStatic;
 
 use RuntimeException;
+use Testkit\Core\SqlStatic\Rules\QueryInsideLoopRule;
 
 final class SqlStaticAuditor
 {
@@ -14,6 +15,7 @@ final class SqlStaticAuditor
     {
         $files = SqlSourceScanner::scan($root, $paths, $excludes);
         $findings = [];
+        $coverageFindings = [];
         $queryCount = 0;
 
         foreach ($files as $file) {
@@ -21,19 +23,27 @@ final class SqlStaticAuditor
             if (!is_string($content)) {
                 throw new RuntimeException('Unable to read SQL audit source: ' . $file['relative']);
             }
-            foreach (SqlQueryExtractor::extract($file['path'], $content) as $query) {
-                $queryCount++;
-                foreach (SqlRuleSet::analyze($query['sql']) as $rule) {
+            $queries = SqlQueryExtractor::extract($file['path'], $content);
+            $queryCount += count($queries);
+            $loops = self::isPhpLike($file['path']) ? PhpLoopRangeDetector::detect($content) : [];
+
+            foreach ($queries as $query) {
+                foreach (SqlRuleRegistry::analyze($query['sql']) as $rule) {
+                    $findings[] = self::decorate($file['relative'], $query, $rule);
+                }
+                foreach (QueryInsideLoopRule::analyze($query, $loops) as $rule) {
                     $findings[] = self::decorate($file['relative'], $query, $rule);
                 }
             }
+
+            foreach (SqlCoverageAnalyzer::unresolved($file['path'], $content) as $coverage) {
+                $coverageFindings[] = self::decorateCoverage($file['relative'], $coverage);
+            }
         }
 
-        usort($findings, static fn(array $a, array $b): int =>
-            strcmp((string)$a['path'], (string)$b['path'])
-            ?: ((int)$a['line'] <=> (int)$b['line'])
-            ?: strcmp((string)$a['rule_id'], (string)$b['rule_id'])
-        );
+        self::sortFindings($findings);
+        self::sortFindings($coverageFindings);
+        $candidateCount = $queryCount + count($coverageFindings);
 
         return [
             'schema_version' => self::SCHEMA,
@@ -41,9 +51,14 @@ final class SqlStaticAuditor
             'root' => basename((string)(realpath($root) ?: $root)),
             'paths' => array_values($paths === [] ? ['.'] : $paths),
             'scanned_files' => count($files),
+            'sql_candidates' => $candidateCount,
             'extracted_queries' => $queryCount,
-            'summary' => self::summary($findings),
+            'unresolved_candidates' => count($coverageFindings),
+            'coverage_status' => $coverageFindings === [] ? 'best_effort' : 'partial',
+            'summary' => self::summary($findings, $coverageFindings),
             'findings' => $findings,
+            'coverage_findings' => $coverageFindings,
+            'delta' => ['status' => 'not_compared', 'gate_enabled' => false],
         ];
     }
 
@@ -52,8 +67,10 @@ final class SqlStaticAuditor
     {
         $ruleId = (string)$rule['ruleId'];
         $fingerprint = SqlText::fingerprint((string)$query['sql']);
+        $stableId = self::stableId($path, $ruleId, $fingerprint);
         return [
             'id' => 'sql-static.' . $ruleId . '.' . substr(sha1($path . ':' . $query['line'] . ':' . $fingerprint), 0, 12),
+            'stable_id' => $stableId,
             'rule_id' => $ruleId,
             'severity' => (string)$rule['severity'],
             'confidence' => (string)$rule['confidence'],
@@ -68,7 +85,38 @@ final class SqlStaticAuditor
     }
 
     /** @return array<string,mixed> */
-    private static function summary(array $findings): array
+    private static function decorateCoverage(string $path, array $finding): array
+    {
+        $rule = (string)$finding['rule_id'];
+        $line = (int)$finding['line'];
+        $call = (string)$finding['call'];
+        return [
+            'id' => 'sql-static-coverage.' . substr(sha1($path . ':' . $line . ':' . $call), 0, 12),
+            'stable_id' => 'sql-static-coverage-stable.' . substr(sha1($path . ':' . $call), 0, 16),
+            'rule_id' => $rule,
+            'severity' => (string)$finding['severity'],
+            'confidence' => (string)$finding['confidence'],
+            'path' => $path,
+            'line' => $line,
+            'call' => $call,
+            'summary' => (string)$finding['reason'],
+            'recommendation' => 'Inspect this SQL construction path or expose a literal/query-builder adapter that the audit can classify.',
+            'evidence' => ['call' => $call],
+        ];
+    }
+
+    /** @param array<int,array<string,mixed>> $findings */
+    private static function sortFindings(array &$findings): void
+    {
+        usort($findings, static fn(array $a, array $b): int =>
+            strcmp((string)$a['path'], (string)$b['path'])
+            ?: ((int)$a['line'] <=> (int)$b['line'])
+            ?: strcmp((string)$a['rule_id'], (string)$b['rule_id'])
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private static function summary(array $findings, array $coverageFindings): array
     {
         $severity = ['warn' => 0, 'watch' => 0, 'info' => 0];
         $rules = [];
@@ -84,8 +132,19 @@ final class SqlStaticAuditor
             'warn' => $severity['warn'],
             'watch' => $severity['watch'],
             'info' => $severity['info'],
+            'coverage_findings' => count($coverageFindings),
             'by_rule' => $rules,
             'gate_enabled' => false,
         ];
+    }
+
+    private static function stableId(string $path, string $ruleId, string $fingerprint): string
+    {
+        return 'sql-static-stable.' . substr(sha1($ruleId . '|' . $path . '|' . $fingerprint), 0, 16);
+    }
+
+    private static function isPhpLike(string $path): bool
+    {
+        return strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'sql';
     }
 }
