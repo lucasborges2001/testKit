@@ -1,73 +1,68 @@
 # Pendientes de TestKit
 
-Esta carpeta contiene únicamente deuda accionable que todavía requiere implementación, cambio contractual o integración. La implementación que ya existe y sólo espera evidencia reproducible se registra en `docs/verificaciones/`.
+Esta carpeta contiene únicamente deuda accionable que todavía requiere implementación o cambio contractual dentro de TestKit. La implementación existente que espera integración/evidencia se registra en `docs/verificaciones/`.
 
 ## Corte auditado
 
 ```text
 Repositorio: lucasborges2001/testKit
 Rama: main
-Baseline auditado: 132ed52e49f530231206e6c4358fe6d3dedf8b19
-Fecha de actualización: 2026-08-26
+Baseline inicial de la expansión PLC: 3c7c4b3c2212092c7a5cb7f6f7e381c1aab1e69d
+Fecha de actualización: 2026-08-28
 ```
 
 ## Frontera documental
 
 | Carpeta | Contenido |
 |---|---|
-| `docs/pendientes/` | Deuda funcional, contractual o de integración todavía no implementada/cerrada. |
-| `docs/verificaciones/` | Implementación existente cuya aceptación todavía requiere gates reproducibles o un entorno específico. |
+| `docs/pendientes/` | Deuda funcional/contractual TestKit todavía no implementada. |
+| `docs/verificaciones/` | Implementación existente cuya aceptación/integración todavía requiere gates. |
 
-Ciclo esperado:
-
-```text
-PENDIENTE
--> implementación
--> reducir/cerrar pendiente
--> VERIFICACION si sólo falta evidencia
--> ejecutar gate
--> PASS: cerrar verificación
-```
-
-`BLOCKED` no equivale a `PASS`.
+`BLOCKED`, `NOT_EXECUTED`, `UNKNOWN` y `UNAVAILABLE` no equivalen a `PASS`.
 
 ## Inventario activo
 
 - `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
 - `processrunner-timeout-windows.md`: timeout/terminación verificable de procesos PHP nativos en Windows;
-- `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y debe reutilizar los contratos canónicos ya existentes;
+- `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y reutilización de contratos canónicos;
 - `normalizacion-contratos/pendiente-interno-testkit.md`: deuda interna restante de normalización;
 - `normalizacion-contratos/pendiente-integraciones-externas.md`: inventario, migración y cutover de consumidores externos.
 
-## Implementación existente con verificación pendiente
+## PLC
 
-Estos puntos ya no son backlog de implementación:
-
-- **I6 — `command_spec` v1**: contrato `testkit.command_spec@1` implementado. Referencias: `docs/COMMAND_SPEC.md` y `docs/verificaciones/i6-command-spec-v1.md`.
-- **I8-A — `OperationResultV2`**: contrato implementado. Referencias: `docs/OPERATION_RESULT_V2.md` y `docs/verificaciones/i8-a-operation-result-v2.md`.
-- **PLC Functional HIL**: implementación cerrada; la ejecución pendiente sigue en `docs/verificaciones/plc-functional-hil-identity-integration.md`.
-
-Que una verificación siga abierta no autoriza a reintroducir la fase como deuda de implementación salvo que el gate encuentre un defecto concreto.
-
-## Estado de la normalización contractual
-
-El backlog operativo queda consolidado en:
+La infraestructura PLC reusable de esta expansión ya no es deuda de implementación TestKit:
 
 ```text
-docs/pendientes/normalizacion-contratos/pendiente-interno-testkit.md
-docs/pendientes/normalizacion-contratos/pendiente-integraciones-externas.md
+identity-gated FunctionalHilSession
+exact allowlisted FC06
+FunctionalHilLifecycle
+coherent snapshots
+scan-driven waiting
+stress/soak orchestration
+safe PLC artifacts
+readonly multi-runtime/application-map infrastructure
 ```
 
-El corte histórico de julio de 2026 ya estaba declarado cerrado y sus documentos `fase-*` eran evidencia, no pendientes. Con autorización explícita de limpieza se retiraron de `docs/pendientes`; la trazabilidad permanece en el historial Git.
+La integración de consumidores continúa en:
 
-## Contrato documental vigente
+```text
+docs/verificaciones/plc-functional-hil-identity-integration.md
+```
 
-Para selectores públicos, la referencia canónica es `docs/CONTRACT_REGISTRY.md`, generado desde `Testkit\\Core\\Config\\ContractRegistry`.
+Los siguientes elementos no deben reabrirse como deuda de TestKit porque pertenecen a consumidores u otros owners:
 
-La documentación operativa debe respetar exactamente uno de `--suite | --group | --category`, `--test` repetible y `--selection-file`; no reintroducir targets posicionales ni aliases públicos.
+```text
+Locker register/signal maps
+Locker fixture/lease values
+Locker CoDeSys build/import/compile
+consumer application identities
+BasePLC IEC-ST analysis
+runtime hardware HIL
+physical I/O authorization
+```
 
-Para ejecución tipada usar `docs/COMMAND_SPEC.md`. Para resultados operativos tipados usar `docs/OPERATION_RESULT_V2.md`.
+Un gate que encuentre un defecto reproducible en una primitive TestKit sí justifica crear un pendiente nuevo y concreto.
 
 ## Regla de mantenimiento
 
-Un pendiente debe conservarse sólo mientras exista una deuda concreta con evidencia, objetivo, dependencias, criterio de aceptación y validación. Cuando el código requerido exista y sólo falte evidencia de ejecución, mover el seguimiento a `docs/verificaciones/` en vez de mantener dos fuentes de verdad.
+Conservar un pendiente sólo mientras exista deuda concreta con owner, evidencia, criterio de aceptación y validación. Cuando el código requerido exista y sólo falte integración o evidencia de ejecución, mover el seguimiento a `docs/verificaciones/` en vez de mantener dos fuentes de verdad.

@@ -1,54 +1,40 @@
 # Verificaciones pendientes
 
-Esta carpeta conserva únicamente validaciones de implementaciones que ya existen, pero todavía requieren ejecución local, CI real, Docker, Windows u otra infraestructura externa.
+Esta carpeta conserva validaciones de implementaciones existentes que todavía requieren ejecución en consumidores, CI, Docker, Windows u otra infraestructura específica.
 
 ## Frontera documental
 
 | Carpeta | Contenido |
 |---|---|
-| `docs/pendientes/` | Trabajo todavía no implementado. |
-| `docs/verificaciones/` | Implementación existente con gates reproducibles todavía no confirmados. |
-
-Un documento no entra aquí mientras todavía requiera crear o modificar código, contratos, adapters, suites o configuración para poder ejecutar el gate.
+| `docs/pendientes/` | Trabajo funcional/contractual todavía no implementado. |
+| `docs/verificaciones/` | Implementación existente con gates o integración todavía no confirmados. |
 
 ## Estados
 
 ```text
-PENDIENTE  gate todavía no ejecutado o evidencia incompleta
-PASS       comportamiento esperado demostrado
-FAIL       comportamiento incorrecto demostrado
-BLOCKED    entorno o dependencia impide ejecutar el gate
+PENDIENTE     gate todavía no ejecutado o evidencia incompleta
+PASS          comportamiento esperado demostrado
+FAIL          comportamiento incorrecto demostrado
+BLOCKED       entorno/dependencia impide ejecutar el gate
+NOT_EXECUTED  ejecución deliberadamente no realizada
 ```
 
-`BLOCKED` no equivale a `PASS`.
-
-## Criterios de entrada
-
-1. la implementación necesaria ya existe;
-2. no faltan archivos funcionales para ejecutar el gate;
-3. existe un procedimiento reproducible;
-4. están definidos resultado esperado y evidencia;
-5. un `PASS` permite cerrar sin otra fase de implementación.
+Ningún estado distinto de `PASS` se promociona implícitamente a PASS.
 
 ## Inventario
 
 - `02_store_explicito.md`: cierre de I2; valida store explícito sin aliases, inferencias ni fallback de driver.
-- `i6-command-spec-v1.md`: verificación del contrato de command spec ya implementado.
-- `i8-a-operation-result-v2.md`: verificación del contrato OperationResult v2 ya implementado.
-- `plc-functional-hil-identity-integration.md`: gate/session Functional HIL + integración host + consumidor real; implementación cerrada, falta ejecutar gates owner/host/consumer sin requerir PLC real.
+- `i6-command-spec-v1.md`: verificación del contrato command spec.
+- `i8-a-operation-result-v2.md`: verificación de OperationResult v2.
+- `plc-functional-hil-identity-integration.md`: TestKit PLC HIL framework ya implementado y gateado localmente; resta pin/integración verificable de consumidores. Hardware real continúa fuera de este gate.
 
 ## Cierre
 
-Después de obtener `PASS`:
+Después de obtener PASS total del alcance documentado:
 
-1. registrar baseline y resultado donde corresponda;
+1. registrar el baseline y RCs reales;
 2. actualizar documentación estable si el gate descubre diferencias;
-3. borrar el documento de `docs/verificaciones/`;
-4. no mantener verificaciones cerradas como histórico.
+3. retirar la verificación cerrada del inventario activo;
+4. conservar la trazabilidad histórica en Git.
 
-Después de un `FAIL` reproducible:
-
-1. identificar la causa y el owner;
-2. crear o reabrir un pendiente de implementación;
-3. definir archivos, contrato, pruebas y rollback;
-4. no conservar el defecto como simple verificación.
+Un FAIL reproducible debe volver a deuda de implementación con owner y causa concretos; no debe esconderse como simple verificación pendiente.

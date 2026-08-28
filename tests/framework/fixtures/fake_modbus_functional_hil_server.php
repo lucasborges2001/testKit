@@ -4,11 +4,23 @@ declare(strict_types=1);
 
 $ready = '';
 $countFile = '';
+$allowedAddresses = [1200, 1201];
+$failOnWrites = [];
+$closeOnWrites = [];
 foreach ($argv as $arg) {
     if (str_starts_with($arg, '--ready=')) {
         $ready = substr($arg, strlen('--ready='));
     } elseif (str_starts_with($arg, '--count=')) {
         $countFile = substr($arg, strlen('--count='));
+    } elseif (str_starts_with($arg, '--allowed-addresses=')) {
+        $raw = substr($arg, strlen('--allowed-addresses='));
+        $allowedAddresses = $raw === '' ? [] : array_map('intval', explode(',', $raw));
+    } elseif (str_starts_with($arg, '--fail-on-write=')) {
+        $raw = substr($arg, strlen('--fail-on-write='));
+        $failOnWrites = $raw === '' ? [] : array_map('intval', explode(',', $raw));
+    } elseif (str_starts_with($arg, '--close-on-write=')) {
+        $raw = substr($arg, strlen('--close-on-write='));
+        $closeOnWrites = $raw === '' ? [] : array_map('intval', explode(',', $raw));
     }
 }
 if ($ready === '') {
@@ -31,6 +43,7 @@ if (!is_string($name) || !str_contains($name, ':')) {
 $port = (int)substr(strrchr($name, ':'), 1);
 file_put_contents($ready, (string)$port);
 
+$writeCount = 0;
 while (true) {
     $client = @stream_socket_accept($server, 1);
     if (!is_resource($client)) {
@@ -48,11 +61,19 @@ while (true) {
     if (strlen($frame) === 12) {
         $decoded = unpack('ntransaction/nprotocol/nlength/Cunit/Cfunction/naddress/nvalue', $frame);
         if (is_array($decoded) && (int)$decoded['function'] === 6) {
+            $writeCount++;
             if ($countFile !== '') {
-                $count = is_file($countFile) ? (int)trim((string)file_get_contents($countFile)) : 0;
-                file_put_contents($countFile, (string)($count + 1), LOCK_EX);
+                file_put_contents($countFile, (string)$writeCount, LOCK_EX);
             }
-            if (in_array((int)$decoded['address'], [1200, 1201], true)) {
+
+            if (in_array($writeCount, $closeOnWrites, true)) {
+                fclose($client);
+                continue;
+            }
+
+            if (in_array($writeCount, $failOnWrites, true)) {
+                fwrite($client, pack('nnnCCC', (int)$decoded['transaction'], 0, 3, (int)$decoded['unit'], 0x86, 4));
+            } elseif (in_array((int)$decoded['address'], $allowedAddresses, true)) {
                 fwrite($client, $frame);
             } else {
                 fwrite($client, pack('nnnCCC', (int)$decoded['transaction'], 0, 3, (int)$decoded['unit'], 0x86, 2));
@@ -61,5 +82,7 @@ while (true) {
             fwrite($client, pack('nnnCCC', (int)$decoded['transaction'], 0, 3, (int)$decoded['unit'], 0x86, 2));
         }
     }
-    fclose($client);
+    if (is_resource($client)) {
+        fclose($client);
+    }
 }

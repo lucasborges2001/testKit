@@ -1,122 +1,94 @@
-# Verificación — PLC Functional HIL identity gate e integración
+# Verificación — PLC Functional HIL e integración de consumidores
 
-Fecha: 2026-08-23
+Fecha de actualización: 2026-08-28
 
 ## Estado
 
 ```text
-STATUS: PENDIENTE
-IMPLEMENTATION: CLOSED
-TESTKIT_GATE: IMPLEMENTED
-PRUEBAS_HOST_ROUTE: IMPLEMENTED
-CENTROLOGISTICO_CONSUMER_PROBE: IMPLEMENTED
-HARDWARE_REAL: OUT_OF_SCOPE_FOR_THIS_VERIFICATION
+TESTKIT_FRAMEWORK_IMPLEMENTATION: CLOSED
+TESTKIT_LOCAL_DETERMINISTIC_GATES: PASS
+CONSUMER_INTEGRATION: PENDIENTE
+HARDWARE_REAL: NOT_EXECUTED
+PHYSICAL_IO: NOT_AUTHORIZED
 ```
 
-Baselines de referencia:
+La expansión TestKit agrega lifecycle seguro, snapshots coherentes, espera por scan, stress/soak y artifacts PLC sin mover semántica de consumidores al framework.
 
-```text
-TestKit implementation baseline: 2ec99c34c8230b2dee34c261481fb36b1206740f
-TestKit docs HEAD previo a esta precisión: e7e557f9b609a2008ce680b034cfb58fb923bddc
-Pruebas implementation baseline observado: fecd5075cafa061365f4ac8a60ac88b8ad66e32a
-CentroLogistico implementation baseline observado: e8c18aa67c28e4fc876414f153ca2f791d0d9076
-```
+## Gates owner TestKit ejecutados
 
-Los hosts pueden seguir fijando `2ec99c34...` sin perder la implementación del gate: los commits posteriores de TestKit en este corte son exclusivamente documentales.
-
-## Por qué es verificación y no pendiente
-
-La implementación requerida ya existe:
-
-- `FunctionalHilGate` y `functional_hil_gate@1`;
-- `FunctionalHilSession`;
-- write enable sólo con runtime/application/bridge `PASS` + opt-in explícito;
-- metadata bounded/sanitizada;
-- negativos TestKit con `write_disabled` y cero FC06;
-- adapter host test-only en `Pruebas` que consume la API pública;
-- consumidor CentroLogistico que obtiene application identity por FC03 y usa `FunctionalHilSession`.
-
-El documento anterior bajo `docs/pendientes/` se retiró porque sus gaps de implementación quedaron cerrados. Lo pendiente es ejecutar gates reproducibles sobre los cortes integrados.
-
-## V1 — TestKit owner
-
-Ejecutar desde el checkout real:
+Sobre el árbol de implementación de esta fase se ejecutaron con RC `0`:
 
 ```bash
-cd ~/Escritorio/Pruebas/submodules/Base/testkit
-
-export TESTKIT_PROJECT_ROOT=~/Escritorio/Pruebas
-
-git status --short
 php -l core/php/plc/FunctionalHilGate.php
 php -l core/php/plc/FunctionalHilSession.php
-php -l core/php/plc/bootstrap.php
-php -l tests/framework/test_plc_functional_hil_gate.php
-php -l tests/framework/fixtures/fake_modbus_functional_hil_server.php
+php -l core/php/plc/PlcArtifact.php
+php -l core/php/plc/CoherentSnapshotReader.php
+php -l core/php/plc/ScanDrivenWait.php
+php -l core/php/plc/FunctionalHilLifecycle.php
+php -l core/php/plc/StressSoakRunner.php
+
 php tests/framework/test_plc_modbus_functional_hil.php
 php tests/framework/test_plc_functional_hil_gate.php
-git diff --check
+php tests/framework/test_plc_modbus_readonly_profiles.php
+php tests/framework/test_plc_hil_validation_primitives.php
 ```
 
-PASS:
+La evidencia es exclusivamente local/determinista y no se promociona a hardware PASS.
 
-- todos los comandos salen 0;
-- gate no PASS produce cero FC06 en la fixture;
-- all PASS + opt-in produce exactamente el write permitido;
-- no aparecen coils, FC16, range writes ni scanning;
-- gate report no filtra register map ni secretos.
+## Seguridad demostrada por framework
 
-## V2 — composición host Pruebas con fake local
-
-Ejecutar desde `Pruebas` sin PLC real:
-
-```bash
-cd ~/Escritorio/Pruebas
-
-git status --short
-git submodule status --recursive | grep -E 'submodules/(BasePLC|Base($|/testkit))'
-php test/infra/plc/baseplc_testkit_p4b.integration.test.php
-TESTKIT_MODE=agent ./submodules/Base/testkit/bin/testkit run --rm testkit php runTest.php --suite infra-php
-git diff --check
-```
-
-PASS requiere que el host demuestre success + identity mismatch con cero writes adicionales y artifacts/result compatibles sin acceder a internals de TestKit.
-
-## V3 — consumidor CentroLogistico sin hardware
-
-Con un checkout integrado de CentroLogistico:
-
-```bash
-cd ~/Escritorio/CentroLogistico
-
-php test/infra/plc/security/functional_hil_identity_gate.security.test.php
-php test/infra/plc/security/readonly_test_evidence_boundaries.security.test.php
-git diff --check
-```
-
-PASS confirma que un consumidor real mantiene application/bridge semantics fuera de TestKit y que un mismatch queda fail-closed antes del transporte writable.
-
-Esta verificación **no** exige ejecutar el PLC real. El mapping e!COCKPIT, FC03 real y Functional HIL real pertenecen al consumidor y a su nivel de evidencia autorizado.
-
-## Resultado esperado
+Los tests focales demuestran, sin PLC real:
 
 ```text
-V1 PASS
-V2 PASS
-V3 PASS
-=> cerrar esta verificación
+identity FAIL -> 0 FC06
+identity UNKNOWN -> 0 FC06
+unallowlisted logical stimulus -> 0 FC06
+pre-arm failure -> 0 FC06
+exception after arm -> release/cleanup attempted
+heartbeat failure -> cleanup attempted
+release failure -> bounded retry/cleanup, final FAIL
+cleanup write failure -> final FAIL
+transport failure after arm -> cleanup attempted
+cleanup idempotent -> no repeated writes
+snapshot torn -> rejected/retried, bounded INCONSISTENT
+stalled scan -> bounded TIMEOUT
+secret-like artifact metadata -> redacted
 ```
 
-Un `FAIL` reproducible en un entorno correcto obliga a crear/reabrir un pendiente de implementación con owner y causa exactos.
+## Consumidores — todavía pendiente
 
-`BLOCKED` por entorno no equivale a PASS.
+El siguiente cierre debe hacerse fuera del commit framework de TestKit:
 
-## No cubre
+```text
+1. fijar el nuevo SHA de TestKit en la topología contractual del consumidor;
+2. adaptar el consumer adapter a FunctionalHilLifecycle / snapshot / scan primitives donde corresponda;
+3. mantener maps, IDs, lease values y assertions en el consumidor;
+4. retirar duplicación local sólo después de probar la ruta TestKit;
+5. ejecutar smokes readonly y logic stress offline del consumidor;
+6. mantener HIL real bloqueado mientras sus gates independientes no estén cerrados.
+```
 
-- PLC/e!RUNTIME real;
-- addresses reales de consumidores;
-- deploy/download;
-- `%Q`;
-- actuadores físicos;
-- FTP/serial/HTTP de consumidores;
-- semántica de CentroLogistico, Locker u otro dominio.
+Para Locker, CoDeSys 2.3 import/compile y runtime HIL siguen siendo gates independientes. Este documento no los convierte en PASS.
+
+## Qué no cubre
+
+- PLC real;
+- addresses reales de Locker u otro consumidor;
+- compilación/import de CoDeSys;
+- Run/Stop/Download/Online Change/Force;
+- coils o FC16;
+- `%Q` o actuadores físicos;
+- autorización de salidas físicas.
+
+## Criterio de cierre de esta verificación
+
+```text
+TestKit owner gates PASS
++
+consumer pin actualizado de forma verificable
++
+consumer integration/offline gates PASS
+=> cerrar verificación de integración
+```
+
+`NOT_EXECUTED`, `UNKNOWN`, `UNAVAILABLE` o `BLOCKED` no equivalen a PASS.
