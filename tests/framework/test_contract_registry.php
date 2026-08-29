@@ -22,10 +22,17 @@ $assert(ContractRegistry::SCHEMA_VERSION === 2, 'registry schema must be v2');
 $expectedSuites = [
     'back_php', 'back_python', 'front_php', 'front_js', 'infra_php',
     'migration_contract', 'reference_contract', 'sql_observability',
+    'sql_static_audit',
 ];
 $assert(array_keys(ContractRegistry::suites()) === $expectedSuites, 'suite ids differ from canonical order');
 $assert(ContractRegistry::selectorKinds() === ['suite', 'group', 'category'], 'selector kinds drift');
 $assert(!isset(ContractRegistry::groups()['public_html']), 'legacy public_html group must be removed');
+$sqlStatic = ContractRegistry::suiteContract('sql_static_audit');
+$assert(($sqlStatic['public_name'] ?? '') === 'sql-static-audit', 'SQL static audit public selector');
+$assert(($sqlStatic['capabilities']['report_only'] ?? false) === true, 'SQL static audit must be report-only');
+$assert(($sqlStatic['restrictions']['static_scan_only'] ?? false) === true, 'SQL static audit must be static-only');
+$assert(!in_array('sql_static_audit', ContractRegistry::groups()['all']['suites'], true), 'SQL static audit must not join group all');
+$assert(str_contains(ContractRegistry::renderRunHelp(), 'sql-static-audit'), 'help must list SQL static audit');
 
 foreach (ContractRegistry::selectorDefinitions() as $kind => $definitions) {
     foreach ($definitions as $name => $definition) {

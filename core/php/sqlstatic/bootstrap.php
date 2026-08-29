@@ -20,3 +20,7 @@ require_once __DIR__ . '/PhpLoopRangeDetector.php';
 require_once __DIR__ . '/SqlCoverageAnalyzer.php';
 require_once __DIR__ . '/SqlBaselineComparator.php';
 require_once __DIR__ . '/SqlStaticAuditor.php';
+require_once dirname(__DIR__) . '/common/Env.php';
+require_once dirname(__DIR__) . '/common/AgentMode.php';
+require_once dirname(__DIR__) . '/reporting/UI.php';
+require_once __DIR__ . '/SqlStaticConsoleReporter.php';

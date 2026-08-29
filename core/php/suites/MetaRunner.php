@@ -34,7 +34,7 @@ final class MetaRunner
 
         $selected = TargetResolver::resolve($target);
         if (!$selected) {
-            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . ". Valores: all|back|front|infra|back-php|back-py|front-php|front-js|infra-php|php|js|smoke|perf|stress|contract|critical|slow|migration-contract|reference-contract|sql-observability\n");
+            fwrite(STDERR, 'TEST_TARGET invalido: ' . $target . "\n");
             return 3;
         }
 
@@ -115,6 +115,9 @@ final class MetaRunner
                 $suiteRow['rerun_plan'] = self::suiteRerunPlanFromReport($suiteReport);
 
                 $suiteRows[] = $suiteRow;
+                if (($suiteReport['suite_status'] ?? '') === 'failed') {
+                    $overallFail = true;
+                }
 
                 if ($suiteReportMissing && (bool)$config['meta_fail_fast']) {
                     break;
@@ -263,6 +266,7 @@ final class MetaRunner
             'migration_contract' => MigrationContractSuite::run(),
             'reference_contract' => ReferenceContractSuite::run(),
             'sql_observability' => SqlObservabilitySuite::run(),
+            'sql_static_audit' => SqlStaticAuditSuite::run(),
             default => 3,
         };
     }

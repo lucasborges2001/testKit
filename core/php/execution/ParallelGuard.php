@@ -173,24 +173,27 @@ final class ParallelGuard
     {
         ProjectEnv::hydrateCurrentProcess($repoRoot, false);
 
-        $driver = self::detectDriver();
-        $baseDb = self::resolveBaseDatabaseName($driver);
-        $hasDbRuntime = self::hasDbRuntimeContract();
         $selectedSuites = array_values(array_unique(array_filter(array_map(
             static fn(string $suiteId): string => strtolower(trim($suiteId)),
             $suiteIds
         ))));
 
         $requiresLock = false;
+        $requiresStoreContract = false;
         foreach ($selectedSuites as $suiteId) {
             $hazards = SuiteContractRegistry::hazards($suiteId);
             $mutatesSharedStore = (bool)($hazards['bootstrap_mutates_store'] ?? false);
             $sharedBootstrap = (string)($hazards['store_bootstrap'] ?? '') === 'project_shared_store';
+            if (($hazards['db_sensitivity'] ?? 'discovered') !== 'never' || ($hazards['store_bootstrap'] ?? '') !== 'none') {
+                $requiresStoreContract = true;
+            }
             if ($mutatesSharedStore || $sharedBootstrap) {
                 $requiresLock = true;
-                break;
             }
         }
+        $driver = $requiresStoreContract ? self::detectDriver() : 'none';
+        $baseDb = self::resolveBaseDatabaseName($driver);
+        $hasDbRuntime = $requiresStoreContract && self::hasDbRuntimeContract();
 
         $lockKey = '';
         $lockReason = '';

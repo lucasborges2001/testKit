@@ -3,7 +3,7 @@
 > Generado desde `Testkit\Core\Config\ContractRegistry`. No editar listas manualmente.
 
 Schema: `testkit.contract_registry@2`
-Digest: `27b61b7a8c807d75088c2fe8e60e63b2cf067a82a1b492fba9077683ead1f9d9`
+Digest: `eedc46fbc21231ad36a052253e957984c0c9229364cd44194f5ed75516f9bcd3`
 
 ## Selector público
 
@@ -22,6 +22,7 @@ No existen targets posicionales, aliases ni extensiones `TESTKIT_TARGET_*`.
 | `migration-contract` | `migration_contract` | `php` | `MigrationContractSuite` |
 | `reference-contract` | `reference_contract` | `php` | `ReferenceContractSuite` |
 | `sql-observability` | `sql_observability` | `bash/php` | `SqlObservabilitySuite` |
+| `sql-static-audit` | `sql_static_audit` | `php` | `SqlStaticAuditSuite` |
 
 ## Grupos
 

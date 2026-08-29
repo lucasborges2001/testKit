@@ -22,6 +22,7 @@ final class ContractRegistry
             'migration_contract' => ['public_name'=>'migration-contract','language'=>'php','runner'=>'MigrationContractSuite','profile'=>'migration_contract'],
             'reference_contract' => ['public_name'=>'reference-contract','language'=>'php','runner'=>'ReferenceContractSuite','profile'=>'reference_contract'],
             'sql_observability' => ['public_name'=>'sql-observability','language'=>'bash/php','runner'=>'SqlObservabilitySuite','profile'=>'sql_observability'],
+            'sql_static_audit' => ['public_name'=>'sql-static-audit','language'=>'php','runner'=>'SqlStaticAuditSuite','profile'=>'sql_static_audit'],
         ];
     }
 
@@ -65,6 +66,10 @@ final class ContractRegistry
             'sql_observability' => ['native_coverage_artifacts'=>false,'structured_coverage_diagnostics'=>false,
                 'coverage_formats'=>[],'executes_domain_tests'=>false,'sql_query_profiling'=>true,'policy_gate'=>true,
                 'supports_snapshot_baseline'=>false,'supports_layered_baseline'=>false],
+            'sql_static_audit' => ['native_coverage_artifacts'=>false,'structured_coverage_diagnostics'=>false,
+                'coverage_formats'=>[],'executes_domain_tests'=>false,'static_sql_audit'=>true,'report_only'=>true,
+                'sql_literal_extraction'=>true,'sql_coverage_reasons'=>true,'supports_static_baseline'=>true,
+                'supports_snapshot_baseline'=>false,'supports_layered_baseline'=>false],
             default => [],
         };
         return array_merge($base, $extra);
@@ -94,6 +99,10 @@ final class ContractRegistry
                 'seed_state_contract'=>'scenario_defined','bootstrap_mutates_store'=>true,
                 'supports_per_worker_parallel'=>false,'top_level_parallel_safe'=>false,
                 'may_require_docker_runtime'=>true,'preserve_policy_exit_code'=>true],
+            'sql_static_audit' => ['store_bootstrap'=>'none','db_sensitivity'=>'never',
+                'top_level_parallel_policy'=>'allowed','intra_suite_parallel_policy'=>'not_applicable',
+                'seed_state_contract'=>'not_applicable','bootstrap_mutates_store'=>false,
+                'supports_per_worker_parallel'=>false,'top_level_parallel_safe'=>true,'static_scan_only'=>true],
             default => ['store_bootstrap'=>'project_shared_store','db_sensitivity'=>'discovered',
                 'top_level_parallel_policy'=>'exclusive_when_db_sensitive',
                 'intra_suite_parallel_policy'=>'per_worker_when_db_sensitive','seed_state_contract'=>'required',

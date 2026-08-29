@@ -9,6 +9,27 @@ y quality gates.
 
 ## Entry point
 
+Suite canónica (por defecto audita `TESTKIT_PROJECT_ROOT` completo):
+
+```bash
+php runTest.php --suite sql-static-audit
+TESTKIT_CONSOLE_MODE=live php runTest.php --suite sql-static-audit
+```
+
+Configuración opcional, con listas separadas por coma para paths/excludes múltiples:
+
+```text
+TESTKIT_SQL_STATIC_PATH=back,modules/example
+TESTKIT_SQL_STATIC_EXCLUDE=back/generated,tmp
+TESTKIT_SQL_STATIC_BASELINE=.testkit/reports/sql-static-baseline.json
+```
+
+La suite persiste `suite-report.json` y `sql-static-audit.json` bajo
+`.testkit/reports/sql-static-audit/<run_id>/`. No pertenece todavía a `group all`
+ni a categorías; se selecciona explícitamente.
+
+El entrypoint standalone conserva sus formatos y usa el mismo renderer visual:
+
 ```bash
 php scripts/sql_static_audit.php --root=/ruta/proyecto --path=back
 ```

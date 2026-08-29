@@ -6,6 +6,7 @@ require_once __DIR__ . '/../core/php/sqlstatic/bootstrap.php';
 
 use Testkit\Core\SqlStatic\SqlBaselineComparator;
 use Testkit\Core\SqlStatic\SqlStaticAuditor;
+use Testkit\Core\SqlStatic\SqlStaticConsoleReporter;
 
 function sql_static_usage(): string
 {
@@ -86,51 +87,12 @@ function sql_static_read_baseline(string $path): array
 
 function sql_static_compact(array $report): string
 {
-    $summary = (array)($report['summary'] ?? []);
-    $delta = (array)($report['delta'] ?? []);
-    $suffix = ($delta['status'] ?? '') === 'compared'
-        ? sprintf(' new=%d resolved=%d unchanged=%d', $delta['new_findings'], $delta['resolved_findings'], $delta['unchanged_findings'])
-        : '';
-    return sprintf(
-        'SQL static audit files=%d candidates=%d queries=%d unresolved=%d findings=%d warn=%d watch=%d%s',
-        (int)($report['scanned_files'] ?? 0),
-        (int)($report['sql_candidates'] ?? 0),
-        (int)($report['extracted_queries'] ?? 0),
-        (int)($report['unresolved_candidates'] ?? 0),
-        (int)($summary['findings'] ?? 0),
-        (int)($summary['warn'] ?? 0),
-        (int)($summary['watch'] ?? 0),
-        $suffix
-    ) . PHP_EOL;
+    return SqlStaticConsoleReporter::compact($report);
 }
 
 function sql_static_human(array $report): string
 {
-    $lines = [rtrim(sql_static_compact($report)), str_repeat('=', 72)];
-    foreach ((array)($report['findings'] ?? []) as $finding) {
-        if (!is_array($finding)) {
-            continue;
-        }
-        $lines[] = sprintf(
-            '[%s/%s] %s :: %s:%d',
-            strtoupper((string)$finding['severity']),
-            strtoupper((string)$finding['confidence']),
-            (string)$finding['rule_id'],
-            (string)$finding['path'],
-            (int)$finding['line']
-        );
-        $lines[] = '  ' . (string)$finding['sample_sql'];
-        $lines[] = '  ' . (string)$finding['recommendation'];
-    }
-    foreach ((array)($report['coverage_findings'] ?? []) as $finding) {
-        if (is_array($finding)) {
-            $lines[] = sprintf('[COVERAGE] %s :: %s:%d', $finding['rule_id'], $finding['path'], $finding['line']);
-        }
-    }
-    if (($report['findings'] ?? []) === [] && ($report['coverage_findings'] ?? []) === []) {
-        $lines[] = 'No findings.';
-    }
-    return implode(PHP_EOL, $lines) . PHP_EOL;
+    return SqlStaticConsoleReporter::human($report);
 }
 
 function sql_static_main(array $argv): int

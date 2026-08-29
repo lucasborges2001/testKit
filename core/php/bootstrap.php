@@ -59,6 +59,7 @@ require_once __DIR__ . '/seeding/LayeredSeedMaterializer.php';
 require_once __DIR__ . '/seeding/SnapshotSeedMaterializer.php';
 
 require_once __DIR__ . '/reporting/UI.php';
+require_once __DIR__ . '/reporting/ConsoleMode.php';
 require_once __DIR__ . '/reporting/StructuredWarnings.php';
 require_once __DIR__ . '/reporting/FailureExcerpt.php';
 require_once __DIR__ . '/reporting/FailureNormalizer.php';
@@ -116,6 +117,8 @@ require_once __DIR__ . '/suites/BackPythonSuite.php';
 require_once __DIR__ . '/suites/MigrationContractSuite.php';
 require_once __DIR__ . '/suites/ReferenceContractSuite.php';
 require_once __DIR__ . '/suites/SqlObservabilitySuite.php';
+require_once __DIR__ . '/sqlstatic/bootstrap.php';
+require_once __DIR__ . '/suites/SqlStaticAuditSuite.php';
 require_once __DIR__ . '/suites/MetaRunner.php';
 
 \Testkit\Core\Common\Bootstrap::init();
