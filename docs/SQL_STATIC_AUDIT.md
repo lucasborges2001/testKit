@@ -22,11 +22,46 @@ Configuración opcional, con listas separadas por coma para paths/excludes múlt
 TESTKIT_SQL_STATIC_PATH=back,modules/example
 TESTKIT_SQL_STATIC_EXCLUDE=back/generated,tmp
 TESTKIT_SQL_STATIC_BASELINE=.testkit/reports/sql-static-baseline.json
+TESTKIT_ARTIFACTS_ROOT=/ruta/artifacts-testkit
 ```
 
-La suite persiste `suite-report.json` y `sql-static-audit.json` bajo
-`.testkit/reports/sql-static-audit/<run_id>/`. No pertenece todavía a `group all`
-ni a categorías; se selecciona explícitamente.
+`TESTKIT_PROJECT_ROOT` y `TESTKIT_ARTIFACTS_ROOT` tienen responsabilidades distintas:
+
+```text
+TESTKIT_PROJECT_ROOT   = código que se analiza
+TESTKIT_ARTIFACTS_ROOT = estado y artifacts que TestKit escribe
+```
+
+Si `TESTKIT_ARTIFACTS_ROOT` no se define, TestKit usa `<project>/.testkit`. Si se
+define, la suite respeta ese root y no necesita crear `.testkit` dentro del
+consumidor analizado.
+
+La suite persiste `suite-report.json` y `sql-static-audit.json` bajo:
+
+```text
+<artifacts-root>/reports/sql-static-audit/<run_id>/
+```
+
+No pertenece todavía a `group all` ni a categorías; se selecciona explícitamente.
+
+### Adopción multi-consumidor
+
+Un host puede reutilizar una sola instalación de TestKit para auditar varios
+repositorios/submódulos sin copiar el auditor dentro de cada consumidor. Ejemplo:
+
+```bash
+TESTKIT_PROJECT_ROOT=/ruta/host/submodules/Contabilidad \
+TESTKIT_ARTIFACTS_ROOT=/ruta/host/.testkit/sql-static/Contabilidad \
+TESTKIT_SQL_STATIC_PATH=. \
+NO_COLOR=1 \
+php /ruta/host/submodules/Base/testkit/runTest.php --suite sql-static-audit
+```
+
+Este patrón mantiene separado el ownership:
+
+- el consumidor solo aporta código fuente;
+- TestKit conserva scanner, extractor, reglas, cobertura, `stable_id`, baseline/delta y schema;
+- el host decide dónde centralizar artifacts y qué módulos auditar.
 
 El entrypoint standalone conserva sus formatos y usa el mismo renderer visual:
 
@@ -155,7 +190,9 @@ changes[]
 gate_enabled = false
 ```
 
-El baseline es informativo: nuevos findings no cambian el exit code.
+El baseline es informativo: nuevos findings no cambian el exit code. La comparación
+actual usa `findings[]`; los gaps de `coverage_findings[]` continúan informándose
+como cobertura y no participan todavía del delta.
 
 ## Arquitectura
 
