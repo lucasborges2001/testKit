@@ -35,6 +35,10 @@ $g = 'SELECT id FROM users ORDER BY RAND() LIMIT 1';
 $h = 'SELECT id FROM users ORDER BY id LIMIT 25 OFFSET 100';
 $dynamic = build_query();
 $pdo->query($dynamic);
+$insert = 'INSERT INTO users (email) VALUES (?)';
+base_db_exec($insert, ['user@example.com']);
+base_db_exec('UPDATE users SET active = 0 WHERE id = ?', [1]);
+base_db_query_one('SHOW TABLES LIKE ?', ['users']);
 PHP_SOURCE
 );
 file_put_contents($tmp . '/src/report.sql', "SELECT id FROM audit_log;\nSELECT COUNT(*) FROM audit_log;\n");

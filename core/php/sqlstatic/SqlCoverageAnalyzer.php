@@ -5,6 +5,8 @@ namespace Testkit\Core\SqlStatic;
 
 final class SqlCoverageAnalyzer
 {
+    private const SQL_STATEMENT_PATTERN = '/\b(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|TRUNCATE|SHOW)\b/i';
+
     /** @return array<int,array{rule_id:string,severity:string,confidence:string,line:int,call:string,reason:string}> */
     public static function unresolved(string $path, string $content): array
     {
@@ -23,7 +25,7 @@ final class SqlCoverageAnalyzer
             preg_match_all($pattern, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
             foreach ($matches as $match) {
                 $argument = (string)($match[$argGroup][0] ?? '');
-                if ($argument === '' || preg_match('/\bSELECT\b/i', $argument) === 1) {
+                if ($argument === '' || preg_match(self::SQL_STATEMENT_PATTERN, $argument) === 1) {
                     continue;
                 }
                 $simpleVariable = trim($argument);
@@ -66,7 +68,7 @@ final class SqlCoverageAnalyzer
             if ($value === null || !is_array($tokens[$value]) || $tokens[$value][0] !== T_CONSTANT_ENCAPSED_STRING) {
                 continue;
             }
-            if (preg_match('/\bSELECT\b/i', (string)$tokens[$value][1]) === 1) {
+            if (preg_match(self::SQL_STATEMENT_PATTERN, (string)$tokens[$value][1]) === 1) {
                 $known[$variable] = true;
             }
         }
