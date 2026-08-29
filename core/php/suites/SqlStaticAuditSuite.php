@@ -21,7 +21,7 @@ final class SqlStaticAuditSuite
         $started = microtime(true);
         $runId = self::env('TEST_RUN_ID', gmdate('Ymd\THis\Z') . '_' . substr(sha1((string)microtime(true)), 0, 6));
         $root = Paths::repoRoot();
-        $reportRoot = $root . '/.testkit/reports/sql-static-audit/' . $runId;
+        $reportRoot = Paths::reportsRoot() . '/sql-static-audit/' . $runId;
         $artifact = $reportRoot . '/sql-static-audit.json';
         Paths::ensureDir($reportRoot);
         Paths::recordSuiteReportRoot($reportRoot, 'sql_static_audit');

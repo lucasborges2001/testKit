@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
 $tmp = sys_get_temp_dir() . '/testkit_sql_suite_' . getmypid() . '_' . substr(sha1(uniqid('', true)), 0, 8);
+$artifacts = $tmp . '_artifacts';
 @mkdir($tmp . '/test', 0775, true);
 @mkdir($tmp . '/src', 0775, true);
 file_put_contents($tmp . '/test/.env.test', "APP_ENV=test\n");
@@ -19,9 +20,10 @@ $run = static function (array $env) use ($root, $tmp): array {
 
 $errors = [];
 $assert = static function (bool $ok, string $message) use (&$errors): void { if (!$ok) $errors[] = $message; };
-[$code, $stdout, $stderr] = $run(['TESTKIT_SQL_STATIC_PATH=src', 'NO_COLOR=1']);
+[$code, $stdout, $stderr] = $run(['TESTKIT_ARTIFACTS_ROOT=' . $artifacts, 'TESTKIT_SQL_STATIC_PATH=src', 'NO_COLOR=1']);
 $assert($code === 0, 'findings must keep suite exit 0: ' . $stderr);
-$reports = glob($tmp . '/.testkit/reports/sql-static-audit/*/suite-report.json') ?: [];
+$reports = glob($artifacts . '/reports/sql-static-audit/*/suite-report.json') ?: [];
+$assert(!is_dir($tmp . '/.testkit'), 'consumer .testkit must not be created with external artifact root');
 $assert(count($reports) === 1, 'suite-report.json must be produced');
 $suite = $reports === [] ? null : json_decode((string)file_get_contents($reports[0]), true);
 $artifact = is_array($suite) ? (string)($suite['artifacts']['sql_static_audit'] ?? '') : '';
@@ -34,9 +36,9 @@ $sql = $artifact !== '' && is_file($artifact) ? json_decode((string)file_get_con
 $assert(($sql['schema_version'] ?? '') === 'testkit.sql-static-audit.v1', 'SQL schema remains v1');
 $assert(!str_contains((string)json_encode($sql), "\033["), 'artifact JSON has no ANSI');
 
-[$badCode] = $run(['TESTKIT_SQL_STATIC_PATH=missing', 'NO_COLOR=1']);
+[$badCode] = $run(['TESTKIT_ARTIFACTS_ROOT=' . $artifacts, 'TESTKIT_SQL_STATIC_PATH=missing', 'NO_COLOR=1']);
 $assert($badCode === 1, 'MetaRunner maps operational suite failure to public failure');
-$badReports = glob($tmp . '/.testkit/reports/sql-static-audit/*/suite-report.json') ?: [];
+$badReports = glob($artifacts . '/reports/sql-static-audit/*/suite-report.json') ?: [];
 sort($badReports);
 $bad = null;
 foreach ($badReports as $badPath) {
@@ -48,6 +50,9 @@ $assert(($bad['process_exit_code'] ?? null) === 2, 'suite report preserves opera
 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($tmp, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
 foreach ($iterator as $fileInfo) $fileInfo->isDir() ? @rmdir($fileInfo->getPathname()) : @unlink($fileInfo->getPathname());
 @rmdir($tmp);
+$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($artifacts, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+foreach ($iterator as $fileInfo) $fileInfo->isDir() ? @rmdir($fileInfo->getPathname()) : @unlink($fileInfo->getPathname());
+@rmdir($artifacts);
 
 if ($errors !== []) {
     fwrite(STDERR, "SQL static suite tests failed:\n- " . implode("\n- ", $errors) . "\n");
