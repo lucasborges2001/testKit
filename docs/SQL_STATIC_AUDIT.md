@@ -100,6 +100,18 @@ Aparece cuando un callsite reconocido (`query`, `prepare`, wrappers Base, etc.)
 recibe una expresión que el auditor no puede reconstruir como `SELECT` literal.
 No se clasifica como defecto de SQL y no participa del gate.
 
+Cada coverage finding agrega un `reason` estable para explicar el límite local:
+
+| Reason | Significado |
+|---|---|
+| `parameter_passthrough` | el SQL llega como parámetro del wrapper y requiere inspeccionar callers |
+| `external_statement` | el statement deriva de contenido leído desde un archivo |
+| `dynamic_expression` | la expresión dinámica no entra en las categorías anteriores |
+
+La clasificación sigue únicamente asignaciones y `foreach` simples dentro del
+archivo. No realiza análisis interprocedural ni intenta leer el SQL externo. Las
+declaraciones de wrappers no cuentan como callsites.
+
 Asignaciones simples como:
 
 ```php
