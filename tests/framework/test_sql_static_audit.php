@@ -35,6 +35,17 @@ $g = 'SELECT id FROM users ORDER BY RAND() LIMIT 1';
 $h = 'SELECT id FROM users ORDER BY id LIMIT 25 OFFSET 100';
 $dynamic = build_query();
 $pdo->query($dynamic);
+function execute_sql(mysqli $db, string $sql): void {
+    $db->prepare($sql);
+}
+function base_db_query_all(string $sql): array {
+    return [];
+}
+$source = file_get_contents('/tmp/queries.sql');
+$statements = split_sql($source);
+foreach ($statements as $statement) {
+    base_db_exec($statement);
+}
 $insert = 'INSERT INTO users (email) VALUES (?)';
 base_db_exec($insert, ['user@example.com']);
 base_db_exec('UPDATE users SET active = 0 WHERE id = ?', [1]);
@@ -52,7 +63,7 @@ $report = SqlStaticAuditor::audit($tmp, ['src']);
 sql_static_assert(($report['schema_version'] ?? '') === SqlStaticAuditor::SCHEMA, 'schema version', $errors);
 sql_static_assert((int)($report['scanned_files'] ?? 0) === 2, 'two source files scanned', $errors);
 sql_static_assert((int)($report['extracted_queries'] ?? 0) === 10, 'ten SELECT queries extracted', $errors);
-sql_static_assert((int)($report['unresolved_candidates'] ?? 0) === 1, 'one unresolved dynamic SQL candidate', $errors);
+sql_static_assert((int)($report['unresolved_candidates'] ?? 0) === 3, 'three classified unresolved SQL candidates', $errors);
 sql_static_assert(($report['coverage_status'] ?? '') === 'partial', 'coverage is partial when dynamic SQL is unresolved', $errors);
 
 $rules = [];
@@ -68,6 +79,10 @@ foreach (['select_star', 'unbounded_select', 'non_sargable_predicate', 'leading_
 }
 $coverageRules = array_column((array)($report['coverage_findings'] ?? []), 'rule_id');
 sql_static_assert(in_array('dynamic_sql_unresolved', $coverageRules, true), 'dynamic SQL coverage finding', $errors);
+$coverageReasons = array_count_values(array_column((array)($report['coverage_findings'] ?? []), 'reason'));
+foreach (['parameter_passthrough', 'external_statement', 'dynamic_expression'] as $reason) {
+    sql_static_assert(($coverageReasons[$reason] ?? 0) === 1, 'coverage reason: ' . $reason, $errors);
+}
 sql_static_assert(!str_contains((string)$encoded, '@example.com'), 'report redacts SQL literals', $errors);
 sql_static_assert(($report['summary']['gate_enabled'] ?? true) === false, 'report-only contract', $errors);
 

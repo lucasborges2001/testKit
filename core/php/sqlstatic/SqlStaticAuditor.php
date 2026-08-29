@@ -99,9 +99,10 @@ final class SqlStaticAuditor
             'path' => $path,
             'line' => $line,
             'call' => $call,
-            'summary' => (string)$finding['reason'],
+            'reason' => (string)$finding['reason'],
+            'summary' => (string)$finding['summary'],
             'recommendation' => 'Inspect this SQL construction path or expose a literal/query-builder adapter that the audit can classify.',
-            'evidence' => ['call' => $call],
+            'evidence' => ['call' => $call, 'reason' => (string)$finding['reason']],
         ];
     }
 
