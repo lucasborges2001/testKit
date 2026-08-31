@@ -10,6 +10,9 @@ services:
 
   postgres_test:
     image: postgres:16
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database"
     environment:
       POSTGRES_DB: ${TEST_PG_DB}
       POSTGRES_USER: ${TEST_PG_USER}
@@ -26,3 +29,6 @@ services:
 
 volumes:
   testkit_pg:
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database-volume"

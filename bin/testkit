@@ -11,6 +11,8 @@ source "${TESTKIT_ENTRY_DIR}/lib/bash/stack.sh"
 source "${TESTKIT_ENTRY_DIR}/lib/bash/rewrite.sh"
 # shellcheck source=/dev/null
 source "${TESTKIT_ENTRY_DIR}/lib/bash/doctor.sh"
+# shellcheck source=/dev/null
+source "${TESTKIT_ENTRY_DIR}/lib/bash/runtime_cleanup.sh"
 
 testkit_env_init
 
@@ -59,6 +61,13 @@ testkit_dispatch_inspect() {
 testkit_dispatch_cleanup() {
   local env_file="$1"
   shift || true
+
+  if [[ "${1:-}" == 'runtime' ]]; then
+    shift || true
+    testkit_runtime_cleanup "${env_file}" "$@"
+    return $?
+  fi
+
   local stack_csv
   stack_csv="$(testkit_normalize_stack_csv "${TESTKIT_STACK:-}")" || return 1
   export TESTKIT_DB_ENV_PATH
@@ -268,6 +277,7 @@ main() {
       return $?
       ;;
     *)
+      testkit_runtime_auto_cleanup_if_enabled "${env_file}" "${cmd}"
       testkit_dispatch_runtime "${env_file}" "$@"
       return $?
       ;;

@@ -9,6 +9,9 @@ services:
         PHP_VERSION: ${TESTKIT_PHP_VERSION:-8.4}
     user: "${TESTKIT_HOST_UID:-0}:${TESTKIT_HOST_GID:-0}"
     working_dir: /workspace/project
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "runner"
     volumes:
       - type: bind
         source: ${TESTKIT_PROJECT_ROOT}
@@ -46,6 +49,9 @@ services:
         PLAYWRIGHT_VERSION: ${TESTKIT_PLAYWRIGHT_VERSION:-1.61.0}
     user: "${TESTKIT_HOST_UID:-0}:${TESTKIT_HOST_GID:-0}"
     working_dir: /workspace/project
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "runner"
     volumes:
       - type: bind
         source: ${TESTKIT_PROJECT_ROOT}

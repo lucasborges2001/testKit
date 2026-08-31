@@ -10,6 +10,9 @@ services:
 
   influx_test:
     image: influxdb:2.7
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database"
     ports:
       - "${TEST_INFLUX_PORT:-38086}:8086"
     environment:
@@ -29,3 +32,6 @@ services:
 
 volumes:
   testkit_influx:
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database-volume"

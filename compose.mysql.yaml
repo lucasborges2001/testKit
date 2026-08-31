@@ -17,6 +17,9 @@ services:
       - --log_output=FILE
       - --slow_query_log_file=/var/lib/mysql/slow.log
       - --performance_schema=ON
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database"
     environment:
       MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${TEST_MYSQL_DB}
@@ -34,3 +37,6 @@ services:
 
 volumes:
   testkit_mysql:
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "database-volume"

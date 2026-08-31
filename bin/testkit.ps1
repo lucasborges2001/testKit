@@ -9,6 +9,7 @@ $script:TestkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCom
 . (Join-Path $script:TestkitRoot 'lib\powershell\Stack.ps1')
 . (Join-Path $script:TestkitRoot 'lib\powershell\Rewrite.ps1')
 . (Join-Path $script:TestkitRoot 'lib\powershell\Doctor.ps1')
+. (Join-Path $script:TestkitRoot 'lib\powershell\RuntimeCleanup.ps1')
 
 Initialize-TestkitEnv
 
@@ -31,6 +32,12 @@ function Invoke-TestkitInspect([string]$EnvFilePath, [string[]]$InspectArgs) {
 }
 
 function Invoke-TestkitCleanup([string]$EnvFilePath, [string[]]$CleanupArgs) {
+  if ($CleanupArgs.Count -gt 0 -and $CleanupArgs[0] -eq 'runtime') {
+    $runtimeArgs = if ($CleanupArgs.Count -gt 1) { @($CleanupArgs[1..($CleanupArgs.Count-1)]) } else { @() }
+    $runtimeStatus = Invoke-TestkitRuntimeCleanup $EnvFilePath $runtimeArgs
+    return $runtimeStatus
+  }
+
   $stackCsv = Convert-TestkitStack $env:TESTKIT_STACK
   $env:TESTKIT_DB_ENV_PATH = Convert-TestkitEnvFileToContainerPath $EnvFilePath
   $env:TESTKIT_PROJECT_ROOT = $script:ProjectRoot.Path
@@ -188,4 +195,8 @@ if ($Args.Count -gt 0 -and $Args[0] -eq 'reset') {
   $resetArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
   exit (Invoke-TestkitReset $envFile.Path $resetArgs)
 }
+
+$commandName = if ($Args.Count -gt 0) { $Args[0] } else { '' }
+$autoCleanupStatus = Invoke-TestkitRuntimeAutoCleanup $envFile.Path $commandName
+if ($autoCleanupStatus -ne 0) { exit $autoCleanupStatus }
 exit (Invoke-TestkitRuntime $envFile.Path $Args)
