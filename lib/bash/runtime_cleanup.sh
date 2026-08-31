@@ -223,7 +223,6 @@ testkit_runtime_cleanup() {
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/testkit_runtime_cleanup.XXXXXX")"
   rows_file="${tmp_dir}/rows.tsv"
   projects_file="${tmp_dir}/projects.txt"
-  trap 'rm -rf "${tmp_dir}"' RETURN
   : > "${rows_file}"
   : > "${projects_file}"
 
@@ -299,6 +298,8 @@ testkit_runtime_cleanup() {
   if [[ "${json}" -eq 0 && "${quiet}" -eq 0 && ! -s "${projects_file}" ]]; then
     echo 'OK cleanup runtime: no TestKit-labeled database runtimes found.'
   fi
+
+  rm -rf "${tmp_dir}"
 }
 
 testkit_runtime_auto_cleanup_if_enabled() {
