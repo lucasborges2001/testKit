@@ -29,6 +29,3 @@ services:
 
 volumes:
   testkit_pg:
-    labels:
-      io.testkit.runtime: "true"
-      io.testkit.resource: "database-volume"

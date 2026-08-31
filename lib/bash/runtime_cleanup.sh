@@ -105,9 +105,9 @@ testkit_runtime_write_audit() {
   local timestamp
   timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   local audit_file="${audit_dir}/runtime_cleanup_${stamp}.json"
-  local latest_file="${audit_dir }/runtime_cleanup_latest.json"
+  local latest_file="${audit_dir}/runtime_cleanup_latest.json"
 
-   {
+  {
     printf '{\n'
     printf '  "version": 1,\n\n'
     printf '  "timestamp": "%s",\n' "${timestamp}"

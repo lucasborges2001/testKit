@@ -32,6 +32,3 @@ services:
 
 volumes:
   testkit_influx:
-    labels:
-      io.testkit.runtime: "true"
-      io.testkit.resource: "database-volume"
