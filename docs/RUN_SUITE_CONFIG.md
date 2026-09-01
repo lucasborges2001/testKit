@@ -62,6 +62,52 @@ This option is backward compatible by default and does not alter command exit co
 
 A suite may override the inherited policy with `success_stderr => 'hide'` or `success_stderr => 'show'`. Composite overrides are inherited by child suites unless a child declares its own value.
 
+## Machine result exchange
+
+Callers that need structured per-command evidence can opt in with `--result-json <path>`:
+
+```bash
+php runners/runSuiteConfig.php config/testkit-suites.php unit --result-json /tmp/testkit-unit-result.json
+```
+
+The interface is caller-owned and intentionally separate from TestKit's canonical persisted report tree. It is intended as an exchange file for hosts and orchestrators that already own the final report. Relative paths resolve against `TESTKIT_PROJECT_ROOT`; the parent directory must already exist.
+
+The file is written atomically with permissions `0600` and schema `1`:
+
+```json
+{
+  "schema": 1,
+  "runner": "runSuiteConfig",
+  "suite": "unit",
+  "status": "PASS",
+  "exit_code": 0,
+  "summary": {
+    "suites": 1,
+    "passed": 1,
+    "failed": 0,
+    "commands": 2,
+    "passed_commands": 2,
+    "failed_commands": 0,
+    "required_failures": 0,
+    "duration_ms": 125
+  },
+  "commands": [
+    {
+      "suite": "unit",
+      "command_index": 1,
+      "command": "php test/unit-a.php",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_ms": 52
+    }
+  ]
+}
+```
+
+The machine result never embeds child `stdout` or `stderr`. Human failure diagnostics keep using the existing console path. Consumers must use this JSON instead of parsing console progress when they need command status, exit codes or durations.
+
+`--result-json` is opt-in and does not alter legacy output or runner exit semantics. Combining it with `--list` is rejected because list mode does not execute a suite. Failure to write the requested exchange file is an interface error and exits `2`.
+
 ## Child process environment
 
 Commands executed by the declarative runner inherit the current process environment, including values such as `PATH`, CI variables and host-provided runtime settings. TestKit then sets `TESTKIT_PROJECT_ROOT` explicitly to the resolved host root for the child command.
@@ -106,6 +152,6 @@ Composition is resolved by TestKit itself; hosts do not need to invoke their Tes
 
 - exit `0`: no required suite failed;
 - exit `1`: at least one required suite failed;
-- exit `2`: invalid CLI arguments or invalid suite configuration.
+- exit `2`: invalid CLI arguments, invalid suite configuration, or failure to publish a requested machine-result exchange file.
 
 Optional suite failures remain visible in aggregate counts but do not make the selected aggregate fail solely because they are optional.
