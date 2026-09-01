@@ -25,14 +25,17 @@ use Testkit\Core\Reporting\ConsoleMode;
 
 /**
  * @param array<int,string> $argv
- * @return array{config:string,suite:string,list:bool}
+ * @return array{config:string,suite:string,list:bool,result_json:?string}
  */
 function testkit_suite_config_parse_args(array $argv): array
 {
     $args = array_values(array_slice($argv, 1));
     $list = false;
+    $resultJson = null;
+    $positional = [];
 
-    foreach ($args as $index => $arg) {
+    for ($index = 0, $count = count($args); $index < $count; $index++) {
+        $arg = $args[$index];
         if ($arg === '--help' || $arg === '-h' || $arg === 'help') {
             testkit_suite_config_print_help();
             exit(0);
@@ -40,20 +43,36 @@ function testkit_suite_config_parse_args(array $argv): array
 
         if ($arg === '--list') {
             $list = true;
-            unset($args[$index]);
+            continue;
         }
+
+        if ($arg === '--result-json') {
+            if ($resultJson !== null || !isset($args[$index + 1]) || $args[$index + 1] === '') {
+                fwrite(STDERR, "--result-json requiere un unico path no vacio.\n");
+                exit(2);
+            }
+            $resultJson = $args[++$index];
+            continue;
+        }
+
+        if (str_starts_with($arg, '--')) {
+            fwrite(STDERR, "Opcion no soportada: {$arg}\n");
+            exit(2);
+        }
+
+        $positional[] = $arg;
     }
 
-    $args = array_values($args);
-    if (count($args) < 1 || count($args) > 2) {
+    if (count($positional) < 1 || count($positional) > 2 || ($list && $resultJson !== null)) {
         testkit_suite_config_print_help(STDERR);
         exit(2);
     }
 
     return [
-        'config' => $args[0],
-        'suite' => $args[1] ?? 'all',
+        'config' => $positional[0],
+        'suite' => $positional[1] ?? 'all',
         'list' => $list,
+        'result_json' => $resultJson,
     ];
 }
 
@@ -62,9 +81,10 @@ function testkit_suite_config_print_help($stream = null): void
 {
     $stream = $stream ?? STDOUT;
     fwrite($stream, "Uso:\n");
-    fwrite($stream, "  php runSuiteConfig.php <config.php> [suite]\n");
+    fwrite($stream, "  php runSuiteConfig.php <config.php> [suite] [--result-json <path>]\n");
     fwrite($stream, "  php runSuiteConfig.php <config.php> --list\n\n");
     fwrite($stream, "La config debe retornar ['suites' => [...]] y puede declarar output=live|failures.\n");
+    fwrite($stream, "--result-json escribe un envelope atomico caller-owned sin stdout/stderr de comandos.\n");
     fwrite($stream, "success_stderr=hide|show controla stderr de comandos exitosos en salida capturada.\n");
     fwrite($stream, "Cada suite usa commands=[...] o suites=[...] para composicion nativa.\n");
 }
@@ -309,7 +329,8 @@ function testkit_suite_config_status(string $status): string
     return pvt_ui_bold(pvt_ui_status_label($status));
 }
 
-function testkit_suite_config_run_command_suite(array $suite, string $projectRoot, string $defaultOutputMode, string $defaultSuccessStderr): array
+/** @param array<int,array<string,mixed>> $commandTrace */
+function testkit_suite_config_run_command_suite(array $suite, string $projectRoot, string $defaultOutputMode, string $defaultSuccessStderr, array &$commandTrace): array
 {
     $key = (string)$suite['key'];
     $label = (string)$suite['label'];
@@ -331,11 +352,19 @@ function testkit_suite_config_run_command_suite(array $suite, string $projectRoo
     }
 
     $startedAt = microtime(true);
-    foreach ($suite['commands'] as $command) {
+    foreach ($suite['commands'] as $commandIndex => $command) {
         if (!is_string($command) || trim($command) === '') {
             fwrite(STDERR, testkit_suite_config_status('FAIL') . " {$key}: comando invalido.\n");
             $result['commands']++;
             $result['failed_commands']++;
+            $commandTrace[] = [
+                'suite' => $key,
+                'command_index' => $commandIndex + 1,
+                'command' => is_string($command) ? $command : null,
+                'status' => 'FAIL',
+                'exit_code' => null,
+                'duration_ms' => 0,
+            ];
             if ((bool)($suite['fail_fast'] ?? true)) break;
             continue;
         }
@@ -350,6 +379,14 @@ function testkit_suite_config_run_command_suite(array $suite, string $projectRoo
             $successStderr
         );
         $result['commands']++;
+        $commandTrace[] = [
+            'suite' => $key,
+            'command_index' => $commandIndex + 1,
+            'command' => $command,
+            'status' => $commandResult['exit_code'] === 0 ? 'PASS' : 'FAIL',
+            'exit_code' => $commandResult['exit_code'],
+            'duration_ms' => $commandResult['time_ms'],
+        ];
         if ($commandResult['exit_code'] === 0) {
             $result['passed_commands']++;
             if ($outputMode === 'failures' && $successStderr === 'show') {
@@ -378,7 +415,8 @@ function testkit_suite_config_run_command_suite(array $suite, string $projectRoo
     return $result;
 }
 
-function testkit_suite_config_run_named_suite(string $suiteKey, array $suites, string $projectRoot, string $defaultOutputMode, string $defaultSuccessStderr, array $stack = []): array
+/** @param array<int,array<string,mixed>> $commandTrace */
+function testkit_suite_config_run_named_suite(string $suiteKey, array $suites, string $projectRoot, string $defaultOutputMode, string $defaultSuccessStderr, array &$commandTrace, array $stack = []): array
 {
     if (in_array($suiteKey, $stack, true)) {
         $path = implode(' -> ', array_merge($stack, [$suiteKey]));
@@ -390,7 +428,7 @@ function testkit_suite_config_run_named_suite(string $suiteKey, array $suites, s
 
     $suite = $suites[$suiteKey];
     if (isset($suite['commands'])) {
-        return testkit_suite_config_run_command_suite($suite, $projectRoot, $defaultOutputMode, $defaultSuccessStderr);
+        return testkit_suite_config_run_command_suite($suite, $projectRoot, $defaultOutputMode, $defaultSuccessStderr, $commandTrace);
     }
 
     $outputMode = (string)($suite['output'] ?? $defaultOutputMode);
@@ -403,7 +441,7 @@ function testkit_suite_config_run_named_suite(string $suiteKey, array $suites, s
     $startedAt = microtime(true);
     $stack[] = $suiteKey;
     foreach ($suite['suites'] as $childKey) {
-        $childResult = testkit_suite_config_run_named_suite((string)$childKey, $suites, $projectRoot, $outputMode, $successStderr, $stack);
+        $childResult = testkit_suite_config_run_named_suite((string)$childKey, $suites, $projectRoot, $outputMode, $successStderr, $commandTrace, $stack);
         testkit_suite_config_merge_result($result, $childResult);
         if ($childResult['required_failures'] > 0 && (bool)($suite['fail_fast'] ?? true)) break;
     }
@@ -412,6 +450,70 @@ function testkit_suite_config_run_named_suite(string $suiteKey, array $suites, s
     if (!(bool)$suite['required']) $result['required_failures'] = 0;
     if ($outputMode === 'live' && $result['required_failures'] === 0) echo testkit_suite_config_status('OK') . " {$suiteKey}\n";
     return $result;
+}
+
+/**
+ * Machine result is an opt-in caller-owned exchange file, not a canonical
+ * TestKit report. It intentionally excludes child stdout/stderr.
+ *
+ * @param array<string,int> $result
+ * @param array<int,array<string,mixed>> $commandTrace
+ */
+function testkit_suite_config_write_result_json(string $path, string $projectRoot, string $suiteKey, array $result, array $commandTrace): void
+{
+    $resolved = testkit_suite_config_absolute_path($path, $projectRoot);
+    $directory = dirname($resolved);
+    if (!is_dir($directory)) {
+        fwrite(STDERR, "No existe directorio para --result-json: {$directory}\n");
+        exit(2);
+    }
+
+    $exitCode = $result['required_failures'] === 0 ? 0 : 1;
+    $payload = [
+        'schema' => 1,
+        'runner' => 'runSuiteConfig',
+        'suite' => $suiteKey,
+        'status' => $exitCode === 0 ? 'PASS' : 'FAIL',
+        'exit_code' => $exitCode,
+        'summary' => [
+            'suites' => (int)$result['suites'],
+            'passed' => (int)$result['passed'],
+            'failed' => (int)$result['failed'],
+            'commands' => (int)$result['commands'],
+            'passed_commands' => (int)$result['passed_commands'],
+            'failed_commands' => (int)$result['failed_commands'],
+            'required_failures' => (int)$result['required_failures'],
+            'duration_ms' => (int)$result['time_ms'],
+        ],
+        'commands' => $commandTrace,
+    ];
+
+    $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($encoded)) {
+        fwrite(STDERR, "No se pudo serializar --result-json.\n");
+        exit(2);
+    }
+
+    $temp = tempnam($directory, '.testkit-suite-result-');
+    if ($temp === false) {
+        fwrite(STDERR, "No se pudo crear temporal para --result-json.\n");
+        exit(2);
+    }
+
+    try {
+        @chmod($temp, 0600);
+        if (file_put_contents($temp, $encoded . PHP_EOL) === false) {
+            fwrite(STDERR, "No se pudo escribir --result-json.\n");
+            exit(2);
+        }
+        if (!@rename($temp, $resolved)) {
+            fwrite(STDERR, "No se pudo publicar --result-json atomicamente.\n");
+            exit(2);
+        }
+        @chmod($resolved, 0600);
+    } finally {
+        if (is_file($temp)) @unlink($temp);
+    }
 }
 
 function testkit_suite_config_compact_requested(): bool
@@ -491,14 +593,19 @@ if (!isset($suites[$suiteKey])) {
     exit(2);
 }
 
+$commandTrace = [];
 $result = testkit_suite_config_run_named_suite(
     $suiteKey,
     $suites,
     $projectRoot,
     (string)$config['output'],
-    (string)$config['success_stderr']
+    (string)$config['success_stderr'],
+    $commandTrace
 );
 if ((string)$config['output'] === 'failures') {
     testkit_suite_config_print_summary($suiteKey, (string)$suites[$suiteKey]['label'], $result);
+}
+if (is_string($parsed['result_json'])) {
+    testkit_suite_config_write_result_json($parsed['result_json'], $projectRoot, $suiteKey, $result, $commandTrace);
 }
 exit($result['required_failures'] === 0 ? 0 : 1);
