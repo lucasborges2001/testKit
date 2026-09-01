@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+RUNNER="$TESTKIT_ROOT/runners/runSuiteConfig.php"
+PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-$(pwd -P)}"
+
+if [ ! -d "$PROJECT_ROOT" ]; then
+  echo "ERROR: TESTKIT_PROJECT_ROOT no existe: $PROJECT_ROOT" >&2
+  exit 2
+fi
+
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
+if [ ! -f "$RUNNER" ]; then
+  echo "ERROR: falta runner declarativo de TestKit: $RUNNER" >&2
+  exit 2
+fi
+
+export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
+export TESTKIT_ROOT
+
+exec php "$RUNNER" "$@"
