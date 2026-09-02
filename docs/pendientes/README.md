@@ -22,7 +22,6 @@ Fecha de actualización: 2026-09-02
 
 ## Inventario activo
 
-- `plc-webvisu-blackbox.md`: session/lifecycle browser WebVisu reusable, probes HTTPS, screenshots y artifacts sanitizados para consumidores PLC black-box;
 - `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
 - `processrunner-timeout-windows.md`: timeout/terminación verificable de procesos PHP nativos en Windows;
 - `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y reutilización de contratos canónicos;
@@ -42,14 +41,14 @@ scan-driven waiting
 stress/soak orchestration
 safe PLC artifacts
 readonly multi-runtime/application-map infrastructure
+browser WebVisu black-box con TLS policy/artifacts sanitizados
 ```
-
-La nueva deuda `plc-webvisu-blackbox.md` es distinta: reutiliza el browser runner existente para una superficie WebVisu black-box y no reabre transports PLC ya cerrados.
 
 La integración de consumidores continúa en:
 
 ```text
 docs/verificaciones/plc-functional-hil-identity-integration.md
+docs/verificaciones/plc-webvisu-blackbox-integration.md
 ```
 
 Los siguientes elementos no deben reabrirse como deuda de TestKit porque pertenecen a consumidores u otros owners:
@@ -63,6 +62,7 @@ consumer application identities
 BasePLC IEC-ST analysis
 runtime hardware HIL
 physical I/O authorization
+real WebVisu target/auth/navigation policy
 ```
 
 Un gate que encuentre un defecto reproducible en una primitive TestKit sí justifica crear un pendiente nuevo y concreto.
