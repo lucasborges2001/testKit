@@ -14,6 +14,7 @@ $tests = [ordered]@{
   'Compose file selection (Get-TestkitComposeFiles)' = Join-Path $root 'test_compose_files.ps1'
   'Env file resolution and container path mapping'   = Join-Path $root 'test_env_resolution.ps1'
   'Run command rewrite (Convert-TestkitRunArgs)'     = Join-Path $root 'test_command_rewrite.ps1'
+  'Entrypoint CLI args contract'                     = Join-Path $root 'test_entrypoint_cli_args_contract.ps1'
   'PowerShell UI typed selectors'                    = Join-Path $root 'test_ui_typed_selectors.ps1'
   'Store driver explicit contract'                   = Join-Path $root 'test_store_driver_contract.ps1'
   'Doctor no-store accepts empty stack'              = Join-Path $root 'test_doctor_no_store.ps1'
