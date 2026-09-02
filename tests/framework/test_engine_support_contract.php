@@ -113,8 +113,16 @@ foreach ([$readme, $contract, $support, $envExample] as $index => $text) {
     assert_true(!preg_match('/full\s+support\s+PostgreSQL/i', $text), $label . ' must not claim full PostgreSQL support.', $errors);
     assert_true(!preg_match('/Redis.*structural.*store.*closed/i', $text), $label . ' must not claim Redis closed structural store.', $errors);
 }
-assert_true(str_contains($contract, 'MySQL es la ruta principal cerrada'), 'CONTRATO must name MySQL as primary closed path.', $errors);
-assert_true(str_contains($contract, 'PostgreSQL') && str_contains($contract, 'parcial'), 'CONTRATO must mark PostgreSQL as partial.', $errors);
+assert_true(
+    preg_match('/\|\s*`mysql`\s*\|\s*ruta principal cerrada\s*\|/i', $contract) === 1,
+    'CONTRATO must name MySQL as primary closed path.',
+    $errors
+);
+assert_true(
+    preg_match('/\|\s*`pgsql`\s*\|\s*parcial\/experimental\s*\|/i', $contract) === 1,
+    'CONTRATO must mark PostgreSQL as partial.',
+    $errors
+);
 assert_true(str_contains($support, 'Influx') && str_contains($support, 'auxiliar'), 'SUPPORT_MATRIX must mark Influx as auxiliary.', $errors);
 
 if ($errors !== []) {
