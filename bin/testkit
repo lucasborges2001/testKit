@@ -254,6 +254,7 @@ main() {
     return 1
   fi
   testkit_load_env_kv_safe "${env_file}" || true
+  testkit_validate_env_overrides
   testkit_configure_compose_progress
 
   if testkit_is_sql_observability_command "$@"; then

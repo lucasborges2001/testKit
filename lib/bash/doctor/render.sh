@@ -33,6 +33,11 @@ testkit_doctor_render_full() {
   echo "[INFO] mode=${TESTKIT_DOCTOR_MODE}"
   echo "[INFO] target=${TESTKIT_DOCTOR_TARGET:-generic}"
   echo "[INFO] TESTKIT_STACK=${TESTKIT_STACK_EFFECTIVE:-<empty>}"
+  echo "[INFO] TESTKIT_STACK_ORIGIN=$(testkit_doctor_origin TESTKIT_STACK)"
+  echo "[INFO] TEST_STORE_DRIVER=${TEST_STORE_DRIVER:-<unset>} origin=$(testkit_doctor_origin TEST_STORE_DRIVER)"
+  echo "[INFO] TEST_STORE_PROVISION=${TEST_STORE_PROVISION:-<unset>} origin=$(testkit_doctor_origin TEST_STORE_PROVISION)"
+  echo "[INFO] COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-<unset>} origin=$(testkit_doctor_origin COMPOSE_PROJECT_NAME)"
+  echo "[INFO] COMPOSE_FILE=${COMPOSE_FILE:-<unset>} origin=$(testkit_doctor_origin COMPOSE_FILE)"
   echo "[INFO] TESTKIT_ROOT(host)=${TESTKIT_ROOT_HOST}"
   echo "[INFO] TESTKIT_PROJECT_ROOT(host)=${PROJECT_ROOT}"
   echo "[INFO] TESTKIT_HOST_UID:GID=${TESTKIT_HOST_UID}:${TESTKIT_HOST_GID}"
@@ -67,6 +72,7 @@ testkit_doctor_render_compact() {
   echo ""
   echo "== TESTKIT DOCTOR =="
   echo "[INFO] mode=${TESTKIT_DOCTOR_MODE} target=${TESTKIT_DOCTOR_TARGET:-generic}"
+  echo "[INFO] infra=${TESTKIT_STACK_EFFECTIVE:-<empty>} stack_origin=$(testkit_doctor_origin TESTKIT_STACK) store=${TEST_STORE_DRIVER:-<unset>} store_origin=$(testkit_doctor_origin TEST_STORE_DRIVER)"
 
   local base_counts
   base_counts="$(testkit_doctor__counts TESTKIT_DOCTOR_BASE_CHECKS)"
@@ -106,6 +112,29 @@ testkit_doctor_render_compact() {
     echo "Doctor: OK"
   else
     echo "Doctor: FAIL (ver arriba)"
+  fi
+}
+
+testkit_doctor_origin() {
+  local wanted="$1"
+  local encoded key from to current file_value
+  for encoded in "${TESTKIT_ENV_OVERRIDES[@]}"; do
+    IFS='|' read -r key from to current file_value <<< "${encoded}"
+    if [[ "${key}" == "${wanted}" ]]; then
+      if [[ "${TESTKIT_ALLOW_ENV_OVERRIDES:-0}" == "1" ]]; then
+        echo "process(explicit)"
+      else
+        echo "process"
+      fi
+      return 0
+    fi
+  done
+  if testkit_env_file_declares "${wanted}"; then
+    echo "file"
+  elif [[ -v "${wanted}" ]]; then
+    echo "process"
+  else
+    echo "unset"
   fi
 }
 

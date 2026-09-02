@@ -75,6 +75,25 @@ testkit_doctor_run_base_checks() {
 
   testkit_doctor_add_check base PASS STACK_RESOLVED "TESTKIT_STACK efectivo: ${TESTKIT_STACK_EFFECTIVE:-<empty>}"
 
+  local infra_conflicts
+  infra_conflicts="$(testkit_env_infrastructure_override_conflicts)"
+  if [[ -n "${infra_conflicts}" ]]; then
+    if [[ "${TESTKIT_ALLOW_ENV_OVERRIDES:-0}" == "1" ]]; then
+      testkit_doctor_add_check base WARN ENV_OVERRIDE_EXPLICIT \
+        "override explícito de infraestructura desde proceso sobre ${ENV_FILE:-.env.test}" \
+        "Revisá provenance en --dump si necesitás auditar valores efectivos."
+    elif [[ "${TESTKIT_MODE:-}" == "agent" ]]; then
+      testkit_doctor_add_check base FAIL ENV_OVERRIDE_CONFLICT \
+        "variables heredadas de infraestructura contradicen ${ENV_FILE:-.env.test}" \
+        "Limpiá el entorno o usá TESTKIT_ALLOW_ENV_OVERRIDES=1 si es intencional."
+      ok_ref=0
+    else
+      testkit_doctor_add_check base WARN ENV_OVERRIDE_CONFLICT \
+        "variables heredadas de infraestructura contradicen ${ENV_FILE:-.env.test}" \
+        "Limpiá el entorno o usá TESTKIT_ALLOW_ENV_OVERRIDES=1 si es intencional."
+    fi
+  fi
+
   local provision_mode
   provision_mode="$(testkit_doctor_normalize_token "${TEST_STORE_PROVISION:-managed}")"
   if [[ "${provision_mode}" != "managed" && "${provision_mode}" != "external" ]]; then
