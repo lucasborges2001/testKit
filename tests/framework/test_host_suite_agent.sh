@@ -67,7 +67,7 @@ bash "$ROOT/bin/testkit-host-agent" suites.php fail_host --goal=host-fail-contra
 FAIL_RC=$?
 set -e
 [ "$FAIL_RC" -eq 7 ] || {
-    echo "FAIL: expected host-agent exit 7, got $FAIL_RC" >&2
+    echo "FAIL: expected host-agent effective exit 7, got $FAIL_RC" >&2
     exit 20
 }
 
@@ -82,6 +82,10 @@ if(($j["decision"]["outcome_status"]??null)!=="failed") exit(32);
 if(($j["decision"]["evidence_valid"]??null)!==true) exit(33);
 if(($j["decision"]["first_actionable_failure"]["kind"]??null)!=="host_suite_command_failure") exit(34);
 if(($j["execution"]["exit_code"]??null)!==7) exit(35);
+if(($j["execution"]["runner_exit_code"]??null)!==1) exit(36);
+if(($j["result"]["exit_code"]??null)!==1) exit(37);
+$commands=(array)($j["result"]["commands"]??[]);
+if(($commands[0]["exit_code"]??null)!==7) exit(38);
 ' "$TMP/fail.json"
 
 TESTKIT_MODE=agent php "$ROOT/scripts/agent-run.php" --run="$RUN_ID" --goal=host-agent-followup --json > "$TMP/decision.json"
