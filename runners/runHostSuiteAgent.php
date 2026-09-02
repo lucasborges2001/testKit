@@ -272,9 +272,10 @@ $evidenceValid = is_array($result)
     && ($result['schema'] ?? null) === 1
     && ($result['runner'] ?? null) === 'runSuiteConfig'
     && ($result['suite'] ?? null) === $args['suite'];
-$effectiveExitCode = testkit_host_agent_effective_exit_code($result, $execution['exit_code']);
-
 $status = $evidenceValid && strtoupper((string)($result['status'] ?? '')) === 'PASS' && $execution['exit_code'] === 0 ? 'PASS' : 'FAIL';
+$effectiveExitCode = $status === 'PASS'
+    ? 0
+    : testkit_host_agent_effective_exit_code($result, $execution['exit_code']);
 $outcome = $status === 'PASS' ? 'passed' : 'failed';
 $suiteId = 'host_' . preg_replace('/[^a-z0-9_]+/', '_', strtolower($args['suite']));
 $suiteId = trim($suiteId, '_');
