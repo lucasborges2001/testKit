@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { browserConfig } from "../utils/js/browser/env.mjs";
 import {
   allowsInvalidTls,
+  artifactReference,
   createBlackBoxRuntime,
   createScopedApiRequest,
   sanitizeText,
@@ -147,7 +148,7 @@ async function main() {
       const screenshot = path.join(config.artifactsDir, `failure-${Date.now()}.png`);
       const captured = await page.screenshot({ path: screenshot, fullPage: true }).then(() => true).catch(() => false);
       if (captured) {
-        failureScreenshot = screenshot;
+        failureScreenshot = artifactReference(config, screenshot);
         console.error(`[browser-e2e] screenshot: ${screenshot}`);
       }
     }
