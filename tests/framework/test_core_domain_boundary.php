@@ -25,6 +25,8 @@ $allowedDirectories = [
     'references',
     'reporting',
     'seeding',
+    'serial',
+    'sqlstatic',
     'store',
     'suites',
 ];
@@ -59,6 +61,8 @@ $allowedNamespaceSegments = [
     'References',
     'Reporting',
     'Seeding',
+    'Serial',
+    'SqlStatic',
     'Store',
     'Suites',
 ];
