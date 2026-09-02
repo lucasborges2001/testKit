@@ -176,18 +176,26 @@ try {
         $repoRoot = $tmpRoot . '/repo';
         $artifactRoot = $repoRoot . '/.testkit';
         $testDir = $repoRoot . '/test/back/ocpp_server/integration';
+        $packageDir = $repoRoot . '/project_import_probe';
         $coverageRoot = $artifactRoot . '/coverage';
         $coverageDir = $coverageRoot . '/back_python';
         @mkdir($testDir, 0777, true);
+        @mkdir($packageDir, 0777, true);
+
+        file_put_contents($packageDir . '/__init__.py', "VALUE = 42\n");
 
         file_put_contents(
             $testDir . '/ocpp_trace_artifacts_unittest.py',
             implode("\n", [
+                'import os',
                 'import unittest',
+                'import project_import_probe',
                 '',
                 'class OcppTraceArtifactsTest(unittest.TestCase):',
                 '    def test_trace_runs(self):',
                 '        self.assertEqual(2 + 2, 4)',
+                '        self.assertEqual(project_import_probe.VALUE, 42)',
+                "        self.assertIn('prior_path_probe', os.environ.get('PYTHONPATH', ''))",
                 '',
                 "if __name__ == '__main__':",
                 '    unittest.main()',
@@ -217,6 +225,7 @@ try {
             'TEST_REPORT_RUN_ROOT',
             'TEST_RUN_ID',
             'TEST_META_RUN_ID',
+            'PYTHONPATH',
         ];
         $previousEnv = [];
         foreach ($keys as $key) {
@@ -245,6 +254,15 @@ try {
             set_env_pytrace('TEST_REPORT_RUN_ROOT', null);
             set_env_pytrace('TEST_RUN_ID', 'pytrace_' . str_replace('.', '_', uniqid('', true)));
             set_env_pytrace('TEST_META_RUN_ID', 'pytrace_meta_' . str_replace('.', '_', uniqid('', true)));
+            set_env_pytrace('PYTHONPATH', 'prior_path_probe');
+
+            $pathMethod = new ReflectionMethod(BackPythonSuite::class, 'pythonPathWithProjectRoot');
+            $pathMethod->setAccessible(true);
+            $effectivePythonPath = $pathMethod->invoke(null, $repoRoot);
+            $pathParts = explode(PATH_SEPARATOR, (string)$effectivePythonPath);
+            assert_true_pytrace($pathParts[0] === $repoRoot, 'BackPythonSuite should prepend project root to PYTHONPATH', $errors);
+            assert_contains_pytrace($pathParts, 'prior_path_probe', 'BackPythonSuite PYTHONPATH should preserve prior path', $errors);
+            assert_true_pytrace(count(array_keys($pathParts, $repoRoot, true)) === 1, 'BackPythonSuite PYTHONPATH should not duplicate project root', $errors);
 
             ob_start();
             $exitCode = BackPythonSuite::run();

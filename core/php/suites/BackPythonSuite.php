@@ -101,6 +101,7 @@ final class BackPythonSuite
             'TEST_SUITE' => 'back_python',
             'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
+            'PYTHONPATH' => self::pythonPathWithProjectRoot($repoRoot),
             'TESTKIT_ROOT' => $testkitRoot,
             'TK_REPO_ROOT' => $repoRoot,
             'TEST_WORKER_ID' => (string)$workerId,
@@ -114,6 +115,19 @@ final class BackPythonSuite
         }
 
         return ['cmd' => $cmd, 'env' => $env];
+    }
+
+    private static function pythonPathWithProjectRoot(string $repoRoot): string
+    {
+        $parts = [$repoRoot];
+        $current = getenv('PYTHONPATH');
+        foreach (explode(PATH_SEPARATOR, is_string($current) ? $current : '') as $part) {
+            $part = trim($part);
+            if ($part !== '' && !in_array($part, $parts, true)) {
+                $parts[] = $part;
+            }
+        }
+        return implode(PATH_SEPARATOR, $parts);
     }
 
     /**
