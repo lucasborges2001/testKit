@@ -227,6 +227,22 @@ function testkit_host_agent_first_failure(array $result, string $suiteId, string
     return null;
 }
 
+function testkit_host_agent_effective_exit_code(?array $result, int $runnerExitCode): int
+{
+    if (is_array($result)) {
+        foreach ((array)($result['commands'] ?? []) as $command) {
+            if (!is_array($command) || strtoupper((string)($command['status'] ?? '')) !== 'FAIL') {
+                continue;
+            }
+            $exit = $command['exit_code'] ?? null;
+            if (is_int($exit) && $exit > 0 && $exit <= 255) {
+                return $exit;
+            }
+        }
+    }
+    return max(1, $runnerExitCode);
+}
+
 $args = testkit_host_agent_parse_args($argv);
 $projectRoot = testkit_host_agent_project_root();
 $testkitRoot = str_replace('\\', '/', realpath(dirname(__DIR__)) ?: dirname(__DIR__));
@@ -256,6 +272,7 @@ $evidenceValid = is_array($result)
     && ($result['schema'] ?? null) === 1
     && ($result['runner'] ?? null) === 'runSuiteConfig'
     && ($result['suite'] ?? null) === $args['suite'];
+$effectiveExitCode = testkit_host_agent_effective_exit_code($result, $execution['exit_code']);
 
 $status = $evidenceValid && strtoupper((string)($result['status'] ?? '')) === 'PASS' && $execution['exit_code'] === 0 ? 'PASS' : 'FAIL';
 $outcome = $status === 'PASS' ? 'passed' : 'failed';
@@ -283,7 +300,7 @@ if ($status === 'FAIL' && $firstFailure === null) {
         'kind' => 'host_suite_failure',
         'phase' => 'execution',
         'failure_domain' => 'execution',
-        'cause_code' => 'exit_code_' . $execution['exit_code'],
+        'cause_code' => 'exit_code_' . $effectiveExitCode,
         'exception_class' => null,
         'message' => $evidenceValid ? 'Host suite failed.' : 'Host suite did not publish valid machine evidence.',
         'stack_excerpt' => [],
@@ -419,7 +436,8 @@ $artifact = AgentRunArtifact::record($decision, [
         'display' => 'testkit-host-agent ' . $args['config'] . ' ' . $args['suite'],
     ],
     'result' => [
-        'exit_code' => $execution['exit_code'],
+        'exit_code' => $effectiveExitCode,
+        'runner_exit_code' => $execution['exit_code'],
         'duration_ms' => $execution['duration_ms'],
         'stdout_excerpt' => testkit_host_agent_excerpt($execution['stdout']),
         'stderr_excerpt' => testkit_host_agent_excerpt($execution['stderr']),
@@ -437,7 +455,8 @@ $payload = [
     'decision' => $decision,
     'artifact' => $artifact,
     'execution' => [
-        'exit_code' => $execution['exit_code'],
+        'exit_code' => $effectiveExitCode,
+        'runner_exit_code' => $execution['exit_code'],
         'duration_ms' => $execution['duration_ms'],
         'stdout_excerpt' => testkit_host_agent_excerpt($execution['stdout']),
         'stderr_excerpt' => testkit_host_agent_excerpt($execution['stderr']),
@@ -462,4 +481,4 @@ if ($args['json']) {
     );
 }
 
-exit($status === 'PASS' ? 0 : max(1, $execution['exit_code']));
+exit($status === 'PASS' ? 0 : $effectiveExitCode);
