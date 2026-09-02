@@ -29,7 +29,8 @@ grep -q '^  mailpit:$' "$ROOT/compose.mailpit.yaml"
 grep -q 'axllent/mailpit:v1.30.0' "$ROOT/compose.mailpit.yaml"
 grep -q 'TEST_MAILPIT_SMTP_PORT' "$ROOT/compose.mailpit.yaml"
 grep -q 'TEST_MAILPIT_HTTP_PORT' "$ROOT/compose.mailpit.yaml"
-if grep -q 'libphp-phpmailer' "$ROOT/docker/Dockerfile"; then
+if grep -vE '^[[:space:]]*#' "$ROOT/docker/Dockerfile" \
+  | grep -qE '(^|[[:space:]\\])libphp-phpmailer([[:space:]\\]|$)'; then
   echo 'FAIL: runner must not install Debian libphp-phpmailer into official PHP image' >&2
   exit 1
 fi
