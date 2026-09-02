@@ -78,6 +78,8 @@ Cada ejecución escribe `browser-run.json` en `TESTKIT_BROWSER_ARTIFACTS_DIR` co
 
 No se persisten headers, cookies, storage state ni payloads de formularios. Query params con nombres secret-like y diagnósticos textuales sensibles se redactan.
 
+Las referencias `steps[].screenshot` y `failure_screenshot` son portables respecto de `TESTKIT_BROWSER_ARTIFACTS_DIR`; no deben depender de rutas absolutas del contenedor.
+
 ## Runner reusable
 
 Un adapter del host puede ejecutar directamente el runner reusable cuando ese sea su contrato interno:
@@ -127,6 +129,26 @@ node tests/framework/test_browser_blackbox_policy.mjs
 ```
 
 El lifecycle browser debe verificarse además dentro de la imagen Playwright existente. La ejecución fake/runtime no se considera demostrada por el test de política anterior.
+
+## Aceptación runtime reusable
+
+El corte source `e5d0366ffc665df0de9ddf6e53f5403a535693bb` fue validado desde `Pruebas` mediante Base `5963f4a5fb828b214c69d7fa536ac16b9017a4de`.
+
+Quedaron verificados en runtime:
+
+```text
+browser real + fixture HTTP                 PASS
+artifact/schema/redaction                   PASS
+screenshot persistido y referencia portable PASS
+strict TLS contra self-signed               EXPECTED FAIL
+self-signed opt-in same target               PASS
+timeout controlado                           EXPECTED FAIL
+cleanup server/cert/key/runtime              PASS
+```
+
+Los expected failures sólo se aceptan cuando el browser runner retorna el exit de producto esperado; un fallo operativo del runner no se clasifica como éxito del test negativo.
+
+Evidencia y frontera consumer-owned: `docs/verificaciones/plc-webvisu-blackbox-integration.md`.
 
 ## Coverage
 
