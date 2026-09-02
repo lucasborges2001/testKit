@@ -81,6 +81,16 @@ try {
     }
 
     $root = dirname(__DIR__, 2);
+    $activeCiPath = $root . '/.github/workflows/ci.yml';
+    $ciContractPath = $root . '/docs/contracts/ci-workflow-reference.yml';
+    $ciSourcePath = is_file($activeCiPath) ? $activeCiPath : $ciContractPath;
+    if (!is_file($ciSourcePath)) {
+        $errors[] = 'CI contract source is missing';
+        $ciSource = '';
+    } else {
+        $ciSource = (string)file_get_contents($ciSourcePath);
+    }
+
     $forbiddenByFile = [
         'core/php/store/StoreRegistry.php' => ["getenv('DB_DRIVER')", "getenv('TEST_DB_DRIVER')", 'strtok(', "str_starts_with(\$driver, 'pg')"],
         'core/php/execution/ParallelGuard.php' => ["getenv('DB_DRIVER')", "getenv('TEST_DB_DRIVER')", 'strtok('],
@@ -94,7 +104,6 @@ try {
         'scripts/seed.ps1' => ['TEST_DB_DRIVER', 'DB_DRIVER', 'serviceNames'],
         'scripts/db_clean.sh' => ['TEST_DB_DRIVER', 'DB_DRIVER'],
         'scripts/db_clean.ps1' => ['TEST_DB_DRIVER', 'DB_DRIVER'],
-        '.github/workflows/ci.yml' => ['set_env_value DB_DRIVER'],
     ];
     foreach ($forbiddenByFile as $rel => $needles) {
         $source = (string)file_get_contents($root . '/' . $rel);
@@ -103,6 +112,9 @@ try {
                 $errors[] = "{$rel}: legacy driver selector remains: {$needle}";
             }
         }
+    }
+    if (str_contains($ciSource, 'set_env_value DB_DRIVER')) {
+        $errors[] = 'CI contract: legacy driver selector remains: set_env_value DB_DRIVER';
     }
 
     $envExample = (string)file_get_contents($root . '/.env.test.example');
@@ -149,21 +161,20 @@ try {
         }
     }
 
-    $ciSource = (string)file_get_contents($root . '/.github/workflows/ci.yml');
     $runtimeStart = strpos($ciSource, "  runtime-mysql:\n");
     $runtimeEnd = strpos($ciSource, "  browser-runner-smoke:\n");
     if ($runtimeStart === false || $runtimeEnd === false || $runtimeEnd <= $runtimeStart) {
-        $errors[] = 'CI must expose an isolated runtime-mysql job';
+        $errors[] = 'CI contract must expose an isolated runtime-mysql job';
     } else {
         $runtimeCi = substr($ciSource, $runtimeStart, $runtimeEnd - $runtimeStart);
         if (!str_contains($runtimeCi, 'tests/fixtures/runtime-mysql-host')) {
-            $errors[] = 'runtime-mysql CI must mount the dedicated host fixture';
+            $errors[] = 'runtime-mysql CI contract must mount the dedicated host fixture';
         }
         if (!str_contains($runtimeCi, '--suite back-php')) {
-            $errors[] = 'runtime-mysql CI doctor must use a concrete non-snapshot suite';
+            $errors[] = 'runtime-mysql CI contract doctor must use a concrete non-snapshot suite';
         }
         if (str_contains($runtimeCi, '--suite migration-contract')) {
-            $errors[] = 'runtime-mysql CI must not require migration-contract snapshot semantics';
+            $errors[] = 'runtime-mysql CI contract must not require migration-contract snapshot semantics';
         }
     }
 } finally {
