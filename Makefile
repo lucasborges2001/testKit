@@ -55,3 +55,4 @@ self-test:
 	php tests/framework/run.php
 	bash tests/framework/test_suite_config_risk_policy.sh
 	bash tests/framework/test_env_contract.sh
+	bash tests/framework/test_mailpit_stack.sh
