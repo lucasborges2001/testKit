@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  artifactReference,
   assertMutationAllowed,
   assertTargetUrl,
   sanitizeText,
@@ -45,16 +46,25 @@ assert.equal(
   "Authorization: [REDACTED] password=[REDACTED]"
 );
 
+const screenshotPath = path.join(observe.artifactsDir, "step-01-login.png");
+assert.equal(artifactReference(observe, screenshotPath), "step-01-login.png");
+assert.throws(
+  () => artifactReference(observe, path.join(observe.artifactsDir, "..", "outside.png")),
+  /Artifact fuera del directorio permitido/
+);
+
 const artifact = writeBrowserArtifact(observe, {
   status: "PASS",
   current_url: sanitizeUrl("https://plc.example.test/?session=secret&view=login"),
-  steps: [],
+  steps: [{ screenshot: artifactReference(observe, screenshotPath) }],
 });
 const payload = JSON.parse(fs.readFileSync(artifact, "utf8"));
 assert.equal(payload.schema, "testkit.browser-run.v1");
 assert.equal(payload.tls_policy, "allow_self_signed_for_explicit_target");
 assert.equal(payload.action_mode, "observe_only");
 assert.match(payload.current_url, /%5BREDACTED%5D/);
+assert.equal(payload.steps[0].screenshot, "step-01-login.png");
+assert.ok(!path.isAbsolute(payload.steps[0].screenshot));
 assert.ok(!fs.readFileSync(artifact, "utf8").includes("secret"));
 
 fs.rmSync(observe.artifactsDir, { recursive: true, force: true });
