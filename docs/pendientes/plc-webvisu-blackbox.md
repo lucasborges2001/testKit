@@ -50,6 +50,28 @@ integración Base -> TestKit -> browser runner = PASS
 
 La evidencia remota publicada no incorpora el contenido de `.testkit/artifacts/.../browser-run.json`; por tanto todavía no permite cerrar los checks de artifact/screenshot/redaction sólo a partir de `docs/test-runs`.
 
+## Deuda detectada en consumo de artifacts
+
+Durante la preparación de un validador host se confirmó que `steps[].screenshot` y `failure_screenshot` se serializan hoy usando la ruta absoluta del runtime, por ejemplo bajo `/workspace/project/...` dentro del contenedor.
+
+Esto no expone secretos por sí mismo, pero vuelve esa referencia no portable para un consumidor que inspecciona el artifact desde el host después de terminar el contenedor.
+
+Estado:
+
+```text
+ARTIFACT_SCREENSHOT_PATH_PORTABILITY_PENDING
+```
+
+Contrato recomendado para una iteración posterior:
+
+- serializar referencias de screenshot relativas a `artifactsDir`, o declarar explícitamente un campo portable separado;
+- mantener la ruta física únicamente para uso interno del runner;
+- cubrir éxito y failure screenshot;
+- agregar self-test que demuestre que `browser-run.json` no depende de `/workspace/project` ni de otra ruta absoluta del executor;
+- conservar compatibilidad si aparece un consumidor real del formato actual antes de cambiarlo.
+
+Mientras esta deuda siga abierta, los consumidores deben resolver el archivo persistido desde su directorio de artifacts y usar sólo el basename de la referencia serializada, sin confiar en la ruta absoluta del contenedor.
+
 ## Límite de compatibilidad
 
 El runner conserva `page` crudo para no romper specs existentes. Por ello, `observe_only` sólo es frontera verificable para acciones mutantes declaradas mediante `testkit.step`; un spec legacy que llame directamente `page.click()` o `locator.click()` puede eludir esa guardia.
@@ -95,6 +117,7 @@ sin semántica CentroLogistico dentro de TestKit.
 - screenshot no sensible verificado como artifact real;
 - cleanup browser verificado explícitamente en runtime;
 - secret redaction inspeccionada en artifact real;
+- portabilidad de referencias de screenshot;
 - piloto CentroLogistico WebVisu read-only con autorización separada.
 
 No marcar este pendiente `PASS/CLOSED` hasta completar el gate runtime restante.
@@ -113,6 +136,7 @@ local fake HTTPS self-signed
 -> opt-in self-signed PASS
 -> timeout FAIL controlado
 -> inspección browser-run.json/screenshot/redaction
+-> portabilidad de referencias de screenshot
 -> CentroLogistico WebVisu read-only pilot con autorización separada
 ```
 
