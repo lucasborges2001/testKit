@@ -22,6 +22,7 @@ Fecha de actualización: 2026-09-02
 
 ## Inventario activo
 
+- `remote-target-suite-isolation.md`: aislamiento de suites focalizadas por owner para que un fallo baseline ajeno no impida validar el SHA candidato exacto;
 - `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
 - `processrunner-timeout-windows.md`: timeout/terminación verificable de procesos PHP nativos en Windows;
 - `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y reutilización de contratos canónicos;
