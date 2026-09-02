@@ -2,7 +2,11 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
-$workflowPath = $root . '/.github/workflows/ci.yml';
+$activeWorkflowPath = $root . '/.github/workflows/ci.yml';
+$disabledWorkflowPath = $root . '/.github/workflows-disabled/ci.yml';
+$workflowContractPath = $root . '/docs/contracts/ci-workflow-reference.yml';
+$workflowPath = is_file($activeWorkflowPath) ? $activeWorkflowPath : $workflowContractPath;
+$workflowDisabled = !is_file($activeWorkflowPath);
 $docsPath = $root . '/docs/CI.md';
 $windowsDocsPath = $root . '/docs/WINDOWS.md';
 $dockerfilePath = $root . '/docker/Dockerfile';
@@ -39,6 +43,18 @@ $gitignore = $read($gitignorePath);
 $sqlObservabilityFixtureEnv = $read($sqlObservabilityFixtureEnvPath);
 $seedAndTestPs = $read($seedAndTestPsPath);
 
+if ($workflowDisabled) {
+    $disabledWorkflow = $read($disabledWorkflowPath);
+    $assert(
+        str_contains($disabledWorkflow, 'temporarily disabled')
+            && str_contains($disabledWorkflow, 'workflow_dispatch')
+            && str_contains($disabledWorkflow, 'if: ${{ false }}'),
+        'disabled CI stub must remain explicit and non-executing'
+    );
+    $assert(!str_contains($disabledWorkflow, 'push:'), 'disabled CI stub must not run on push');
+    $assert(!str_contains($disabledWorkflow, 'pull_request:'), 'disabled CI stub must not run on pull_request');
+}
+
 $requiredWorkflow = [
     'uses: actions/checkout@v7',
     'uses: actions/setup-node@v7',
@@ -55,7 +71,7 @@ $requiredWorkflow = [
     'node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs',
 ];
 foreach ($requiredWorkflow as $fragment) {
-    $assert(str_contains($workflow, $fragment), 'CI missing normalized contract fragment: ' . $fragment);
+    $assert(str_contains($workflow, $fragment), 'CI contract missing normalized fragment: ' . $fragment);
 }
 
 $requiredDocs = [
@@ -131,7 +147,7 @@ $forbiddenWorkflowFragments = [
     'TESTKIT_TARGET_',
 ];
 foreach ($forbiddenWorkflowFragments as $fragment) {
-    $assert(!str_contains($workflow, $fragment), 'CI contains stale/legacy surface: ' . $fragment);
+    $assert(!str_contains($workflow, $fragment), 'CI contract contains stale/legacy surface: ' . $fragment);
 }
 
 $forbiddenWindowsFragments = [
@@ -150,13 +166,13 @@ $assert(
 
 $assert(
     substr_count($workflow, 'php tests/framework/run.php') === 1,
-    'full PHP framework self-tests must run exactly once in the dedicated framework-self-tests job'
+    'full PHP framework self-tests must run exactly once in the CI contract framework-self-tests job'
 );
 
 $positionalRunPattern = '/runTest\.php\s+(all|back|front|public_html|back-php|back-py|back-python|python|py|front-php|front-js|php|js|smoke|perf|stress|contract|critical|security|slow|migration-contract|migration|migrations)(?=\s|\\\\|$)/m';
 $assert(
     preg_match($positionalRunPattern, $workflow) !== 1,
-    'CI contains a positional runTest.php selector'
+    'CI contract contains a positional runTest.php selector'
 );
 
 if ($errors !== []) {
