@@ -12,6 +12,7 @@ FROM php:${PHP_VERSION}-cli-bookworm AS core
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git unzip zip curl ca-certificates \
     default-mysql-client postgresql-client \
+    libphp-phpmailer \
     libzip-dev libicu-dev libpq-dev \
     python3 python3-pip python3-venv \
   && docker-php-ext-install intl zip mysqli pdo pdo_mysql pdo_pgsql \
