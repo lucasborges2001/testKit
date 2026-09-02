@@ -1,0 +1,51 @@
+# Non-executable CI contract reference.
+#
+# GitHub Actions is intentionally disabled while the account has no Actions
+# budget. This file preserves the workflow surfaces that local contract tests
+# must continue validating without placing a runnable workflow under
+# .github/workflows/. Restore an executable workflow from Git history when CI
+# budget is available and explicitly authorized.
+
+name: TestKit CI contract reference
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+  windows-static:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+  framework-self-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: php tests/framework/run.php
+
+  runtime-mysql:
+    runs-on: ubuntu-24.04
+    env:
+      TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host
+      TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/runtime-mysql-host/.env.test
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./bin/testkit doctor --full --suite back-php
+      - run: ./bin/testkit run --rm testkit php runTest.php --group all --list
+      - run: ./bin/testkit run --rm testkit php runTest.php --group all
+      - uses: actions/upload-artifact@v7
+
+  browser-runner-smoke:
+    runs-on: ubuntu-24.04
+    env:
+      TESTKIT_PROJECT_ROOT: ${{ github.workspace }}/tests/fixtures/browser
+      TESTKIT_ENV_FILE: ${{ github.workspace }}/tests/fixtures/browser/.env.test
+    steps:
+      - uses: actions/checkout@v7
+      - run: node /workspace/testkit/runners/runBrowserE2e.mjs smoke.spec.mjs
+      - uses: actions/upload-artifact@v7
