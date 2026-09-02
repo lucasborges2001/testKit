@@ -3,6 +3,7 @@ set -euo pipefail
 
 TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 RUNNER="$TESTKIT_ROOT/runners/runSuiteConfig.php"
+POLICY="$TESTKIT_ROOT/runners/validateSuitePolicy.php"
 PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-$(pwd -P)}"
 
 if [ ! -d "$PROJECT_ROOT" ]; then
@@ -15,8 +16,29 @@ if [ ! -f "$RUNNER" ]; then
   echo "ERROR: falta runner declarativo de TestKit: $RUNNER" >&2
   exit 2
 fi
+if [ ! -f "$POLICY" ]; then
+  echo "ERROR: falta validador de política de suites de TestKit: $POLICY" >&2
+  exit 2
+fi
 
 export TESTKIT_PROJECT_ROOT="$PROJECT_ROOT"
 export TESTKIT_ROOT
 
-exec php "$RUNNER" "$@"
+ALLOW_PERSISTENT=0
+FORWARD=()
+for arg in "$@"; do
+  if [ "$arg" = "--allow-persistent" ]; then
+    ALLOW_PERSISTENT=1
+    continue
+  fi
+  FORWARD+=("$arg")
+done
+
+POLICY_ARGS=("${FORWARD[@]}")
+if [ "$ALLOW_PERSISTENT" -eq 1 ]; then
+  POLICY_ARGS+=(--allow-persistent)
+  export TESTKIT_ALLOW_PERSISTENT=1
+fi
+
+php "$POLICY" "${POLICY_ARGS[@]}"
+exec php "$RUNNER" "${FORWARD[@]}"
