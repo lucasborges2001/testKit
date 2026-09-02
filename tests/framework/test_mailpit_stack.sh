@@ -16,11 +16,11 @@ actual="$(testkit_normalize_stack_csv 'smtp,mysql,mailpit')"
 files=()
 testkit_resolve_compose_files 'mysql,mailpit' files
 joined=" ${files[*]} "
-[[ "$joined" == *" compose.mysql.yaml "* ]] || {
+[[ "$joined" == *" $ROOT/compose.mysql.yaml "* ]] || {
   echo 'FAIL: mysql compose file missing' >&2
   exit 1
 }
-[[ "$joined" == *" compose.mailpit.yaml "* ]] || {
+[[ "$joined" == *" $ROOT/compose.mailpit.yaml "* ]] || {
   echo 'FAIL: mailpit compose file missing' >&2
   exit 1
 }
