@@ -17,6 +17,8 @@ function Convert-TestkitStack([string]$Raw) {
       'postgresql' { $token = 'pg' }
       'influx' {}
       'influxdb' { $token = 'influx' }
+      'mailpit' {}
+      'smtp' { $token = 'mailpit' }
       default { throw "TESTKIT_STACK inválido: token no reconocido '$token'." }
     }
     if (-not $seen.ContainsKey($token)) {
@@ -55,6 +57,10 @@ function Get-TestkitComposeFiles([string]$StackCsv) {
   if (Test-TestkitStackHas $StackCsv 'influx') {
     $files.Add('-f') | Out-Null
     $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.influx.yaml')) | Out-Null
+  }
+  if (Test-TestkitStackHas $StackCsv 'mailpit') {
+    $files.Add('-f') | Out-Null
+    $files.Add((Join-Path $script:ResolvedTestkitRoot 'compose.mailpit.yaml')) | Out-Null
   }
 
   return ,$files.ToArray()
