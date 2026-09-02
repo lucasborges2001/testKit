@@ -29,7 +29,13 @@ grep -q '^  mailpit:$' "$ROOT/compose.mailpit.yaml"
 grep -q 'axllent/mailpit:v1.30.0' "$ROOT/compose.mailpit.yaml"
 grep -q 'TEST_MAILPIT_SMTP_PORT' "$ROOT/compose.mailpit.yaml"
 grep -q 'TEST_MAILPIT_HTTP_PORT' "$ROOT/compose.mailpit.yaml"
-grep -q 'libphp-phpmailer' "$ROOT/docker/Dockerfile"
+if grep -q 'libphp-phpmailer' "$ROOT/docker/Dockerfile"; then
+  echo 'FAIL: runner must not install Debian libphp-phpmailer into official PHP image' >&2
+  exit 1
+fi
+grep -q 'phpmailer/phpmailer:6.10.0' "$ROOT/docker/Dockerfile"
+grep -q 'TESTKIT_PHPMAILER_AUTOLOAD=/opt/testkit/vendor/autoload.php' "$ROOT/docker/Dockerfile"
+grep -q '/usr/share/php/PHPMailer/autoload.php' "$ROOT/docker/Dockerfile"
 grep -q "'mailpit'" "$ROOT/lib/powershell/Stack.ps1"
 
 echo 'PASS test_mailpit_stack'
