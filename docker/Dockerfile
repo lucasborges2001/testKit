@@ -12,7 +12,6 @@ FROM php:${PHP_VERSION}-cli-bookworm AS core
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git unzip zip curl ca-certificates \
     default-mysql-client postgresql-client \
-    libphp-phpmailer \
     libzip-dev libicu-dev libpq-dev \
     python3 python3-pip python3-venv \
   && docker-php-ext-install intl zip mysqli pdo pdo_mysql pdo_pgsql \
@@ -22,6 +21,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Composer belongs to the PHP runner.
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# PHPMailer must be installed against the official PHP runtime, not Debian's
+# distro PHP packages (libphp-phpmailer pulls php-common, which is incompatible
+# with this image contract). Keep the historical autoload path as a compatibility
+# bridge for host projects while exposing the canonical TestKit autoload path.
+RUN mkdir -p /opt/testkit \
+  && composer require \
+      --working-dir=/opt/testkit \
+      --no-interaction \
+      --prefer-dist \
+      --no-progress \
+      --no-plugins \
+      --no-scripts \
+      phpmailer/phpmailer:6.10.0 \
+  && mkdir -p /usr/share/php/PHPMailer \
+  && ln -sf /opt/testkit/vendor/autoload.php /usr/share/php/PHPMailer/autoload.php
+ENV TESTKIT_PHPMAILER_AUTOLOAD=/opt/testkit/vendor/autoload.php
 
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-testkit.ini
 COPY docker/xdebug.ini /usr/local/etc/php/conf.d/99-xdebug.ini
