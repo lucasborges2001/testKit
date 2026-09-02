@@ -24,7 +24,9 @@ Se agregó sobre el runner browser existente:
 
 ## Evidencia runtime real
 
-El host `lucasborges2001/Pruebas` ejecutó el adapter fake de CentroLogistico mediante el agente remoto sobre `ubuntudev` usando exactamente:
+### R1 — browser fake
+
+El host `lucasborges2001/Pruebas` ejecutó el adapter fake de CentroLogistico mediante el agente remoto sobre `ubuntudev`:
 
 ```text
 Pruebas tested_sha=254cfbe764e26e87602f8388ce5da8710ea34f5a
@@ -37,22 +39,66 @@ Product=PASS
 centrologistico_blackbox_fake=PASS
 ```
 
-La suite levantó un fixture HTTP local dentro del contenedor browser, ejecutó `runBrowserE2e.mjs` con `TESTKIT_BROWSER_ACTION_MODE=observe_only` y `TESTKIT_BROWSER_TLS_POLICY=strict`, y terminó PASS sin acceso al PLC ni credenciales.
+Esto certificó inicialmente fixture HTTP local, adapter host y runner Playwright real mediante Base/TestKit.
 
-Esto certifica de punta a punta:
+### R2-R4 — fallos útiles detectados
+
+Las iteraciones posteriores detectaron dos problemas del consumidor/runner remoto, no del browser policy reusable:
+
+1. una suite focal `required=false` podía tener un comando FAIL pero quedar agregada como PASS por la semántica opcional genérica de `runSuiteConfig`; `Pruebas` mitigó el consumidor con `required=true` y dejó deuda sistémica del runner remoto;
+2. el fixture host comparaba `request.url` literalmente y rechazaba query params; además podía quedar un artifact viejo si la ejecución moría antes de generar uno nuevo.
+
+`Pruebas` corrigió el fixture para resolver por pathname y limpia el directorio de artifacts fake antes de cada ejecución.
+
+### R5 — artifact, screenshot y redaction
+
+Evidencia canónica:
+
+```text
+Pruebas tested_sha=37a58ad53bbdd488b37cb5abc8ca4fa1ca214b84
+Base=51f7b4c71973fbd1386c6c655ffcb0b56a626324
+Base/TestKit=dd182a4be52b761241237a4ee5396bda3f4f3d91
+report=Pruebas/docs/test-runs/1788379971.md
+Pipeline=PASS
+Evidence=PASS
+Product=PASS
+browser fake=PASS
+browser artifact contract=PASS
+```
+
+El segundo comando inspeccionó el artifact persistido después del browser real y exigió:
+
+```text
+schema=testkit.browser-run.v1
+target_id=centrologistico-webvisu-fake
+tls_policy=strict
+action_mode=observe_only
+status=PASS
+page_title=CentroLogistico WebVisu fake
+console_errors=[]
+network_failures=[]
+step webvisu-initial-load=PASS
+screenshot persistido y no vacío
+query token ficticio redactado
+literal fake-runtime-secret ausente del JSON
+```
+
+Por tanto quedan certificados en runtime:
 
 ```text
 fixture browser local determinista = PASS
 adapter fake de host = PASS
 runner Playwright real = PASS
 integración Base -> TestKit -> browser runner = PASS
+browser-run.json schema/estado esperado = PASS
+screenshot no sensible persistido = PASS
+secret-like query redaction = PASS
+stale artifact prevention en consumidor fake = PASS
 ```
-
-La evidencia remota publicada no incorpora el contenido de `.testkit/artifacts/.../browser-run.json`; por tanto todavía no permite cerrar los checks de artifact/screenshot/redaction sólo a partir de `docs/test-runs`.
 
 ## Deuda detectada en consumo de artifacts
 
-Durante la preparación de un validador host se confirmó que `steps[].screenshot` y `failure_screenshot` se serializan hoy usando la ruta absoluta del runtime, por ejemplo bajo `/workspace/project/...` dentro del contenedor.
+Durante la preparación del validador host se confirmó que `steps[].screenshot` y `failure_screenshot` se serializan hoy usando la ruta absoluta del runtime, por ejemplo bajo `/workspace/project/...` dentro del contenedor.
 
 Esto no expone secretos por sí mismo, pero vuelve esa referencia no portable para un consumidor que inspecciona el artifact desde el host después de terminar el contenedor.
 
@@ -106,17 +152,17 @@ sin semántica CentroLogistico dentro de TestKit.
 
 - fixture browser local determinista: PASS;
 - adapter fake de host: PASS;
-- runner Playwright real mediante Base/TestKit: PASS.
+- runner Playwright real mediante Base/TestKit: PASS;
+- inspección de `browser-run.json` real: PASS;
+- screenshot no sensible como artifact real: PASS;
+- secret redaction en artifact real: PASS.
 
 ### Aún requiere ejecución/evidencia
 
 - strict TLS FAIL ante self-signed;
 - opt-in self-signed PASS contra fixture;
-- timeout FAIL;
-- inspección de `browser-run.json` real contra su schema y valores esperados;
-- screenshot no sensible verificado como artifact real;
+- timeout FAIL controlado;
 - cleanup browser verificado explícitamente en runtime;
-- secret redaction inspeccionada en artifact real;
 - portabilidad de referencias de screenshot;
 - piloto CentroLogistico WebVisu read-only con autorización separada.
 
@@ -135,7 +181,7 @@ local fake HTTPS self-signed
 -> strict TLS FAIL
 -> opt-in self-signed PASS
 -> timeout FAIL controlado
--> inspección browser-run.json/screenshot/redaction
+-> cleanup browser explícito
 -> portabilidad de referencias de screenshot
 -> CentroLogistico WebVisu read-only pilot con autorización separada
 ```
