@@ -11,5 +11,8 @@ Assert-True ($content.Contains("[Alias('Args')]")) 'entrypoint must keep explici
 Assert-True ($content.Contains('ValueFromRemainingArguments=$true')) 'entrypoint must keep positional passthrough'
 Assert-True (-not $content.Contains("[string[]]`$Args")) 'entrypoint must not redeclare the automatic Args variable'
 Assert-True ($content.Contains('Invoke-TestkitRuntime $envFile.Path $CliArgs')) 'runtime must receive the captured CLI args'
+Assert-True ($content.Contains('$script:TestkitRuntimeExitCode = $LASTEXITCODE')) 'runtime must store native exit code outside the success output stream'
+Assert-True ($content.Contains('exit $script:TestkitRuntimeExitCode')) 'entrypoint must exit with the stored native status'
+Assert-True (-not $content.Contains('exit (Invoke-TestkitRuntime $envFile.Path $CliArgs)')) 'entrypoint must not capture runtime stdout inside exit(...)'
 
 Complete-TestkitAssertions

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../core/php/common/ProjectEnv.php';
 require_once __DIR__ . '/../../core/php/reporting/StructuredWarnings.php';
 require_once __DIR__ . '/../../core/php/reporting/FailureExcerpt.php';
 require_once __DIR__ . '/../../core/php/reporting/FailureNormalizer.php';
+require_once __DIR__ . '/../../core/php/reporting/FailureClassifier.php';
 require_once __DIR__ . '/../../core/php/reporting/OutcomeDiagnostics.php';
 require_once __DIR__ . '/../../core/php/execution/ProcessRunner.php';
 require_once __DIR__ . '/../../core/php/execution/SuiteExecutor.php';
@@ -15,6 +16,7 @@ require_once __DIR__ . '/../../core/php/execution/ParallelGuard.php';
 
 use Testkit\Core\Execution\ParallelGuard;
 use Testkit\Core\Execution\SuiteExecutor;
+use Testkit\Core\Reporting\FailureClassifier;
 use Testkit\Core\Reporting\FailureNormalizer;
 use Testkit\Core\Reporting\OutcomeDiagnostics;
 use Testkit\Core\Reporting\StructuredWarnings;
@@ -183,6 +185,12 @@ try {
         assert_same_failure_contract('exit_code_7', (string)$exitFirstFailure['cause_code'], 'first_failure should preserve useful exit-code cause', $errors);
         assert_contains_failure_contract('controlled exit failure', (string)$exitFirstFailure['message'], 'first_failure should preserve useful failure message', $errors);
     }
+
+    $importGroups = FailureClassifier::summarize([[
+        'file' => 'test/back/python/example_unittest.py',
+        'message' => "ModuleNotFoundError: No module named 'baseplc'",
+    ]]);
+    assert_same_failure_contract('import_bootstrap', (string)($importGroups[0]['family'] ?? ''), 'ModuleNotFoundError should classify as import/bootstrap', $errors);
 
     $timeoutResult = run_php_fixture_failure_contract(
         "<?php\nusleep(2000000);\nexit(0);\n",

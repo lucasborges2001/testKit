@@ -61,6 +61,10 @@ The file parser is intentionally not `parse_ini_file()`. It accepts ordinary dot
 
 The contract and env source must resolve inside `TESTKIT_PROJECT_ROOT`. Result JSON must also be written under the project root.
 
+## Runtime override provenance
+
+`bin/testkit` loads `<project>/test/.env.test` without overwriting variables already exported by the caller. For infrastructure keys (`TESTKIT_STACK`, `TEST_STORE_DRIVER`, `TEST_STORE_PROVISION`, `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE`), Doctor reports whether the effective value came from file, process, explicit process override, or is unset. In `TESTKIT_MODE=agent`, a process value that contradicts the project env fails closed unless the caller sets `TESTKIT_ALLOW_ENV_OVERRIDES=1`; in human mode it is a warning. Use that flag only for deliberate one-shot overrides.
+
 ## Output and redaction
 
 Console output contains only:

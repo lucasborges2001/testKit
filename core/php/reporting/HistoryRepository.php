@@ -147,7 +147,7 @@ final class HistoryRepository
             $previousRow = $previousTests[$rel] ?? null;
             $previousStatus = is_array($previousRow) ? trim((string)($previousRow['last_status'] ?? '')) : '';
 
-            if ($previousStatus !== '' && $previousStatus !== $currentStatus) {
+            if ($previousStatus !== '' && $previousStatus !== $currentStatus && !in_array('listed', [$previousStatus, $currentStatus], true)) {
                 $statusTransitions[] = [
                     'test' => $rel,
                     'from' => $previousStatus,
