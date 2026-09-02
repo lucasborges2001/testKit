@@ -56,3 +56,4 @@ self-test:
 	bash tests/framework/test_suite_config_risk_policy.sh
 	bash tests/framework/test_env_contract.sh
 	bash tests/framework/test_mailpit_stack.sh
+	bash tests/framework/test_host_suite_agent.sh
