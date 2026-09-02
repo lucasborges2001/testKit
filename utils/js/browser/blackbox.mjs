@@ -39,6 +39,16 @@ export function allowsInvalidTls(config) {
   return config.tlsPolicy === "allow_self_signed_for_explicit_target";
 }
 
+export function artifactReference(config, artifactPath) {
+  const root = path.resolve(config.artifactsDir);
+  const absolute = path.resolve(artifactPath);
+  const relative = path.relative(root, absolute);
+  if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Artifact fuera del directorio permitido: ${absolute}`);
+  }
+  return relative.split(path.sep).join("/");
+}
+
 export function assertTargetUrl(config, pathOrUrl) {
   const candidate = new URL(String(pathOrUrl), config.baseURL);
   if (allowsInvalidTls(config) && candidate.origin !== targetOrigin(config.baseURL)) {
@@ -124,7 +134,7 @@ export function createBlackBoxRuntime({ page, config }) {
         if (options.screenshot === true && !sensitive) {
           const screenshot = path.join(config.artifactsDir, `step-${String(steps.length).padStart(2, "0")}-${slug(name)}.png`);
           await page.screenshot({ path: screenshot, fullPage: true });
-          row.screenshot = screenshot;
+          row.screenshot = artifactReference(config, screenshot);
         }
         return result;
       } catch (error) {
