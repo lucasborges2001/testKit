@@ -4,55 +4,11 @@ Fecha: 2026-09-02
 Estado: `IMPLEMENTED / RUNTIME_PARTIAL_PASS`
 Prioridad: P1
 
-## Evidencia
+## Evidencia verificada
 
-TestKit ya posee browser runner/Playwright, reporting/artifacts, probes PLC read-only y Functional HIL separados. Un consumidor real, CentroLogistico, dispone de un WAGO PFC200 con WebVisu accesible y necesita automatizar pruebas black-box sin introducir código de test dentro del PLC.
+TestKit ya dispone de browser runner/Playwright, reporting/artifacts y política black-box reusable. La auditoría inicial del corte `188236fe802fdfb7265400cdb0beafbed441c223` detectó `ignoreHTTPSErrors: true` incondicional; el corte posterior incorporó TLS estricto por defecto, self-signed opt-in scoped al target, `observe_only` por defecto, `testkit.step()` y `browser-run.json` sanitizado.
 
-La auditoría del corte `188236fe802fdfb7265400cdb0beafbed441c223` confirmó que `runners/runBrowserE2e.mjs` reutilizaba Playwright pero aplicaba `ignoreHTTPSErrors: true` incondicionalmente. Eso impedía un default TLS estricto y justificó extender el runner existente, no crear un segundo stack.
-
-## Implementación del corte
-
-Se agregó sobre el runner browser existente:
-
-1. `TESTKIT_BROWSER_TLS_POLICY=strict|allow_self_signed_for_explicit_target`, con `strict` por defecto.
-2. Restricción al origin explícito cuando se habilita self-signed, tanto para navegación/requests browser como para el `APIRequestContext` expuesto al spec.
-3. `TESTKIT_BROWSER_ACTION_MODE=observe_only|mutating_ui`, con `observe_only` por defecto.
-4. `testkit.step()` con declaración `mutating` y `sensitive` para que los nuevos adapters puedan fallar cerrado y evitar screenshots automáticos de fases secret-bearing.
-5. `browser-run.json` sanitizado con target lógico, origin, TLS mode, action mode, status, duración, URL/título, console errors, network failures y steps.
-6. Redacción básica de URLs/query params y diagnósticos secret-like.
-7. Self-test focal `tests/framework/test_browser_blackbox_policy.mjs` sin PLC real.
-
-## Evidencia runtime real
-
-### R1 — browser fake
-
-El host `lucasborges2001/Pruebas` ejecutó el adapter fake de CentroLogistico mediante el agente remoto sobre `ubuntudev`:
-
-```text
-Pruebas tested_sha=254cfbe764e26e87602f8388ce5da8710ea34f5a
-Base=51f7b4c71973fbd1386c6c655ffcb0b56a626324
-Base/TestKit=dd182a4be52b761241237a4ee5396bda3f4f3d91
-report=Pruebas/docs/test-runs/1788379237.md
-Pipeline=PASS
-Evidence=PASS
-Product=PASS
-centrologistico_blackbox_fake=PASS
-```
-
-Esto certificó inicialmente fixture HTTP local, adapter host y runner Playwright real mediante Base/TestKit.
-
-### R2-R4 — fallos útiles detectados
-
-Las iteraciones posteriores detectaron dos problemas del consumidor/runner remoto, no del browser policy reusable:
-
-1. una suite focal `required=false` podía tener un comando FAIL pero quedar agregada como PASS por la semántica opcional genérica de `runSuiteConfig`; `Pruebas` mitigó el consumidor con `required=true` y dejó deuda sistémica del runner remoto;
-2. el fixture host comparaba `request.url` literalmente y rechazaba query params; además podía quedar un artifact viejo si la ejecución moría antes de generar uno nuevo.
-
-`Pruebas` corrigió el fixture para resolver por pathname y limpia el directorio de artifacts fake antes de cada ejecución.
-
-### R5 — artifact, screenshot y redaction
-
-Evidencia canónica:
+### Runtime R5
 
 ```text
 Pruebas tested_sha=37a58ad53bbdd488b37cb5abc8ca4fa1ca214b84
@@ -66,140 +22,131 @@ browser fake=PASS
 browser artifact contract=PASS
 ```
 
-El segundo comando inspeccionó el artifact persistido después del browser real y exigió:
+R5 verificó en browser real:
+
+- `browser-run.json` schema/estado esperado;
+- `tls_policy=strict`;
+- `action_mode=observe_only`;
+- screenshot no sensible persistido y no vacío;
+- redacción de query secret-like;
+- ausencia del literal ficticio `fake-runtime-secret` en JSON;
+- prevención de artifact stale en el consumidor fake.
+
+### Portabilidad de screenshots — implementada y validada
+
+La auditoría posterior detectó que `steps[].screenshot` y `failure_screenshot` contenían rutas absolutas del contenedor (`/workspace/project/...`).
+
+Se implementó en TestKit:
 
 ```text
-schema=testkit.browser-run.v1
-target_id=centrologistico-webvisu-fake
-tls_policy=strict
-action_mode=observe_only
-status=PASS
-page_title=CentroLogistico WebVisu fake
-console_errors=[]
-network_failures=[]
-step webvisu-initial-load=PASS
-screenshot persistido y no vacío
-query token ficticio redactado
-literal fake-runtime-secret ausente del JSON
+candidate=e5d0366ffc665df0de9ddf6e53f5403a535693bb
 ```
 
-Por tanto quedan certificados en runtime:
+Cambios:
+
+- referencias de screenshot relativas a `artifactsDir`;
+- guardia fail-closed si la ruta intenta salir de `artifactsDir`;
+- `failure_screenshot` usa el mismo contrato portable;
+- self-test actualizado.
+
+El candidato se integró mediante:
 
 ```text
-fixture browser local determinista = PASS
-adapter fake de host = PASS
-runner Playwright real = PASS
-integración Base -> TestKit -> browser runner = PASS
-browser-run.json schema/estado esperado = PASS
-screenshot no sensible persistido = PASS
-secret-like query redaction = PASS
-stale artifact prevention en consumidor fake = PASS
+Base=5963f4a5fb828b214c69d7fa536ac16b9017a4de
+Base/TestKit=e5d0366ffc665df0de9ddf6e53f5403a535693bb
 ```
 
-## Deuda detectada en consumo de artifacts
-
-Durante la preparación del validador host se confirmó que `steps[].screenshot` y `failure_screenshot` se serializan hoy usando la ruta absoluta del runtime, por ejemplo bajo `/workspace/project/...` dentro del contenedor.
-
-Esto no expone secretos por sí mismo, pero vuelve esa referencia no portable para un consumidor que inspecciona el artifact desde el host después de terminar el contenedor.
-
-Estado:
+Runtime R6:
 
 ```text
-ARTIFACT_SCREENSHOT_PATH_PORTABILITY_PENDING
+Pruebas tested_sha=826e30c89ab838cd654cb54b935ab8bf9223a4c8
+report=Pruebas/docs/test-runs/1788380289.md
+Pipeline=PASS
+Evidence=PASS
+Product=PASS
+browser fake=PASS
+portable artifact contract=PASS
 ```
 
-Contrato recomendado para una iteración posterior:
+El contrato host exigió explícitamente que `steps[].screenshot` no fuera absoluto, no contuviera `..` y resolviera a un archivo real dentro del directorio de artifacts.
 
-- serializar referencias de screenshot relativas a `artifactsDir`, o declarar explícitamente un campo portable separado;
-- mantener la ruta física únicamente para uso interno del runner;
-- cubrir éxito y failure screenshot;
-- agregar self-test que demuestre que `browser-run.json` no depende de `/workspace/project` ni de otra ruta absoluta del executor;
-- conservar compatibilidad si aparece un consumidor real del formato actual antes de cambiarlo.
+Contrato R7:
 
-Mientras esta deuda siga abierta, los consumidores deben resolver el archivo persistido desde su directorio de artifacts y usar sólo el basename de la referencia serializada, sin confiar en la ruta absoluta del contenedor.
+```text
+Pruebas tested_sha=e9de1c545617e87b5d4630566e8df31072aa0d5d
+report=Pruebas/docs/test-runs/1788380360.md
+Pipeline=PASS
+Evidence=PASS
+Product=PASS
+commands=7/7 PASS
+TestKit browser policy self-test=PASS
+```
+
+Por tanto:
+
+```text
+ARTIFACT_SCREENSHOT_PATH_PORTABILITY=PASS
+```
 
 ## Límite de compatibilidad
 
-El runner conserva `page` crudo para no romper specs existentes. Por ello, `observe_only` sólo es frontera verificable para acciones mutantes declaradas mediante `testkit.step`; un spec legacy que llame directamente `page.click()` o `locator.click()` puede eludir esa guardia.
+El runner conserva `page` crudo para no romper specs existentes. `observe_only` es frontera verificable para acciones mutantes declaradas mediante `testkit.step`; un spec legacy que invoque directamente `page.click()` o `locator.click()` puede eludir esa guardia.
 
-Para consumidores safety-sensitive, los nuevos adapters no deben usar clicks/fill mutantes por fuera de `testkit.step`. Este límite debe considerarse parte del contrato hasta que exista una façade browser completamente cerrada y con evidencia de necesidad.
+Los consumidores safety-sensitive deben declarar mutaciones mediante `testkit.step` hasta que exista evidencia suficiente para justificar una façade browser cerrada.
 
-## Objetivo
-
-Permitir que un host ejecute:
+## Gates verificados
 
 ```text
-browser session
--> HTTPS WebVisu
--> selectors/actions consumer-owned
--> screenshots/evidence
--> typed outcome
+fixture browser local determinista       PASS
+adapter fake de host                     PASS
+runner Playwright real                   PASS
+Base -> TestKit -> browser               PASS
+browser-run.json                         PASS
+screenshot persistido                    PASS
+secret-like redaction                    PASS
+screenshot refs portables                PASS
+self-test browser policy                 PASS
 ```
 
-sin semántica CentroLogistico dentro de TestKit.
+## Pendiente real
 
-## Criterio de aceptación
+Todavía falta evidencia runtime para:
 
-### Implementado por source/contrato
+1. strict TLS FAIL ante self-signed;
+2. opt-in self-signed PASS contra fixture local;
+3. timeout FAIL controlado;
+4. cleanup browser verificado explícitamente;
+5. piloto CentroLogistico WebVisu read-only, sólo con autorización separada.
 
-- host aporta URL/selectors sin modificar TestKit;
-- TLS self-signed es opt-in y scoped al target explícito;
-- artifacts no incluyen headers/cookies/storage state y sanitizan valores secret-like;
-- modo mutante requiere opt-in explícito para `testkit.step`;
-- la primitive no expone APIs de force/download/online change ni escribe Modbus.
+No cerrar este pendiente hasta completar los gates locales restantes. La prueba contra PLC real no es condición para validar el contrato reusable local, pero sí para declarar el piloto consumidor.
 
-### Verificado en runtime
-
-- fixture browser local determinista: PASS;
-- adapter fake de host: PASS;
-- runner Playwright real mediante Base/TestKit: PASS;
-- inspección de `browser-run.json` real: PASS;
-- screenshot no sensible como artifact real: PASS;
-- secret redaction en artifact real: PASS.
-
-### Aún requiere ejecución/evidencia
-
-- strict TLS FAIL ante self-signed;
-- opt-in self-signed PASS contra fixture;
-- timeout FAIL controlado;
-- cleanup browser verificado explícitamente en runtime;
-- portabilidad de referencias de screenshot;
-- piloto CentroLogistico WebVisu read-only con autorización separada.
-
-No marcar este pendiente `PASS/CLOSED` hasta completar el gate runtime restante.
-
-## Validación
-
-```bash
-node tests/framework/test_browser_blackbox_policy.mjs
-```
-
-Después:
+## Validación siguiente
 
 ```text
 local fake HTTPS self-signed
--> strict TLS FAIL
--> opt-in self-signed PASS
+-> strict TLS FAIL esperado
+-> opt-in self-signed PASS esperado
 -> timeout FAIL controlado
--> cleanup browser explícito
--> portabilidad de referencias de screenshot
--> CentroLogistico WebVisu read-only pilot con autorización separada
+-> cleanup explícito
 ```
 
-La prueba contra un PLC real se registra cuando exista autorización y evidencia. No se considera condición para validar el contrato reusable local.
+Después, y sólo con autorización separada:
+
+```text
+CentroLogistico WebVisu read-only pilot
+```
 
 ## Riesgo
 
-Medio por browser contra runtime industrial. Alto/crítico si un consumidor usa acciones HMI capaces de alcanzar salidas físicas sin aislamiento. TestKit no debe inferir que una acción visual es segura.
+Medio por browser contra runtime industrial. Alto/crítico si un consumidor usa acciones HMI que puedan alcanzar salidas físicas sin aislamiento. TestKit no debe inferir que una acción visual es segura.
 
-## Propietario técnico
+## Ownership
 
-TestKit es owner de browser lifecycle, clasificación de fallos y artifacts. El consumidor es owner de URL, selectors, credenciales, acciones y significado de estados.
+TestKit es owner de browser lifecycle, TLS policy, clasificación de fallos y artifacts. El consumidor es owner de URL, selectors, credenciales, acciones y semántica de estados.
 
 ## Fuera de alcance
 
 - semántica CentroLogistico;
-- mapa de pantallas de un consumidor;
 - PLC program changes;
 - Modbus maps;
 - hardware HIL;
