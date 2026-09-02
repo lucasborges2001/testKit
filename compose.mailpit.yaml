@@ -1,0 +1,11 @@
+services:
+  mailpit:
+    image: axllent/mailpit:v1.30.0
+    environment:
+      MP_MAX_MESSAGES: "1000"
+    labels:
+      io.testkit.runtime: "true"
+      io.testkit.resource: "mailpit"
+    ports:
+      - "${TEST_MAILPIT_SMTP_PORT:-11025}:1025"
+      - "${TEST_MAILPIT_HTTP_PORT:-18025}:8025"
