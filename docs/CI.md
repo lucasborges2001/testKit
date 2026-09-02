@@ -5,17 +5,31 @@
 La CI remota está **temporalmente deshabilitada** en el baseline:
 
 ```text
-main: 8fd6cca8b91167c57bd4189e81365e5e4d34e3da
+main: 4b80be9145b54669ec7d5f69b5b6a388f0566629
 motivo documentado: presupuesto de GitHub Actions no disponible
 ```
 
-El workflow vigente `.github/workflows/ci.yml` conserva únicamente `workflow_dispatch` y un job con `if: false`.
+El stub deshabilitado vive en:
+
+```text
+.github/workflows-disabled/ci.yml
+```
+
+y conserva únicamente `workflow_dispatch` y un job con `if: false`.
+
+El contrato normalizado que los self-tests locales deben preservar mientras Actions está bloqueado vive en:
+
+```text
+docs/contracts/ci-workflow-reference.yml
+```
+
+Ese archivo es **no ejecutable** y no constituye evidencia CI.
 
 Por lo tanto:
 
 - no existe ejecución automática en push o pull request;
 - no hay evidencia CI nueva para el HEAD actual;
-- no se debe declarar CI verde por el solo hecho de que el YAML anterior haya sido validado históricamente;
+- no se debe declarar CI verde por el solo hecho de que el contrato de referencia sea válido;
 - `BLOCKED_CI_BUDGET` no equivale a `PASS`.
 
 ## Baseline contractual a restaurar
@@ -100,7 +114,7 @@ runtime-mysql
 browser-runner-smoke
 ```
 
-La restauración debe hacerse desde historia Git o mediante un cambio explícito y revisable. No reconstruir de memoria el workflow perdido.
+La restauración debe hacerse desde historia Git o mediante un cambio explícito y revisable. `docs/contracts/ci-workflow-reference.yml` preserva las superficies contractuales, pero no debe copiarse ciegamente como workflow ejecutable: antes hay que compararlo contra la historia Git y el HEAD que se pretenda validar.
 
 ## Runtime MySQL
 
@@ -163,7 +177,7 @@ La reactivación de Actions es una acción remota separada y requiere autorizaci
 
 Cuando haya presupuesto y se haya restaurado el workflow completo, ejecutar un run nuevo y observar sus jobs antes de cerrar verificaciones.
 
-No usar runs históricos como evidencia del HEAD nuevo.
+No usar runs históricos ni el contrato de referencia como evidencia del HEAD nuevo.
 
 ## Criterio de cierre de una verificación CI
 
