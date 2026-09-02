@@ -15,7 +15,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo '=== BUILD TESTKIT CORE FOR PHPMAILER CONTRACT ==='
-docker build --target core -t "$TAG" "$ROOT"
+docker build \
+  --file "$ROOT/docker/Dockerfile" \
+  --target core \
+  --tag "$TAG" \
+  "$ROOT"
 
 echo '=== VERIFY PHPMAILER AUTOLOAD CONTRACT ==='
 docker run --rm "$TAG" php -r '
