@@ -1,7 +1,7 @@
 # PLC WebVisu black-box reusable
 
 Fecha: 2026-09-02
-Estado: `IMPLEMENTED / RUNTIME_VERIFY_PENDING`
+Estado: `IMPLEMENTED / RUNTIME_PARTIAL_PASS`
 Prioridad: P1
 
 ## Evidencia
@@ -21,6 +21,34 @@ Se agregó sobre el runner browser existente:
 5. `browser-run.json` sanitizado con target lógico, origin, TLS mode, action mode, status, duración, URL/título, console errors, network failures y steps.
 6. Redacción básica de URLs/query params y diagnósticos secret-like.
 7. Self-test focal `tests/framework/test_browser_blackbox_policy.mjs` sin PLC real.
+
+## Evidencia runtime real
+
+El host `lucasborges2001/Pruebas` ejecutó el adapter fake de CentroLogistico mediante el agente remoto sobre `ubuntudev` usando exactamente:
+
+```text
+Pruebas tested_sha=254cfbe764e26e87602f8388ce5da8710ea34f5a
+Base=51f7b4c71973fbd1386c6c655ffcb0b56a626324
+Base/TestKit=dd182a4be52b761241237a4ee5396bda3f4f3d91
+report=Pruebas/docs/test-runs/1788379237.md
+Pipeline=PASS
+Evidence=PASS
+Product=PASS
+centrologistico_blackbox_fake=PASS
+```
+
+La suite levantó un fixture HTTP local dentro del contenedor browser, ejecutó `runBrowserE2e.mjs` con `TESTKIT_BROWSER_ACTION_MODE=observe_only` y `TESTKIT_BROWSER_TLS_POLICY=strict`, y terminó PASS sin acceso al PLC ni credenciales.
+
+Esto certifica de punta a punta:
+
+```text
+fixture browser local determinista = PASS
+adapter fake de host = PASS
+runner Playwright real = PASS
+integración Base -> TestKit -> browser runner = PASS
+```
+
+La evidencia remota publicada no incorpora el contenido de `.testkit/artifacts/.../browser-run.json`; por tanto todavía no permite cerrar los checks de artifact/screenshot/redaction sólo a partir de `docs/test-runs`.
 
 ## Límite de compatibilidad
 
@@ -52,20 +80,24 @@ sin semántica CentroLogistico dentro de TestKit.
 - modo mutante requiere opt-in explícito para `testkit.step`;
 - la primitive no expone APIs de force/download/online change ni escribe Modbus.
 
-### Aún requiere ejecución
+### Verificado en runtime
 
-- self-test focal Node;
-- fixture browser local determinista;
+- fixture browser local determinista: PASS;
+- adapter fake de host: PASS;
+- runner Playwright real mediante Base/TestKit: PASS.
+
+### Aún requiere ejecución/evidencia
+
 - strict TLS FAIL ante self-signed;
 - opt-in self-signed PASS contra fixture;
 - timeout FAIL;
-- screenshot no sensible generado;
-- cleanup browser verificado en runtime;
+- inspección de `browser-run.json` real contra su schema y valores esperados;
+- screenshot no sensible verificado como artifact real;
+- cleanup browser verificado explícitamente en runtime;
 - secret redaction inspeccionada en artifact real;
-- adapter fake de host;
 - piloto CentroLogistico WebVisu read-only con autorización separada.
 
-No marcar este pendiente `PASS/CLOSED` hasta completar el gate runtime.
+No marcar este pendiente `PASS/CLOSED` hasta completar el gate runtime restante.
 
 ## Validación
 
@@ -76,11 +108,12 @@ node tests/framework/test_browser_blackbox_policy.mjs
 Después:
 
 ```text
-local fake HTTP/HTTPS fixture
--> browser runner
--> timeout/TLS/screenshot/cleanup
--> host adapter fake
--> CentroLogistico WebVisu read-only pilot
+local fake HTTPS self-signed
+-> strict TLS FAIL
+-> opt-in self-signed PASS
+-> timeout FAIL controlado
+-> inspección browser-run.json/screenshot/redaction
+-> CentroLogistico WebVisu read-only pilot con autorización separada
 ```
 
 La prueba contra un PLC real se registra cuando exista autorización y evidencia. No se considera condición para validar el contrato reusable local.
