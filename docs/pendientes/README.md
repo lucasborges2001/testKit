@@ -8,7 +8,7 @@ Esta carpeta contiene únicamente deuda accionable que todavía requiere impleme
 Repositorio: lucasborges2001/testKit
 Rama: main
 Baseline inicial de la expansión PLC: 3c7c4b3c2212092c7a5cb7f6f7e381c1aab1e69d
-Fecha de actualización: 2026-08-28
+Fecha de actualización: 2026-09-02
 ```
 
 ## Frontera documental
@@ -22,6 +22,7 @@ Fecha de actualización: 2026-08-28
 
 ## Inventario activo
 
+- `plc-webvisu-blackbox.md`: session/lifecycle browser WebVisu reusable, probes HTTPS, screenshots y artifacts sanitizados para consumidores PLC black-box;
 - `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
 - `processrunner-timeout-windows.md`: timeout/terminación verificable de procesos PHP nativos en Windows;
 - `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y reutilización de contratos canónicos;
@@ -43,6 +44,8 @@ safe PLC artifacts
 readonly multi-runtime/application-map infrastructure
 ```
 
+La nueva deuda `plc-webvisu-blackbox.md` es distinta: reutiliza el browser runner existente para una superficie WebVisu black-box y no reabre transports PLC ya cerrados.
+
 La integración de consumidores continúa en:
 
 ```text
@@ -52,9 +55,10 @@ docs/verificaciones/plc-functional-hil-identity-integration.md
 Los siguientes elementos no deben reabrirse como deuda de TestKit porque pertenecen a consumidores u otros owners:
 
 ```text
-Locker register/signal maps
-Locker fixture/lease values
-Locker CoDeSys build/import/compile
+consumer register/signal maps
+consumer screen selectors/actions
+consumer fixture/lease values
+consumer CoDeSys/e!COCKPIT build/import/compile
 consumer application identities
 BasePLC IEC-ST analysis
 runtime hardware HIL
