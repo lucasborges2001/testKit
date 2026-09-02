@@ -44,6 +44,25 @@ Antes de ser deshabilitado, el workflow normalizado separaba estas superficies:
 
 La deshabilitación por presupuesto no elimina esos contratos; únicamente impide usarlos como evidencia remota actual.
 
+### Contrato normalizado preservado
+
+Mientras GitHub Actions siga bloqueado, la referencia no ejecutable conserva estos requisitos técnicos:
+
+- Node `24` para los jobs que requieren runtime Node;
+- runner Windows contractual: `windows-2025`;
+- runtime MySQL aislado sobre `tests/fixtures/runtime-mysql-host`;
+- browser runner aislado sobre `tests/fixtures/browser`.
+
+Las invocaciones normalizadas preservadas son:
+
+```bash
+./bin/testkit doctor --full --suite back-php
+./bin/testkit run --rm testkit php runTest.php --group all --list
+./bin/testkit run --rm testkit php runTest.php --group all
+```
+
+Estas líneas describen el contrato que deberá restaurar una CI ejecutable; **no implican que esos jobs hayan corrido en GitHub Actions para el HEAD actual**.
+
 ## Contrato de selectores
 
 Toda invocación de `runTest.php` en CI debe declarar exactamente uno de:
