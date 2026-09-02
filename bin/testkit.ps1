@@ -1,6 +1,7 @@
 Param(
   [Parameter(ValueFromRemainingArguments=$true)]
-  [string[]]$Args
+  [Alias('Args')]
+  [string[]]$CliArgs
 )
 
 $script:TestkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -138,9 +139,9 @@ function Invoke-TestkitReset([string]$EnvFilePath, [string[]]$ResetArgs) {
   return $finalStatus
 }
 
-function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$CliArgs) {
+function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$RuntimeCliArgs) {
   $legacyPg = $false
-  $runtimeArgs = @($CliArgs)
+  $runtimeArgs = @($RuntimeCliArgs)
   if ($runtimeArgs.Count -gt 0 -and $runtimeArgs[0] -eq '--pg') {
     $legacyPg = $true
     $runtimeArgs = if ($runtimeArgs.Count -gt 1) { @($runtimeArgs[1..($runtimeArgs.Count-1)]) } else { @() }
@@ -165,8 +166,8 @@ function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$CliArgs) {
   return $LASTEXITCODE
 }
 
-if ($Args.Count -gt 0 -and $Args[0] -eq 'doctor') {
-  $doctorArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'doctor') {
+  $doctorArgs = if ($CliArgs.Count -gt 1) { @($CliArgs[1..($CliArgs.Count-1)]) } else { @() }
   exit (Invoke-TestkitDoctor $doctorArgs)
 }
 
@@ -183,20 +184,20 @@ if (-not (Test-TestkitPathUnderRoot $script:ProjectRoot $envFile.Path)) {
 Import-TestkitEnvKV $envFile.Path
 Set-TestkitComposeProgress
 
-if ($Args.Count -gt 0 -and $Args[0] -eq 'inspect') {
-  $inspectArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'inspect') {
+  $inspectArgs = if ($CliArgs.Count -gt 1) { @($CliArgs[1..($CliArgs.Count-1)]) } else { @() }
   exit (Invoke-TestkitInspect $envFile.Path $inspectArgs)
 }
-if ($Args.Count -gt 0 -and $Args[0] -eq 'cleanup') {
-  $cleanupArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'cleanup') {
+  $cleanupArgs = if ($CliArgs.Count -gt 1) { @($CliArgs[1..($CliArgs.Count-1)]) } else { @() }
   exit (Invoke-TestkitCleanup $envFile.Path $cleanupArgs)
 }
-if ($Args.Count -gt 0 -and $Args[0] -eq 'reset') {
-  $resetArgs = if ($Args.Count -gt 1) { @($Args[1..($Args.Count-1)]) } else { @() }
+if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'reset') {
+  $resetArgs = if ($CliArgs.Count -gt 1) { @($CliArgs[1..($CliArgs.Count-1)]) } else { @() }
   exit (Invoke-TestkitReset $envFile.Path $resetArgs)
 }
 
-$commandName = if ($Args.Count -gt 0) { $Args[0] } else { '' }
+$commandName = if ($CliArgs.Count -gt 0) { $CliArgs[0] } else { '' }
 $autoCleanupStatus = Invoke-TestkitRuntimeAutoCleanup $envFile.Path $commandName
 if ($autoCleanupStatus -ne 0) { exit $autoCleanupStatus }
-exit (Invoke-TestkitRuntime $envFile.Path $Args)
+exit (Invoke-TestkitRuntime $envFile.Path $CliArgs)
