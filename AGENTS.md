@@ -14,7 +14,7 @@ Set the host project root before any command:
 export TESTKIT_PROJECT_ROOT=/absolute/path/to/host-project
 ```
 
-The host project must provide a test env file at one of these paths:
+The host project must provide a test env file at one of these paths when the selected TestKit runtime requires one:
 
 - `<project>/test/.env.test`
 - `<project>/.env.test`
@@ -33,7 +33,7 @@ Start services:
 ./bin/testkit up -d
 ```
 
-Run one concrete suite in real agent mode:
+Run one concrete native TestKit suite in real agent mode:
 
 ```bash
 TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --suite back-php
@@ -56,9 +56,38 @@ TESTKIT_MODE=agent ./bin/testkit run --rm testkit php runTest.php --category smo
 
 Positional targets, aliases, `TEST_TARGET`, and `TESTKIT_TARGET_*` are not supported.
 
+## Host-owned suite catalogs in agent mode
+
+Hosts that own declarative catalogs through `testkit-suite-config` can execute one concrete host suite through the real TestKit agent bridge:
+
+```bash
+export TESTKIT_PROJECT_ROOT=/absolute/path/to/host-project
+./bin/testkit-host-agent config/testkit-suites.php runtime_env --json
+```
+
+Persistent host suites still require the same explicit admission token:
+
+```bash
+./bin/testkit-host-agent \
+  config/testkit-suites.php persistent_e2e \
+  --allow-persistent \
+  --json
+```
+
+`testkit-host-agent` does not invent host test logic. It delegates execution and policy validation to the public `testkit-suite-config` entrypoint, then publishes the result into the canonical TestKit report tree under the host project.
+
+The resulting run is immediately consumable by the normal agent and inspector interfaces:
+
+```bash
+./bin/testkit run --rm testkit php scripts/agent-run.php --json
+./bin/testkit run --rm testkit php scripts/inspect.php latest --json
+```
+
+The host remains owner of fixtures, business assertions, cleanup and risk metadata. TestKit owns execution semantics, agent mode, reporting and decision evidence.
+
 ## Windows (PowerShell)
 
-Every command above has a PowerShell equivalent via `bin/testkit.ps1`. Full
+Every native TestKit command above has a PowerShell equivalent via `bin/testkit.ps1`. Full
 setup, troubleshooting and the supported/unsupported path matrix live in
 [`docs/WINDOWS.md`](docs/WINDOWS.md).
 
@@ -122,12 +151,13 @@ When agent mode is enabled, the run also records an agent artifact under:
 
 - `<project>/.testkit/reports/runs/<run_id>/agent_runs/agent_run_execute_latest.json`
 
-That artifact is a persisted decision/execution envelope. After the meta run finishes, the auto-recorded artifact is a non-executed decision snapshot. After `agent-run.php execute`, the artifact contains the executed command envelope and child payload when applicable.
+That artifact is a persisted decision/execution envelope. Host-suite agent runs use the same canonical report tree and artifact format.
 
 ## Rules
 
 - Start with one concrete suite, not group `all`.
-- Declare exactly one of `--suite`, `--group`, or `--category`.
+- Declare exactly one of `--suite`, `--group`, or `--category` for native TestKit runs.
+- For host catalogs, select exactly one suite key through `testkit-host-agent`.
 - Consume persisted JSON and `--json` interfaces.
 - Do not parse console progress as the automation contract.
 - Do not assume legacy JSON fallback. `inspect` and `agent-run` require canonical reports.
