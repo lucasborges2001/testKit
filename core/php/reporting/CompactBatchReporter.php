@@ -16,12 +16,15 @@ final class CompactBatchReporter
         $statusText = match ($status) {
             'FAIL' => UI::failure('FAIL'),
             'SKIP' => UI::warning('SKIP'),
+            'LISTED' => UI::info('LISTED'),
             default => UI::success('PASS'),
         };
 
         $count = sprintf('%d/%d', $normalized['passed'], $normalized['total']);
         if ($status === 'SKIP') {
             $count = sprintf('%d/%d', $normalized['skipped'], $normalized['total']);
+        } elseif ($status === 'LISTED') {
+            $count = sprintf('%d', $normalized['total']);
         }
 
         echo $statusText . ' '
@@ -102,7 +105,7 @@ final class CompactBatchReporter
 
     /**
      * @param array<string,mixed> $check
-     * @return array{label:string,total:int,passed:int,failed:int,skipped:int,duration_ms:int,skip_reason:string,failures:array<int,array<string,mixed>>}
+     * @return array{label:string,total:int,passed:int,failed:int,skipped:int,duration_ms:int,skip_reason:string,failures:array<int,array<string,mixed>>,status:string}
      */
     private static function normalizeCheck(array $check): array
     {
@@ -126,12 +129,16 @@ final class CompactBatchReporter
                 is_array($check['failures'] ?? null) ? $check['failures'] : [],
                 'is_array'
             )),
+            'status' => strtoupper(trim((string)($check['status'] ?? ''))),
         ];
     }
 
-    /** @param array{passed:int,failed:int,skipped:int,total:int} $check */
+    /** @param array{passed:int,failed:int,skipped:int,total:int,status:string} $check */
     private static function status(array $check): string
     {
+        if ($check['status'] === 'LISTED') {
+            return 'LISTED';
+        }
         if ($check['failed'] > 0) {
             return 'FAIL';
         }

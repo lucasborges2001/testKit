@@ -31,6 +31,18 @@ final class ConsoleMetaRenderer
             ]);
             return;
         }
+        if (ConsoleMode::isCompact() && self::isCleanList($meta, $suites, $failedFiles, $diagnostics)) {
+            CompactBatchReporter::printCheck([
+                'label' => 'meta ' . str_replace('_', '-', (string)($meta['target'] ?? 'all')),
+                'total' => (int)($meta['selected_test_count'] ?? $summary['total'] ?? 0),
+                'passed' => 0,
+                'failed' => 0,
+                'skipped' => 0,
+                'duration_ms' => (int)($summary['duration_ms'] ?? $meta['duration_ms'] ?? 0),
+                'status' => 'LISTED',
+            ]);
+            return;
+        }
 
         UI::header('META SUMMARY');
         self::printMetaSummary($meta, $suites, $failedFiles, $diagnostics);
@@ -62,6 +74,16 @@ final class ConsoleMetaRenderer
             . "\n";
         echo '  outcome: ' . ConsoleTableFormatter::renderOutcome(strtoupper((string)($diagnostics['outcome_status'] ?? 'passed'))) . ' ' . UI::gray('phase=' . (string)($diagnostics['primary_phase'] ?? 'none') . ' cause=' . (string)($diagnostics['cause_code'] ?? 'none')) . "\n";
         echo '  selected_tests: ' . UI::gray((string)((int)($meta['selected_test_count'] ?? 0))) . ' ' . UI::gray('failed_files=' . count($failedFiles)) . "\n";
+    }
+
+    /** @param array<int,array<string,mixed>> $suites @param array<int,string> $failedFiles */
+    private static function isCleanList(array $meta, array $suites, array $failedFiles, array $diagnostics): bool
+    {
+        if (strtoupper(trim((string)($diagnostics['outcome_status'] ?? ''))) !== 'LISTED' || $failedFiles !== []) {
+            return false;
+        }
+        $counts = is_array($meta['suite_status_counts'] ?? null) ? $meta['suite_status_counts'] : [];
+        return $suites !== [] && count($counts) === 1 && isset($counts['listed']);
     }
 
     /** @param array<int,array<string,mixed>> $suites @param array<int,string> $failedFiles */

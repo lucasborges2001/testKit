@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../core/php/bootstrap.php';
 
 use Testkit\Core\Reporting\ConsoleReporter;
+use Testkit\Core\Reporting\CompactBatchReporter;
 
 $errors = [];
 
@@ -118,6 +119,26 @@ assert_output_contract(
     ['[Decision]', '[Recommended Actions]', '[Module Summary]'],
     $errors,
     'live compatibility'
+);
+
+putenv('TESTKIT_CONSOLE_MODE=compact');
+ob_start();
+CompactBatchReporter::printCheck([
+    'label' => 'meta back-python',
+    'total' => 29,
+    'passed' => 0,
+    'failed' => 0,
+    'skipped' => 0,
+    'duration_ms' => 12,
+    'status' => 'LISTED',
+]);
+$listedBatchOutput = strip_ansi((string)ob_get_clean());
+assert_output_contract(
+    $listedBatchOutput,
+    ['LISTED meta back-python', '29'],
+    ['PASS meta back-python', '0/29'],
+    $errors,
+    'compact listed batch'
 );
 
 putenv('TESTKIT_CONSOLE_MODE');

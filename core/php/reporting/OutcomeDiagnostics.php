@@ -226,6 +226,11 @@ final class OutcomeDiagnostics
             return 'partial';
         }
 
+        $suiteStatusCounts = is_array($report['suite_status_counts'] ?? null) ? $report['suite_status_counts'] : [];
+        if ($suiteStatusCounts !== [] && count($suiteStatusCounts) === 1 && isset($suiteStatusCounts['listed'])) {
+            return 'listed';
+        }
+
         return 'passed';
     }
 }

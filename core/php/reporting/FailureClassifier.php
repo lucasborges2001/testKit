@@ -70,6 +70,10 @@ final class FailureClassifier
             return 'bootstrap_or_symbol';
         }
 
+        if (preg_match('/\b(ModuleNotFoundError|ImportError|No module named)\b/i', $blob) === 1) {
+            return 'import_bootstrap';
+        }
+
         if (preg_match('/\b(unexpected exception message|AssertionError|assertion|pvt_contains|pvt_eq|pvt_throws)\b/i', $blob) === 1) {
             return 'assertion_contract';
         }
@@ -99,6 +103,7 @@ final class FailureClassifier
             'env_contract' => 'Contrato/env',
             'schema_drift' => 'Drift de schema',
             'bootstrap_or_symbol' => 'Bootstrap/símbolos',
+            'import_bootstrap' => 'Import/bootstrap',
             'assertion_contract' => 'Contrato de assertions',
             default => 'Runtime de aplicación',
         };
@@ -110,6 +115,7 @@ final class FailureClassifier
             'env_contract' => 'Corregir .env.test/doctor antes de releer fallos funcionales.',
             'schema_drift' => 'Revisar seeds, migraciones y compatibilidad schema <-> tests.',
             'bootstrap_or_symbol' => 'Revisar helpers cargados, colisiones de funciones y bootstrap del módulo.',
+            'import_bootstrap' => 'Revisar PYTHONPATH/autoload/cwd del proceso hijo antes de diagnosticar lógica de aplicación.',
             'assertion_contract' => 'Alinear mensajes/contratos del test con la API pública real.',
             default => 'Leer el primer stack trace completo y aislar el módulo roto.',
         };

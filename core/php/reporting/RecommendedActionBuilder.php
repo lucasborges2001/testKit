@@ -45,15 +45,6 @@ final class RecommendedActionBuilder
             ];
         }
 
-        $reportRoot = trim((string)($report['report_scope_rel'] ?? $report['report_root'] ?? ''));
-        if ($reportRoot !== '') {
-            $actions[] = [
-                'kind' => 'open_report_root',
-                'command' => $reportRoot,
-                'reason' => 'inspeccionar artefactos generados por la corrida',
-            ];
-        }
-
         $actions[] = [
             'kind' => 'aggregate_report',
             'command' => CommandSuggestion::report(),
