@@ -15,7 +15,7 @@ testkit_normalize_stack_csv() {
   fi
 
   local out=()
-  local seen="," 
+  local seen=","
   local IFS=','
   read -r -a parts <<< "${raw}"
   for part in "${parts[@]}"; do
@@ -23,16 +23,17 @@ testkit_normalize_stack_csv() {
     token="$(echo "${part}" | tr '[:upper:]' '[:lower:]' | xargs)"
     [[ -z "${token}" ]] && continue
     case "${token}" in
-      mysql|redis|pg|postgres|postgresql|influx|influxdb)
+      mysql|redis|pg|postgres|postgresql|influx|influxdb|mailpit|smtp)
         [[ "${token}" == "postgres" || "${token}" == "postgresql" ]] && token="pg"
         [[ "${token}" == "influxdb" ]] && token="influx"
+        [[ "${token}" == "smtp" ]] && token="mailpit"
         if [[ "${seen}" != *",${token},"* ]]; then
           out+=("${token}")
           seen+="${token},"
         fi
         ;;
       *)
-        echo "TESTKIT_STACK inválido: token no reconocido '${token}'. Valores válidos: mysql, redis, pg, influx" >&2
+        echo "TESTKIT_STACK inválido: token no reconocido '${token}'. Valores válidos: mysql, redis, pg, influx, mailpit" >&2
         return 1
         ;;
     esac
@@ -45,7 +46,7 @@ testkit_normalize_stack_csv() {
   local joined=""
   local i
   for i in "${!out[@]}"; do
-    [[ $i -gt 0 ]] && joined+="," 
+    [[ $i -gt 0 ]] && joined+=","
     joined+="${out[$i]}"
   done
   echo "${joined}"
@@ -78,6 +79,10 @@ testkit_resolve_compose_files() {
 
   if testkit_stack_has "${stack_csv}" "influx"; then
     out_ref+=(-f "${root}/compose.influx.yaml")
+  fi
+
+  if testkit_stack_has "${stack_csv}" "mailpit"; then
+    out_ref+=(-f "${root}/compose.mailpit.yaml")
   fi
 
   return 0
