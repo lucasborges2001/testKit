@@ -13,6 +13,7 @@ $script:TestkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCom
 . (Join-Path $script:TestkitRoot 'lib\powershell\RuntimeCleanup.ps1')
 
 Initialize-TestkitEnv
+$script:TestkitRuntimeExitCode = 0
 
 function Set-TestkitComposeProgress {
   if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROGRESS)) { return }
@@ -163,7 +164,7 @@ function Invoke-TestkitRuntime([string]$EnvFilePath, [string[]]$RuntimeCliArgs) 
     $cmd = @('compose','--env-file',$EnvFilePath) + $files + $runArgs
   }
   & docker @cmd
-  return $LASTEXITCODE
+  $script:TestkitRuntimeExitCode = $LASTEXITCODE
 }
 
 if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'doctor') {
@@ -200,4 +201,5 @@ if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'reset') {
 $commandName = if ($CliArgs.Count -gt 0) { $CliArgs[0] } else { '' }
 $autoCleanupStatus = Invoke-TestkitRuntimeAutoCleanup $envFile.Path $commandName
 if ($autoCleanupStatus -ne 0) { exit $autoCleanupStatus }
-exit (Invoke-TestkitRuntime $envFile.Path $CliArgs)
+Invoke-TestkitRuntime $envFile.Path $CliArgs
+exit $script:TestkitRuntimeExitCode
