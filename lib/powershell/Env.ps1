@@ -31,6 +31,9 @@ function Import-TestkitEnvKV([string]$Path) {
       Set-Item -Path ("Env:{0}" -f $pair[0]) -Value $pair[1]
     }
   }
+  if (-not [string]::IsNullOrWhiteSpace($env:TESTKIT_STACK_OVERRIDE)) {
+    Set-Item -Path 'Env:TESTKIT_STACK' -Value $env:TESTKIT_STACK_OVERRIDE
+  }
 }
 
 function Test-TestkitPathUnderRoot([string]$Root, [string]$Candidate) {
