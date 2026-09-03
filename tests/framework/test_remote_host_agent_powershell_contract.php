@@ -33,6 +33,8 @@ foreach ([
     '$previousStackOverride',
     '$cleanupExitCode',
     "@('down', '-v', '--remove-orphans')",
+    '$mysqlOverrides = [ordered]@{',
+    "@('-e', (\"{0}={1}\" -f \$mysqlOverrides[\$source], \$value))",
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing PowerShell bridge fragment: ' . $fragment);
 }
@@ -53,15 +55,21 @@ foreach ([
     'TESTKIT_MYSQL_USER_OVERRIDE',
     'TESTKIT_MYSQL_PASSWORD_OVERRIDE',
 ] as $override) {
-    $assert(str_contains($envSource, $override), 'env loader missing explicit override: ' . $override);
+    $assert(str_contains($envSource, $override) || str_contains($source, $override), 'remote bridge/env loader missing explicit override: ' . $override);
 }
-$assert(str_contains($envSource, "'TESTKIT_MYSQL_DB_OVERRIDE' = 'TEST_MYSQL_DB'"), 'MySQL DB override mapping missing');
-$assert(str_contains($envSource, "'TESTKIT_MYSQL_USER_OVERRIDE' = 'TEST_MYSQL_USER'"), 'MySQL user override mapping missing');
-$assert(str_contains($envSource, "'TESTKIT_MYSQL_PASSWORD_OVERRIDE' = 'TEST_MYSQL_PASSWORD'"), 'MySQL password override mapping missing');
+foreach ([
+    "'TESTKIT_MYSQL_ROOT_PASSWORD_OVERRIDE' = 'TEST_MYSQL_ROOT_PASSWORD'",
+    "'TESTKIT_MYSQL_DB_OVERRIDE' = 'TEST_MYSQL_DB'",
+    "'TESTKIT_MYSQL_USER_OVERRIDE' = 'TEST_MYSQL_USER'",
+    "'TESTKIT_MYSQL_PASSWORD_OVERRIDE' = 'TEST_MYSQL_PASSWORD'",
+] as $mapping) {
+    $assert(str_contains($envSource, $mapping), 'env loader MySQL override mapping missing: ' . $mapping);
+    $assert(str_contains($source, $mapping), 'bridge MySQL passthrough mapping missing: ' . $mapping);
+}
 
 if ($errors !== []) {
     fwrite(STDERR, "Remote host agent PowerShell contract failed:\n- " . implode("\n- ", $errors) . "\n");
     exit(1);
 }
 
-echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 stack_override=1 mysql_env_override=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
+echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 stack_override=1 mysql_env_override=1 mysql_container_passthrough=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
