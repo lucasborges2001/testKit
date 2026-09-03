@@ -31,6 +31,8 @@ foreach ([
     '[string]$StackOverride',
     'TESTKIT_STACK_OVERRIDE',
     '$previousStackOverride',
+    '$cleanupExitCode',
+    "@('down', '-v', '--remove-orphans')",
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing PowerShell bridge fragment: ' . $fragment);
 }
@@ -43,6 +45,7 @@ $assert(str_contains($source, 'AllowDisposable'), 'disposable opt-in switch miss
 $assert(str_contains($source, 'AllowNetwork'), 'network opt-in switch missing');
 $assert(str_contains($source, 'AllowHardware'), 'hardware opt-in switch missing');
 $assert(str_contains($source, "'^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$'"), 'stack override allowlist missing');
+$assert(str_contains($source, '$AllowDisposable -and -not [string]::IsNullOrWhiteSpace($StackOverride)'), 'disposable cleanup must require explicit opt-in and stack override');
 $assert(str_contains($envSource, 'TESTKIT_STACK_OVERRIDE'), 'env loader must honor explicit stack override');
 $assert(str_contains($envSource, "Set-Item -Path 'Env:TESTKIT_STACK' -Value \$env:TESTKIT_STACK_OVERRIDE"), 'stack override must be applied after env import');
 
@@ -51,4 +54,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 stack_override=1 disposable_opt_in=1 host_php=0 arbitrary_eval=0\n";
+echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 stack_override=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
