@@ -27,11 +27,16 @@ if (-not (Test-Path -LiteralPath $native -PathType Leaf)) {
     throw "Missing TestKit PowerShell entrypoint: $native"
 }
 
+$previousProjectRoot = $env:TESTKIT_PROJECT_ROOT
+if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
+    $env:TESTKIT_PROJECT_ROOT = (Get-Location).Path
+}
+
 $runnerArgs = @(
     'run', '--rm',
     'testkit',
     'env', "TESTKIT_REMOTE_TARGET=$Target",
-    'php', '/workspace/testkit/runners/runRemoteHostAgent.php',
+    'php', '/workspace/testkit/runners/runRemoteHostAgentCompat.php',
     $ConfigPath,
     $RequestPath,
     '--json'
@@ -42,16 +47,14 @@ if ($AllowNetwork) { $runnerArgs += '--allow-network' }
 if ($AllowPersistent) { $runnerArgs += '--allow-persistent' }
 if ($AllowHardware) { $runnerArgs += '--allow-hardware' }
 
-$previousProjectRoot = [Environment]::GetEnvironmentVariable('TESTKIT_PROJECT_ROOT', 'Process')
-if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
-    [Environment]::SetEnvironmentVariable('TESTKIT_PROJECT_ROOT', (Get-Location).Path, 'Process')
-}
-
 try {
     & $native -CliArgs $runnerArgs
-    $code = $LASTEXITCODE
+    $exitCode = $LASTEXITCODE
 } finally {
-    [Environment]::SetEnvironmentVariable('TESTKIT_PROJECT_ROOT', $previousProjectRoot, 'Process')
+    if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
+        Remove-Item Env:TESTKIT_PROJECT_ROOT -ErrorAction SilentlyContinue
+    } else {
+        $env:TESTKIT_PROJECT_ROOT = $previousProjectRoot
+    }
 }
-
-exit $code
+exit $exitCode

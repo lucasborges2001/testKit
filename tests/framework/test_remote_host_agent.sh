@@ -44,7 +44,7 @@ write_request() {
 write_request '{"schema":1,"enabled":true,"request_id":"safe-r1","target":"ubuntudev","suite":"safe_owner"}'
 TESTKIT_PROJECT_ROOT="$TMP" TESTKIT_REMOTE_TARGET=ubuntudev \
   bash "$ROOT/bin/testkit-remote-host-agent" config/suites.php config/request.json --json > "$TMP/pass.json"
-php -r '$j=json_decode(file_get_contents($argv[1]),true); if(($j["status"]??null)!=="PASS"||($j["suite"]??null)!=="safe_owner"||($j["risk"]??null)!=="safe") exit(1);' "$TMP/pass.json"
+php -r '$j=json_decode(file_get_contents($argv[1]),true); $e=$j["evidence"]??null; $r=is_array($e)?($e["result"]??null):null; if(($j["status"]??null)!=="PASS"||($j["suite"]??null)!=="safe_owner"||($j["risk"]??null)!=="safe"||($e["ok"]??null)!==true||($r["status"]??null)!=="PASS"||!is_array($r["summary"]??null)) exit(1);' "$TMP/pass.json"
 
 write_request '{"schema":1,"enabled":true,"request_id":"net-r1","target":"ubuntudev","suite":"readonly_network"}'
 set +e
@@ -57,7 +57,7 @@ php -r '$j=json_decode(file_get_contents($argv[1]),true); if(($j["code"]??null)!
 
 TESTKIT_PROJECT_ROOT="$TMP" TESTKIT_REMOTE_TARGET=ubuntudev \
   bash "$ROOT/bin/testkit-remote-host-agent" config/suites.php config/request.json --allow-network --json > "$TMP/net-pass.json"
-php -r '$j=json_decode(file_get_contents($argv[1]),true); if(($j["status"]??null)!=="PASS"||($j["risk"]??null)!=="safe"||!in_array("network",$j["requires"]??[],true)) exit(1);' "$TMP/net-pass.json"
+php -r '$j=json_decode(file_get_contents($argv[1]),true); $e=$j["evidence"]??null; $r=is_array($e)?($e["result"]??null):null; if(($j["status"]??null)!=="PASS"||($j["risk"]??null)!=="safe"||!in_array("network",$j["requires"]??[],true)||($e["ok"]??null)!==true||($r["status"]??null)!=="PASS") exit(1);' "$TMP/net-pass.json"
 
 write_request '{"schema":1,"enabled":true,"request_id":"bad-r1","target":"ubuntudev","suite":"safe_owner","command":"rm -rf /"}'
 set +e
@@ -68,4 +68,4 @@ set -e
 [ "$BAD_RC" -eq 2 ]
 php -r '$j=json_decode(file_get_contents($argv[1]),true); if(($j["code"]??null)!=="contract_error") exit(1);' "$TMP/bad.json"
 
-echo "PASS remote_host_agent safe_default=1 network_opt_in=1 arbitrary_command=blocked"
+echo "PASS remote_host_agent safe_default=1 host_envelope=normalized network_opt_in=1 arbitrary_command=blocked"

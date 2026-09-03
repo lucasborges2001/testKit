@@ -2,10 +2,10 @@
 set -euo pipefail
 
 TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-RUNNER="$TESTKIT_ROOT/runners/runRemoteHostAgent.php"
+RUNNER="$TESTKIT_ROOT/runners/runRemoteHostAgentCompat.php"
 
 if [ ! -f "$RUNNER" ]; then
-  echo "ERROR: missing TestKit remote host agent runner: $RUNNER" >&2
+  echo "ERROR: missing TestKit remote host agent compatibility runner: $RUNNER" >&2
   exit 2
 fi
 
