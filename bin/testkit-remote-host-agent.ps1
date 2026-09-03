@@ -7,6 +7,7 @@ param(
     [string]$RequestPath,
 
     [string]$Target = $env:COMPUTERNAME,
+    [string]$StackOverride = '',
 
     [switch]$AllowDisposable,
     [switch]$AllowNetwork,
@@ -20,6 +21,10 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($Target) -or $Target -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'Target must match ^[A-Za-z0-9._-]+$.'
 }
+if (-not [string]::IsNullOrWhiteSpace($StackOverride)
+    -and $StackOverride -notmatch '^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$') {
+    throw 'StackOverride contains an unsupported TestKit stack.'
+}
 
 $testkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $native = Join-Path $testkitRoot 'bin\testkit.ps1'
@@ -28,8 +33,12 @@ if (-not (Test-Path -LiteralPath $native -PathType Leaf)) {
 }
 
 $previousProjectRoot = $env:TESTKIT_PROJECT_ROOT
+$previousStackOverride = $env:TESTKIT_STACK_OVERRIDE
 if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
     $env:TESTKIT_PROJECT_ROOT = (Get-Location).Path
+}
+if (-not [string]::IsNullOrWhiteSpace($StackOverride)) {
+    $env:TESTKIT_STACK_OVERRIDE = $StackOverride
 }
 
 $runnerArgs = @(
@@ -55,6 +64,11 @@ try {
         Remove-Item Env:TESTKIT_PROJECT_ROOT -ErrorAction SilentlyContinue
     } else {
         $env:TESTKIT_PROJECT_ROOT = $previousProjectRoot
+    }
+    if ([string]::IsNullOrWhiteSpace($previousStackOverride)) {
+        Remove-Item Env:TESTKIT_STACK_OVERRIDE -ErrorAction SilentlyContinue
+    } else {
+        $env:TESTKIT_STACK_OVERRIDE = $previousStackOverride
     }
 }
 exit $exitCode
