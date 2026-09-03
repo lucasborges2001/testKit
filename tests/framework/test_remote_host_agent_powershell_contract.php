@@ -19,11 +19,14 @@ foreach ([
     "'testkit'",
     "'/workspace/testkit/runners/runRemoteHostAgent.php'",
     "'--json'",
+    "'TESTKIT_PROJECT_ROOT'",
+    '(Get-Location).Path',
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing PowerShell bridge fragment: ' . $fragment);
 }
 
 $assert(str_contains($source, 'TESTKIT_REMOTE_TARGET=$Target'), 'PowerShell bridge must pass the explicit local target into the container');
+$assert(str_contains($source, "SetEnvironmentVariable('TESTKIT_PROJECT_ROOT', \$previousProjectRoot, 'Process')"), 'PowerShell bridge must restore TESTKIT_PROJECT_ROOT');
 $assert(!preg_match('/(^|[;&|])\s*php(?:\.exe)?\s+/im', $source), 'PowerShell bridge must not require host PHP');
 $assert(!str_contains($source, 'Invoke-Expression'), 'PowerShell bridge must not use Invoke-Expression');
 $assert(!str_contains($source, 'iex '), 'PowerShell bridge must not use iex');
@@ -35,4 +38,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_agent_powershell docker_testkit=1 host_php=0 arbitrary_eval=0\n";
+echo "PASS remote_host_agent_powershell docker_testkit=1 project_root=host host_php=0 arbitrary_eval=0\n";

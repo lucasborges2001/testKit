@@ -42,5 +42,16 @@ if ($AllowNetwork) { $runnerArgs += '--allow-network' }
 if ($AllowPersistent) { $runnerArgs += '--allow-persistent' }
 if ($AllowHardware) { $runnerArgs += '--allow-hardware' }
 
-& $native -CliArgs $runnerArgs
-exit $LASTEXITCODE
+$previousProjectRoot = [Environment]::GetEnvironmentVariable('TESTKIT_PROJECT_ROOT', 'Process')
+if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
+    [Environment]::SetEnvironmentVariable('TESTKIT_PROJECT_ROOT', (Get-Location).Path, 'Process')
+}
+
+try {
+    & $native -CliArgs $runnerArgs
+    $code = $LASTEXITCODE
+} finally {
+    [Environment]::SetEnvironmentVariable('TESTKIT_PROJECT_ROOT', $previousProjectRoot, 'Process')
+}
+
+exit $code
