@@ -21,6 +21,25 @@ En ese baseline quedó resuelto el consumo innecesario de memoria para comandos 
 
 El gap restante está en los comandos fallidos. `runners/runSuiteConfig.php` todavía carga completos los archivos temporales de `stdout` y `stderr` mediante `file_get_contents()` antes de imprimir el diagnóstico. Un fallo con salida muy grande puede, por lo tanto, presionar o agotar el `memory_limit` del proceso runner.
 
+### Evidencia adicional — Locker remoto / 2026-09-03
+
+La validación remota real de Locker aportó un segundo problema, independiente del consumo de memoria: un excerpt acotado puede ser técnicamente válido pero poco accionable si dedica todo su presupuesto al **prefijo** de una salida larga.
+
+Durante la depuración de `notification_operator_resend_http` y `runtime_env`, el fragmento publicado conservó preámbulos de preparación (`doctor`, build/up, checks PASS) mientras una causa tardía quedaba fuera del excerpt. El host tuvo que añadir instrumentación temporal propia para hacer visible el tail y recuperar la línea accionable.
+
+Por tanto, este pendiente no debe cerrarse implementando solamente «primeros N bytes/líneas». La política de fallo debe conservar información útil de ambos extremos o aplicar una estrategia equivalente orientada a la causa, sin dejar de ser bounded.
+
+Como mínimo, cuando exista truncado:
+
+- no gastar todo el presupuesto en el prefijo si el proceso terminó en fallo;
+- conservar un tail acotado o una selección equivalente `failure-biased`;
+- indicar explícitamente que hubo truncado;
+- mantener `stdout` y `stderr` distinguibles;
+- preservar redacción de secretos y límites deterministas;
+- no obligar a los hosts a reimplementar una segunda política de excerpts para obtener la causa tardía.
+
+Esta evidencia no mueve a TestKit la orquestación Git/systemd del host. El owner de este pendiente sigue siendo exclusivamente el reporting/capture genérico de TestKit.
+
 ## Objetivo
 
 Hacer que un fallo de gran volumen mantenga diagnóstico accionable en consola sin requerir cargar la salida completa en memoria y sin perder la posibilidad de recuperar la evidencia completa.
@@ -48,13 +67,14 @@ Para `output=failures` y un comando no exitoso:
 proceso
 -> stdout/stderr escritos a temporales
 -> lector acotado para consola
+-> selección de excerpt útil para diagnóstico (head+tail o equivalente)
 -> indicador explícito de truncado cuando corresponda
 -> evidencia completa persistida mediante el reporting canónico
 -> temporales eliminados sólo después de persistir/consumir la evidencia
 -> exit code original preservado
 ```
 
-La consola debe mostrar un excerpt acotado y accionable. El volumen máximo debe ser determinista y estar cubierto por tests.
+La consola debe mostrar un excerpt acotado y accionable. El volumen máximo debe ser determinista y estar cubierto por tests. La implementación exacta puede usar reparto head/tail u otra estrategia equivalente, pero debe demostrar que una causa ubicada al final no desaparece sistemáticamente por priorizar el comienzo.
 
 ## Decisión abierta
 
@@ -68,7 +88,8 @@ Antes de implementar, verificar qué componente debe registrar el artifact bajo 
 
 1. Resolver ownership y ruta canónica del artifact completo.
 2. Definir un lector de archivo acotado o streaming reusable, sin parsear stdout como contrato.
-3. Mantener el contrato actual de `runSuiteConfig.php` para hosts existentes.
+3. Definir una política de selección que no priorice siempre el prefijo de una salida fallida.
+4. Mantener el contrato actual de `runSuiteConfig.php` para hosts existentes.
 
 ## Criterio de aceptación
 
@@ -80,10 +101,13 @@ Antes de implementar, verificar qué componente debe registrar el artifact bajo 
 - consola contiene identificación de suite, comando y exit code;
 - consola no contiene la salida completa cuando supera el límite;
 - aparece una marca explícita de truncado;
+- un fixture con causa sólo al final conserva esa causa en el excerpt o en una selección equivalente claramente accionable;
 - el artifact completo conserva la evidencia que no se mostró en consola;
 - stdout y stderr siguen siendo distinguibles;
 - un fallo pequeño conserva diagnóstico útil sin degradación innecesaria;
 - `output=live` mantiene comportamiento histórico.
+
+Si el machine result expone excerpts, debe ser posible saber que fueron truncados mediante metadata explícita o un marcador contractual equivalente; no depender de inferirlo por longitud.
 
 ### PASS de regresión
 
@@ -98,7 +122,7 @@ php scripts/static_checks.php php
 git diff --check
 ```
 
-El test focal debe incluir fixtures de salida grande bajo `memory_limit` acotado y comprobar el artifact completo, no limitarse a buscar una cadena en consola.
+El test focal debe incluir fixtures de salida grande bajo `memory_limit` acotado, una causa ubicada al final de la salida y comprobación del artifact completo; no limitarse a buscar una cadena en consola.
 
 ## FAIL
 
@@ -107,6 +131,7 @@ La fase no cierra si ocurre cualquiera de estos casos:
 - se sigue usando `file_get_contents()` completo sobre salidas fallidas grandes antes de acotar;
 - el runner sobrevive sólo aumentando `memory_limit`;
 - la consola se trunca sin avisar;
+- una causa tardía desaparece sistemáticamente porque el excerpt conserva sólo el prefijo;
 - se pierde la salida completa;
 - se inventa un path de artifacts incompatible con reporting existente;
 - cambia el exit code o la semántica `live|failures`;
@@ -129,9 +154,10 @@ La implementación futura debe poder revertirse restaurando el comportamiento de
 Eliminar este documento sólo cuando:
 
 1. el bounded capture esté implementado;
-2. el artifact completo tenga ownership canónico verificado;
-3. los contratos focalizados y framework estén verdes;
-4. no quede trabajo funcional pendiente de esta fase.
+2. la selección de excerpt preserve causas tardías de forma verificable;
+3. el artifact completo tenga ownership canónico verificado;
+4. los contratos focalizados y framework estén verdes;
+5. no quede trabajo funcional pendiente de esta fase.
 
 Si sólo falta ejecutar evidencia en un entorno específico, mover esa evidencia a `docs/verificaciones/` según la frontera documental vigente.
 
