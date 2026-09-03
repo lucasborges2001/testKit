@@ -8,7 +8,7 @@ Esta carpeta contiene únicamente deuda accionable que todavía requiere impleme
 Repositorio: lucasborges2001/testKit
 Rama: main
 Baseline inicial de la expansión PLC: 3c7c4b3c2212092c7a5cb7f6f7e381c1aab1e69d
-Fecha de actualización: 2026-09-02
+Fecha de actualización: 2026-09-03
 ```
 
 ## Frontera documental
@@ -23,7 +23,8 @@ Fecha de actualización: 2026-09-02
 ## Inventario activo
 
 - `remote-target-suite-isolation.md`: aislamiento de suites focalizadas por owner para que un fallo baseline ajeno no impida validar el SHA candidato exacto;
-- `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes sin perder evidencia completa ni cambiar exit codes;
+- `run-suite-config-failure-output.md`: captura acotada de stdout/stderr para fallos grandes, incluyendo causas tardías, sin perder evidencia completa ni cambiar exit codes;
+- `suite-policy-disposable-cleanup.md`: lifecycle/cleanup machine-readable para suites `disposable` sin duplicar policy reforzada en cada host;
 - `processrunner-timeout-windows.md`: timeout/terminación verificable de procesos PHP nativos en Windows;
 - `external-runtime-executor.md`: executor genérico de runtimes externos; requiere evidencia de consumidores y reutilización de contratos canónicos;
 - `normalizacion-contratos/pendiente-interno-testkit.md`: deuda interna restante de normalización;
@@ -64,6 +65,9 @@ BasePLC IEC-ST analysis
 runtime hardware HIL
 physical I/O authorization
 real WebVisu target/auth/navigation policy
+host-specific snapshot/host-live execution scope
+host .env access policy
+host Git/systemd/polling/report publication
 ```
 
 Un gate que encuentre un defecto reproducible en una primitive TestKit sí justifica crear un pendiente nuevo y concreto.
