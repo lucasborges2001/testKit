@@ -31,8 +31,19 @@ function Import-TestkitEnvKV([string]$Path) {
       Set-Item -Path ("Env:{0}" -f $pair[0]) -Value $pair[1]
     }
   }
-  if (-not [string]::IsNullOrWhiteSpace($env:TESTKIT_STACK_OVERRIDE)) {
-    Set-Item -Path 'Env:TESTKIT_STACK' -Value $env:TESTKIT_STACK_OVERRIDE
+
+  $overrides = [ordered]@{
+    'TESTKIT_STACK_OVERRIDE' = 'TESTKIT_STACK'
+    'TESTKIT_MYSQL_ROOT_PASSWORD_OVERRIDE' = 'TEST_MYSQL_ROOT_PASSWORD'
+    'TESTKIT_MYSQL_DB_OVERRIDE' = 'TEST_MYSQL_DB'
+    'TESTKIT_MYSQL_USER_OVERRIDE' = 'TEST_MYSQL_USER'
+    'TESTKIT_MYSQL_PASSWORD_OVERRIDE' = 'TEST_MYSQL_PASSWORD'
+  }
+  foreach ($source in $overrides.Keys) {
+    $value = [Environment]::GetEnvironmentVariable($source)
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      Set-Item -Path ("Env:{0}" -f $overrides[$source]) -Value $value
+    }
   }
 }
 
