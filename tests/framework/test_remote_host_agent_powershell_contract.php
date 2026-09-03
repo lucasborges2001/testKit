@@ -29,12 +29,15 @@ foreach ([
     'Remove-Item Env:TESTKIT_PROJECT_ROOT',
     '$env:TESTKIT_PROJECT_ROOT = $previousProjectRoot',
     '[string]$StackOverride',
+    '[string[]]$PassEnv = @()',
     'TESTKIT_STACK_OVERRIDE',
     '$previousStackOverride',
     '$cleanupExitCode',
     "@('down', '-v', '--remove-orphans')",
     '$mysqlOverrides = [ordered]@{',
     "@('-e', (\"{0}={1}\" -f \$mysqlOverrides[\$source], \$value))",
+    "'^[A-Z][A-Z0-9_]{0,127}$'",
+    '$runnerArgs += @(\'-e\', $name)',
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing PowerShell bridge fragment: ' . $fragment);
 }
@@ -49,6 +52,7 @@ $assert(str_contains($source, 'AllowNetwork'), 'network opt-in switch missing');
 $assert(str_contains($source, 'AllowHardware'), 'hardware opt-in switch missing');
 $assert(str_contains($source, "'^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$'"), 'stack override allowlist missing');
 $assert(str_contains($source, '$AllowDisposable -and -not [string]::IsNullOrWhiteSpace($StackOverride)'), 'disposable cleanup must require explicit opt-in and stack override');
+$assert(!str_contains($source, '("{0}={1}" -f $name, $value)'), 'PassEnv must not serialize secret values into docker arguments');
 foreach ([
     'TESTKIT_STACK_OVERRIDE',
     'TESTKIT_MYSQL_ROOT_PASSWORD_OVERRIDE',
@@ -73,4 +77,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 powershell_continuation=1 stack_override=1 mysql_env_override=1 mysql_container_passthrough=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
+echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 powershell_continuation=1 stack_override=1 mysql_env_override=1 mysql_container_passthrough=1 pass_env_names=1 pass_env_values_hidden=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
