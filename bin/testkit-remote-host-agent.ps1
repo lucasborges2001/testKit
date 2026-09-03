@@ -8,6 +8,7 @@ param(
 
     [string]$Target = $env:COMPUTERNAME,
     [string]$StackOverride = '',
+    [string[]]$PassEnv = @(),
 
     [switch]$AllowDisposable,
     [switch]$AllowNetwork,
@@ -23,6 +24,18 @@ if ([string]::IsNullOrWhiteSpace($Target) -or $Target -notmatch '^[A-Za-z0-9._-]
 }
 if (-not [string]::IsNullOrWhiteSpace($StackOverride) -and $StackOverride -notmatch '^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$') {
     throw 'StackOverride contains an unsupported TestKit stack.'
+}
+
+$passEnvNames = New-Object System.Collections.Generic.List[string]
+foreach ($rawName in @($PassEnv)) {
+    $name = ([string]$rawName).Trim()
+    if ($name -eq '') { continue }
+    if ($name -notmatch '^[A-Z][A-Z0-9_]{0,127}$') {
+        throw 'PassEnv contains an invalid environment variable name.'
+    }
+    if (-not $passEnvNames.Contains($name)) {
+        $passEnvNames.Add($name) | Out-Null
+    }
 }
 
 $testkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -51,6 +64,12 @@ foreach ($source in $mysqlOverrides.Keys) {
     $value = [Environment]::GetEnvironmentVariable($source)
     if (-not [string]::IsNullOrWhiteSpace($value)) {
         $runnerArgs += @('-e', ("{0}={1}" -f $mysqlOverrides[$source], $value))
+    }
+}
+foreach ($name in $passEnvNames) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ($null -ne $value) {
+        $runnerArgs += @('-e', $name)
     }
 }
 $runnerArgs += @(
