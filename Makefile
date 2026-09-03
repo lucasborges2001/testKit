@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 help:
-	@echo "Targets: doctor up up-pg down seed test test-back test-back-python test-front test-smoke test-perf test-stress cov-back cov-front report query-report"
+	@echo "Targets: doctor up up-pg down seed test test-back test-back-python test-front test-smoke test-perf test-stress cov-back cov-front report query-report self-test"
 
 doctor:
 	./bin/testkit doctor
@@ -58,3 +58,6 @@ self-test:
 	bash tests/framework/test_mailpit_stack.sh
 	bash tests/framework/test_phpmailer_runner_image.sh
 	bash tests/framework/test_host_suite_agent.sh
+	bash tests/framework/test_remote_host_agent.sh
+	php tests/framework/test_remote_host_agent_powershell_contract.php
+	bash tests/framework/test_suite_config_entrypoint.sh

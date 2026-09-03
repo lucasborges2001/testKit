@@ -62,7 +62,7 @@ $env:TESTKIT_PROJECT_ROOT = 'C:\dev\host-project'
   -Target host-executor
 ```
 
-The PowerShell bridge does **not** require PHP or Python installed on Windows. It delegates to `bin/testkit.ps1`, which executes `runRemoteHostAgent.php` inside the normal TestKit container with the host project mounted at `/workspace/project`.
+The PowerShell bridge does **not** require PHP or Python installed on Windows. It delegates to `bin/testkit.ps1`, which executes `runRemoteHostAgentCompat.php` inside the normal TestKit container with the host project mounted at `/workspace/project`. The compatibility runner normalizes the current `testkit-host-agent` result envelope and delegates request/risk execution to `runRemoteHostAgent.php`.
 
 Host suite commands selected by this mode therefore execute **inside the TestKit container**. They must not recursively invoke `bin/testkit`, `bin/testkit.ps1`, `docker compose`, or another TestKit container. A host that wants to execute a native TestKit selection should call `/workspace/testkit/runTest.php` directly from its allowlisted suite command.
 
