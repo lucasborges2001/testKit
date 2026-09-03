@@ -68,6 +68,15 @@ $hostPass = is_array($hostEnvelope)
     && is_array($hostExecution)
     && (int)($hostExecution['exit_code'] ?? 1) === 0;
 
+if (is_array($hostResult) && is_array($hostResult['summary'] ?? null)) {
+    $sourceSummary = $hostResult['summary'];
+    $payload['evidence']['summary'] = [
+        'total' => (int)($sourceSummary['commands'] ?? 0),
+        'passed' => (int)($sourceSummary['passed_commands'] ?? 0),
+        'failed' => (int)($sourceSummary['failed_commands'] ?? 0),
+    ];
+}
+
 $normalized = false;
 if (($payload['status'] ?? null) === 'FAIL' && $hostPass) {
     $payload['status'] = 'PASS';
