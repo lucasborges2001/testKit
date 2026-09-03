@@ -21,8 +21,7 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($Target) -or $Target -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'Target must match ^[A-Za-z0-9._-]+$.'
 }
-if (-not [string]::IsNullOrWhiteSpace($StackOverride)
-    -and $StackOverride -notmatch '^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$') {
+if (-not [string]::IsNullOrWhiteSpace($StackOverride) -and $StackOverride -notmatch '^(mysql|redis|pg|influx)(,(mysql|redis|pg|influx))*$') {
     throw 'StackOverride contains an unsupported TestKit stack.'
 }
 
