@@ -41,8 +41,20 @@ if (-not [string]::IsNullOrWhiteSpace($StackOverride)) {
     $env:TESTKIT_STACK_OVERRIDE = $StackOverride
 }
 
-$runnerArgs = @(
-    'run', '--rm',
+$runnerArgs = @('run', '--rm')
+$mysqlOverrides = [ordered]@{
+    'TESTKIT_MYSQL_ROOT_PASSWORD_OVERRIDE' = 'TEST_MYSQL_ROOT_PASSWORD'
+    'TESTKIT_MYSQL_DB_OVERRIDE' = 'TEST_MYSQL_DB'
+    'TESTKIT_MYSQL_USER_OVERRIDE' = 'TEST_MYSQL_USER'
+    'TESTKIT_MYSQL_PASSWORD_OVERRIDE' = 'TEST_MYSQL_PASSWORD'
+}
+foreach ($source in $mysqlOverrides.Keys) {
+    $value = [Environment]::GetEnvironmentVariable($source)
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+        $runnerArgs += @('-e', ("{0}={1}" -f $mysqlOverrides[$source], $value))
+    }
+}
+$runnerArgs += @(
     'testkit',
     'env', "TESTKIT_REMOTE_TARGET=$Target",
     'php', '/workspace/testkit/runners/runRemoteHostAgentCompat.php',
