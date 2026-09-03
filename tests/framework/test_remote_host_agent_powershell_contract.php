@@ -43,6 +43,7 @@ $assert(str_contains($source, 'TESTKIT_REMOTE_TARGET=$Target'), 'PowerShell brid
 $assert(!preg_match('/(^|[;&|])\s*php(?:\.exe)?\s+/im', $source), 'PowerShell bridge must not require host PHP');
 $assert(!str_contains($source, 'Invoke-Expression'), 'PowerShell bridge must not use Invoke-Expression');
 $assert(!str_contains($source, 'iex '), 'PowerShell bridge must not use iex');
+$assert(!preg_match('/\R\s+-and\s+/', $source), 'PowerShell binary -and operator must not begin a continuation line');
 $assert(str_contains($source, 'AllowDisposable'), 'disposable opt-in switch missing');
 $assert(str_contains($source, 'AllowNetwork'), 'network opt-in switch missing');
 $assert(str_contains($source, 'AllowHardware'), 'hardware opt-in switch missing');
@@ -72,4 +73,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 stack_override=1 mysql_env_override=1 mysql_container_passthrough=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
+echo "PASS remote_host_agent_powershell docker_testkit=1 compat_bridge=1 project_root_restore=1 powershell_continuation=1 stack_override=1 mysql_env_override=1 mysql_container_passthrough=1 disposable_opt_in=1 disposable_cleanup=1 host_php=0 arbitrary_eval=0\n";
