@@ -56,10 +56,16 @@ if ($AllowNetwork) { $runnerArgs += '--allow-network' }
 if ($AllowPersistent) { $runnerArgs += '--allow-persistent' }
 if ($AllowHardware) { $runnerArgs += '--allow-hardware' }
 
+$exitCode = 2
+$cleanupExitCode = 0
 try {
     & $native -CliArgs $runnerArgs
     $exitCode = $LASTEXITCODE
 } finally {
+    if ($AllowDisposable -and -not [string]::IsNullOrWhiteSpace($StackOverride)) {
+        & $native -CliArgs @('down', '-v', '--remove-orphans') *> $null
+        $cleanupExitCode = $LASTEXITCODE
+    }
     if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
         Remove-Item Env:TESTKIT_PROJECT_ROOT -ErrorAction SilentlyContinue
     } else {
@@ -70,5 +76,8 @@ try {
     } else {
         $env:TESTKIT_STACK_OVERRIDE = $previousStackOverride
     }
+}
+if ($exitCode -eq 0 -and $cleanupExitCode -ne 0) {
+    exit $cleanupExitCode
 }
 exit $exitCode
