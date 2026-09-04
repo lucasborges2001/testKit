@@ -14,7 +14,9 @@ $assert(is_file($path), 'PowerShell host-native remote agent entrypoint missing'
 $source = is_file($path) ? (string)file_get_contents($path) : '';
 
 foreach ([
-    "'bin\\testkit.ps1'",
+    "'compose.yaml'",
+    "'compose', '-f', \$composeFile",
+    "'run', '--rm', '--no-deps', '-T'",
     "'/workspace/testkit/runners/runRemoteHostAgent.php'",
     "'--admit-only'",
     "'--json'",
@@ -23,6 +25,7 @@ foreach ([
     "host_native.kind -ne 'powershell'",
     'Resolve-ProjectPath',
     'TESTKIT_PROJECT_ROOT',
+    'TESTKIT_ROOT',
     'GetFullPath',
     'OrdinalIgnoreCase',
     'host_native.script',
@@ -31,7 +34,11 @@ foreach ([
     '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath',
     "schema = 'testkit.remote-host-native-agent.v1'",
     'evidence = $evidence',
+    'stdout_present',
     'stderr_present',
+    "'.testkit\\remote-host-native'",
+    "code = 'bridge_exception'",
+    'PSNativeCommandUseErrorActionPreference',
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing host-native bridge fragment: ' . $fragment);
 }
@@ -40,6 +47,8 @@ foreach (['AllowDisposable', 'AllowNetwork', 'AllowPersistent', 'AllowHardware']
     $assert(str_contains($source, $switch), 'missing local risk opt-in switch: ' . $switch);
 }
 
+$assert(!str_contains($source, "'bin\\testkit.ps1'"), 'host-native admission must not depend on testkit.ps1/.env.test');
+$assert(!str_contains($source, '.env.test'), 'host-native admission must not require test env');
 $assert(!str_contains($source, 'Invoke-Expression'), 'host-native bridge must not use Invoke-Expression');
 $assert(!preg_match('/(^|\s)iex\s+/im', $source), 'host-native bridge must not use iex');
 $assert(!str_contains($source, 'ScriptBlock::Create'), 'host-native bridge must not construct script blocks dynamically');
@@ -55,4 +64,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_native_powershell admission=container host_execution=powershell allowlisted_paths=1 arbitrary_eval=0 git_sync=0\n";
+echo "PASS remote_host_native_powershell admission=container_no_test_env host_execution=powershell allowlisted_paths=1 local_logs=1 arbitrary_eval=0 git_sync=0\n";
