@@ -24,10 +24,11 @@ function tk_remote_fail(string $code, string $message, bool $json): never
     exit(2);
 }
 
-/** @return array{config:string,request:string,json:bool,allow_disposable:bool,allow_network:bool,allow_persistent:bool,allow_hardware:bool} */
+/** @return array{config:string,request:string,json:bool,admit_only:bool,allow_disposable:bool,allow_network:bool,allow_persistent:bool,allow_hardware:bool} */
 function tk_remote_args(array $argv): array
 {
     $json = false;
+    $admitOnly = false;
     $flags = [
         'allow_disposable' => false,
         'allow_network' => false,
@@ -37,12 +38,13 @@ function tk_remote_args(array $argv): array
     $positionals = [];
     foreach (array_slice($argv, 1) as $arg) {
         if ($arg === '--json') { $json = true; continue; }
+        if ($arg === '--admit-only') { $admitOnly = true; continue; }
         if ($arg === '--allow-disposable') { $flags['allow_disposable'] = true; continue; }
         if ($arg === '--allow-network') { $flags['allow_network'] = true; continue; }
         if ($arg === '--allow-persistent') { $flags['allow_persistent'] = true; continue; }
         if ($arg === '--allow-hardware') { $flags['allow_hardware'] = true; continue; }
         if ($arg === '--help' || $arg === '-h' || $arg === 'help') {
-            fwrite(STDOUT, "Usage:\n  testkit-remote-host-agent <config.php> <request.json> [--json] [--allow-disposable] [--allow-network] [--allow-persistent] [--allow-hardware]\n");
+            fwrite(STDOUT, "Usage:\n  testkit-remote-host-agent <config.php> <request.json> [--json] [--admit-only] [--allow-disposable] [--allow-network] [--allow-persistent] [--allow-hardware]\n");
             exit(0);
         }
         if (str_starts_with($arg, '--')) {
@@ -57,6 +59,7 @@ function tk_remote_args(array $argv): array
         'config' => $positionals[0],
         'request' => $positionals[1],
         'json' => $json,
+        'admit_only' => $admitOnly,
         ...$flags,
     ];
 }
@@ -119,7 +122,25 @@ function tk_remote_request(string $path): array
     return $request;
 }
 
-/** @return array{risk:string,required:bool,requires:array<int,string>} */
+function tk_remote_relative_host_path(string $value, string $field): string
+{
+    $value = str_replace('\\', '/', trim($value));
+    if ($value === '' || str_contains($value, "\0") || str_starts_with($value, '/') || preg_match('/^[A-Za-z]:/', $value) === 1) {
+        throw new RuntimeException('Remote host-native ' . $field . ' must be a relative project path.');
+    }
+    $segments = explode('/', $value);
+    foreach ($segments as $segment) {
+        if ($segment === '' || $segment === '.' || $segment === '..') {
+            throw new RuntimeException('Remote host-native ' . $field . ' contains an unsafe path segment.');
+        }
+    }
+    if (preg_match('/^[A-Za-z0-9._\/-]+$/', $value) !== 1) {
+        throw new RuntimeException('Remote host-native ' . $field . ' contains unsupported characters.');
+    }
+    return $value;
+}
+
+/** @return array{risk:string,required:bool,requires:array<int,string>,execution_backend:string,host_native:?array{kind:string,script:string,result_file:string}} */
 function tk_remote_suite_metadata(string $configFile, string $suiteKey): array
 {
     $config = require $configFile;
@@ -136,7 +157,44 @@ function tk_remote_suite_metadata(string $configFile, string $suiteKey): array
         if (!in_array($risk, $allowed, true)) {
             throw new RuntimeException('Remote suite risk is unsupported: ' . $risk);
         }
-        return ['risk' => $risk, 'required' => true, 'requires' => array_values(array_map('strval', (array)($suite['requires'] ?? [])))];
+
+        $executionBackend = (string)($suite['execution_backend'] ?? 'container');
+        if (!in_array($executionBackend, ['container', 'host_native'], true)) {
+            throw new RuntimeException('Remote suite execution_backend is unsupported: ' . $executionBackend);
+        }
+
+        $hostNative = null;
+        if ($executionBackend === 'host_native') {
+            $candidate = $suite['host_native'] ?? null;
+            if (!is_array($candidate)) {
+                throw new RuntimeException('Remote host-native suite requires host_native metadata.');
+            }
+            $kind = (string)($candidate['kind'] ?? '');
+            if ($kind !== 'powershell') {
+                throw new RuntimeException('Remote host-native kind is unsupported: ' . $kind);
+            }
+            $script = tk_remote_relative_host_path((string)($candidate['script'] ?? ''), 'script');
+            if (!str_ends_with(strtolower($script), '.ps1')) {
+                throw new RuntimeException('Remote host-native script must end with .ps1.');
+            }
+            $resultFile = tk_remote_relative_host_path((string)($candidate['result_file'] ?? ''), 'result_file');
+            if (!str_ends_with(strtolower($resultFile), '.json')) {
+                throw new RuntimeException('Remote host-native result_file must end with .json.');
+            }
+            $hostNative = [
+                'kind' => $kind,
+                'script' => $script,
+                'result_file' => $resultFile,
+            ];
+        }
+
+        return [
+            'risk' => $risk,
+            'required' => true,
+            'requires' => array_values(array_map('strval', (array)($suite['requires'] ?? []))),
+            'execution_backend' => $executionBackend,
+            'host_native' => $hostNative,
+        ];
     }
     throw new RuntimeException('Requested suite is not allowlisted by the host config.');
 }
@@ -217,6 +275,22 @@ try {
         tk_remote_fail('network_not_allowed', 'Remote suite requires network and needs explicit local --allow-network.', $args['json']);
     }
 
+    if ($args['admit_only']) {
+        tk_remote_emit($base + [
+            'status' => 'ADMITTED',
+            'risk' => $metadata['risk'],
+            'requires' => $metadata['requires'],
+            'execution_backend' => $metadata['execution_backend'],
+            'host_native' => $metadata['host_native'],
+            'evidence' => null,
+        ], $args['json']);
+        exit(0);
+    }
+
+    if ($metadata['execution_backend'] !== 'container') {
+        tk_remote_fail('host_native_requires_bridge', 'Host-native suites must execute through the PowerShell host-native bridge.', $args['json']);
+    }
+
     $testkitRoot = str_replace('\\', '/', realpath(dirname(__DIR__)) ?: dirname(__DIR__));
     $execution = tk_remote_execute($testkitRoot, $projectRoot, $args['config'], $request['suite'], $request['request_id'], $args['allow_persistent']);
     $evidence = json_decode(trim($execution['stdout']), true);
@@ -228,6 +302,7 @@ try {
         'status' => $pass ? 'PASS' : 'FAIL',
         'risk' => $metadata['risk'],
         'requires' => $metadata['requires'],
+        'execution_backend' => 'container',
         'exit_code' => $execution['exit_code'],
         'evidence' => $evidence,
         'stderr_excerpt' => $execution['stderr'] === '' ? null : substr($execution['stderr'], 0, 2000),
