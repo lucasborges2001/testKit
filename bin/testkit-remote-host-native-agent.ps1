@@ -40,14 +40,18 @@ function Resolve-ProjectPath([string]$ProjectRoot, [string]$RelativePath, [bool]
     return $candidate
 }
 
+function Test-FileHasContent([string]$Path) {
+    return (Test-Path -LiteralPath $Path -PathType Leaf) -and ((Get-Item -LiteralPath $Path).Length -gt 0)
+}
+
 if ([string]::IsNullOrWhiteSpace($Target) -or $Target -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'Target must match ^[A-Za-z0-9._-]+$.'
 }
 
 $testkitRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$dockerBridge = Join-Path $testkitRoot 'bin\testkit.ps1'
-if (-not (Test-Path -LiteralPath $dockerBridge -PathType Leaf)) {
-    throw "Missing TestKit PowerShell entrypoint: $dockerBridge"
+$composeFile = Join-Path $testkitRoot 'compose.yaml'
+if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
+    throw "Missing TestKit compose file: $composeFile"
 }
 
 $projectRoot = $env:TESTKIT_PROJECT_ROOT
@@ -57,11 +61,21 @@ if ([string]::IsNullOrWhiteSpace($projectRoot)) {
 $projectRoot = [System.IO.Path]::GetFullPath($projectRoot)
 
 $previousProjectRoot = $env:TESTKIT_PROJECT_ROOT
+$previousTestkitRoot = $env:TESTKIT_ROOT
+$previousNativePreference = $null
+$hasNativePreference = $null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue)
+if ($hasNativePreference) {
+    $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 $env:TESTKIT_PROJECT_ROOT = $projectRoot
+$env:TESTKIT_ROOT = $testkitRoot
 
 try {
     $admissionArgs = @(
-        'run', '--rm',
+        'compose', '-f', $composeFile,
+        'run', '--rm', '--no-deps', '-T',
+        '-e', 'TESTKIT_WRAPPER_KIND=powershell',
         'testkit',
         'env', "TESTKIT_REMOTE_TARGET=$Target",
         'php', '/workspace/testkit/runners/runRemoteHostAgent.php',
@@ -75,20 +89,34 @@ try {
     if ($AllowPersistent) { $admissionArgs += '--allow-persistent' }
     if ($AllowHardware) { $admissionArgs += '--allow-hardware' }
 
-    $admissionLines = @(& $dockerBridge -CliArgs $admissionArgs 2>&1)
-    $admissionExit = $LASTEXITCODE
-    $jsonLine = $admissionLines |
-        ForEach-Object { [string]$_ } |
-        Where-Object { $_.Trim().StartsWith('{') -and $_.Trim().EndsWith('}') } |
-        Select-Object -Last 1
+    $admissionStdout = [System.IO.Path]::GetTempFileName()
+    $admissionStderr = [System.IO.Path]::GetTempFileName()
+    try {
+        & docker @admissionArgs 1> $admissionStdout 2> $admissionStderr
+        $admissionExit = $LASTEXITCODE
+        $admissionLines = if (Test-Path -LiteralPath $admissionStdout -PathType Leaf) {
+            @(Get-Content -LiteralPath $admissionStdout)
+        } else {
+            @()
+        }
+        $jsonLine = $admissionLines |
+            ForEach-Object { [string]$_ } |
+            Where-Object { $_.Trim().StartsWith('{') -and $_.Trim().EndsWith('}') } |
+            Select-Object -Last 1
 
-    if ([string]::IsNullOrWhiteSpace($jsonLine)) {
-        Write-RemoteJson @{
-            schema = 'testkit.remote-host-native-agent.v1'
-            status = 'ERROR'
-            code = 'invalid_admission_evidence'
-            message = 'Admission bridge did not return JSON.'
-        } 2
+        if ([string]::IsNullOrWhiteSpace($jsonLine)) {
+            Write-RemoteJson @{
+                schema = 'testkit.remote-host-native-agent.v1'
+                status = 'ERROR'
+                code = 'invalid_admission_evidence'
+                message = 'Admission container did not return JSON.'
+                admission_exit_code = [int]$admissionExit
+                admission_stderr_present = [bool](Test-FileHasContent $admissionStderr)
+            } 2
+        }
+    } finally {
+        Remove-Item -LiteralPath $admissionStdout -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $admissionStderr -Force -ErrorAction SilentlyContinue
     }
 
     $admission = $jsonLine | ConvertFrom-Json
@@ -129,14 +157,18 @@ try {
         throw 'Unable to resolve current PowerShell executable.'
     }
 
-    $stderrFile = [System.IO.Path]::GetTempFileName()
-    try {
-        & $powerShellExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath 2> $stderrFile | Out-Host
-        $nativeExit = $LASTEXITCODE
-        $stderrPresent = (Test-Path -LiteralPath $stderrFile) -and ((Get-Item -LiteralPath $stderrFile).Length -gt 0)
-    } finally {
-        Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
-    }
+    $logDir = Join-Path $projectRoot '.testkit\remote-host-native'
+    New-Item -ItemType Directory -Force $logDir | Out-Null
+    $requestId = [string]$admission.request_id
+    $stdoutFile = Join-Path $logDir ($requestId + '.stdout.log')
+    $stderrFile = Join-Path $logDir ($requestId + '.stderr.log')
+    Remove-Item -LiteralPath $stdoutFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+
+    & $powerShellExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath 1> $stdoutFile 2> $stderrFile
+    $nativeExit = $LASTEXITCODE
+    $stdoutPresent = Test-FileHasContent $stdoutFile
+    $stderrPresent = Test-FileHasContent $stderrFile
 
     if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
         Write-RemoteJson @{
@@ -148,6 +180,8 @@ try {
             suite = [string]$admission.suite
             execution_backend = 'host_native'
             exit_code = $nativeExit
+            stdout_present = [bool]$stdoutPresent
+            stderr_present = [bool]$stderrPresent
         } 2
     }
 
@@ -163,15 +197,31 @@ try {
         requires = @($admission.requires)
         execution_backend = 'host_native'
         exit_code = $nativeExit
+        stdout_present = [bool]$stdoutPresent
         stderr_present = [bool]$stderrPresent
         result_file = [string]$admission.host_native.result_file
         evidence = $evidence
     }
     Write-RemoteJson $payload $(if ($pass) { 0 } else { 1 })
+} catch {
+    Write-RemoteJson @{
+        schema = 'testkit.remote-host-native-agent.v1'
+        status = 'ERROR'
+        code = 'bridge_exception'
+        message = [string]$_.Exception.Message
+    } 2
 } finally {
+    if ($hasNativePreference) {
+        $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+    }
     if ([string]::IsNullOrWhiteSpace($previousProjectRoot)) {
         Remove-Item Env:TESTKIT_PROJECT_ROOT -ErrorAction SilentlyContinue
     } else {
         $env:TESTKIT_PROJECT_ROOT = $previousProjectRoot
+    }
+    if ([string]::IsNullOrWhiteSpace($previousTestkitRoot)) {
+        Remove-Item Env:TESTKIT_ROOT -ErrorAction SilentlyContinue
+    } else {
+        $env:TESTKIT_ROOT = $previousTestkitRoot
     }
 }
