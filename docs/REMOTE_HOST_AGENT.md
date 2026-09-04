@@ -18,8 +18,9 @@ TestKit owns:
 - `required=true` admission;
 - local target matching;
 - risk/requirement gates;
-- execution through `testkit-host-agent`;
-- canonical `.testkit/reports` evidence.
+- container execution through `testkit-host-agent`;
+- host-native admission for explicitly declared PowerShell suites;
+- canonical evidence boundaries.
 
 ## Request v1
 
@@ -33,7 +34,7 @@ TestKit owns:
 }
 ```
 
-Only these five fields are accepted. A request cannot carry commands, environment values, credentials, URLs, ports or addresses.
+Only these five fields are accepted. A request cannot carry commands, environment values, credentials, URLs, ports, addresses, script paths or result paths.
 
 ## Linux/macOS entrypoint
 
@@ -49,9 +50,9 @@ export TESTKIT_REMOTE_TARGET=host-executor
 
 This entrypoint expects the native PHP/Bash runtime required by the TestKit installation.
 
-## Windows / PowerShell entrypoint
+## Windows / container-backed PowerShell entrypoint
 
-Windows hosts that already consume TestKit through Docker should use:
+Windows hosts that consume ordinary TestKit suites through Docker should use:
 
 ```powershell
 $env:TESTKIT_PROJECT_ROOT = 'C:\dev\host-project'
@@ -65,6 +66,45 @@ $env:TESTKIT_PROJECT_ROOT = 'C:\dev\host-project'
 The PowerShell bridge does **not** require PHP or Python installed on Windows. It delegates to `bin/testkit.ps1`, which executes `runRemoteHostAgentCompat.php` inside the normal TestKit container with the host project mounted at `/workspace/project`. The compatibility runner normalizes the current `testkit-host-agent` result envelope and delegates request/risk execution to `runRemoteHostAgent.php`.
 
 Host suite commands selected by this mode therefore execute **inside the TestKit container**. They must not recursively invoke `bin/testkit`, `bin/testkit.ps1`, `docker compose`, or another TestKit container. A host that wants to execute a native TestKit selection should call `/workspace/testkit/runTest.php` directly from its allowlisted suite command.
+
+## Windows host-native entrypoint
+
+A suite that must execute software installed only on the Windows host, such as an IDE, may declare:
+
+```php
+[
+    'key' => 'native_build',
+    'required' => true,
+    'risk' => 'disposable',
+    'requires' => ['windows'],
+    'execution_backend' => 'host_native',
+    'host_native' => [
+        'kind' => 'powershell',
+        'script' => 'scripts/build-native.ps1',
+        'result_file' => '.testkit/native-build-result.json',
+    ],
+]
+```
+
+The request still selects only `suite=native_build`. The script and result paths come exclusively from the versioned host catalog and must be relative project paths without traversal. The current v1 host-native backend accepts only `kind=powershell`.
+
+Execute it with:
+
+```powershell
+$env:TESTKIT_PROJECT_ROOT = 'C:\dev\host-project'
+
+.\submodules\Base\testkit\bin\testkit-remote-host-native-agent.ps1 `
+  config/testkit-suites.php `
+  config/remote-test-request.json `
+  -Target windows-executor `
+  -AllowDisposable
+```
+
+The host-native bridge first runs `runRemoteHostAgent.php --admit-only` inside the normal TestKit container. Only after schema, target, suite, risk and requirement admission succeeds does it resolve the allowlisted PowerShell path below `TESTKIT_PROJECT_ROOT` and execute it in a separate PowerShell process. It deletes any stale result file first and accepts evidence only from the declared JSON result file.
+
+The bridge does not fetch Git, update submodules, infer commands, evaluate remote text, or pass arbitrary arguments from the request. Full process stdout/stderr remain local; the canonical envelope exposes the declared evidence plus only a boolean indicating whether stderr was present.
+
+A host-native suite cannot execute through the ordinary container runner. `runRemoteHostAgent.php` fails closed with `host_native_requires_bridge` unless called with `--admit-only` by the native bridge.
 
 ## Admission
 
@@ -83,4 +123,4 @@ Additional local opt-ins are executor-side and never come from the request:
 
 ## Boundary
 
-This bridge does not fetch Git, update submodules, reset a checkout, publish commits or infer a suite. Those responsibilities remain host-owned so repositories can choose their own checkpoint and publication policy without TestKit owning application topology.
+These bridges do not fetch Git, update submodules, reset a checkout, publish commits or infer a suite. Those responsibilities remain host-owned so repositories can choose their own checkpoint and publication policy without TestKit owning application topology.
