@@ -100,9 +100,11 @@ $env:TESTKIT_PROJECT_ROOT = 'C:\dev\host-project'
   -AllowDisposable
 ```
 
-The host-native bridge first runs `runRemoteHostAgent.php --admit-only` inside the normal TestKit container. Only after schema, target, suite, risk and requirement admission succeeds does it resolve the allowlisted PowerShell path below `TESTKIT_PROJECT_ROOT` and execute it in a separate PowerShell process. It deletes any stale result file first and accepts evidence only from the declared JSON result file.
+The host-native bridge first runs `runRemoteHostAgent.php --admit-only` inside the base TestKit container with `docker compose run --rm --no-deps`. This admission path deliberately does **not** route through `bin/testkit.ps1` and therefore does not require `<project>/.env.test` or `<project>/test/.env.test`. Only after schema, target, suite, risk and requirement admission succeeds does it resolve the allowlisted PowerShell path below `TESTKIT_PROJECT_ROOT` and execute it in a separate PowerShell process.
 
-The bridge does not fetch Git, update submodules, infer commands, evaluate remote text, or pass arbitrary arguments from the request. Full process stdout/stderr remain local; the canonical envelope exposes the declared evidence plus only a boolean indicating whether stderr was present.
+The bridge deletes any stale declared result before host execution and accepts canonical evidence only from the declared JSON result file. Native stdout/stderr are captured under `.testkit/remote-host-native/<request_id>.stdout.log` and `.stderr.log` on the Windows executor; they are not copied into the canonical remote envelope. The envelope exposes only bounded metadata such as whether stdout/stderr were present.
+
+The bridge does not fetch Git, update submodules, infer commands, evaluate remote text, or pass arbitrary arguments from the request. Admission failures and bridge exceptions are returned as structured JSON so a host controller can publish an actionable failure without guessing from console text.
 
 A host-native suite cannot execute through the ordinary container runner. `runRemoteHostAgent.php` fails closed with `host_native_requires_bridge` unless called with `--admit-only` by the native bridge.
 
