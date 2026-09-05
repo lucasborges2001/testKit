@@ -59,6 +59,7 @@ self-test:
 	bash tests/framework/test_phpmailer_runner_image.sh
 	bash tests/framework/test_host_suite_agent.sh
 	bash tests/framework/test_remote_host_agent.sh
+	bash tests/framework/test_remote_request_route.sh
 	php tests/framework/test_remote_host_agent_powershell_contract.php
 	php tests/framework/test_remote_host_native_powershell_contract.php
 	php tests/framework/test_remote_host_native_bash_contract.php
