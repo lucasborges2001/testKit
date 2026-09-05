@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+RUNNER="$TESTKIT_ROOT/runners/runRemoteRequestRoute.php"
+
+if [ ! -f "$RUNNER" ]; then
+  echo "ERROR: missing TestKit remote request routing runner: $RUNNER" >&2
+  exit 2
+fi
+
+exec php "$RUNNER" "$@"
