@@ -1,6 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+CAPABILITIES_LIB="$TESTKIT_ROOT/lib/bash/executor_capabilities.sh"
+
+if [[ ! -f "$CAPABILITIES_LIB" ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"capability_probe_missing"}\n'
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "$CAPABILITIES_LIB"
+
+if [[ "${1:-}" == "capabilities" ]]; then
+  shift
+  required=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) shift ;;
+      --require)
+        [[ $# -ge 2 ]] || { printf '{"schema":"testkit.executor-capabilities.v1","status":"ERROR","code":"invalid_arguments"}\n'; exit 2; }
+        required+=("$2")
+        shift 2
+        ;;
+      --require=*)
+        required+=("${1#--require=}")
+        shift
+        ;;
+      *)
+        printf '{"schema":"testkit.executor-capabilities.v1","status":"ERROR","code":"unsupported_option"}\n'
+        exit 2
+        ;;
+    esac
+  done
+  testkit_executor_capabilities_probe "${required[@]}"
+  exit $?
+fi
+
 CONFIG_PATH="${1:-}"
 REQUEST_PATH="${2:-}"
 shift $(( $# >= 2 ? 2 : $# ))
@@ -31,13 +66,23 @@ if ! [[ "$TARGET" =~ ^[A-Za-z0-9._-]+$ ]]; then
   exit 2
 fi
 
-TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 COMPOSE_FILE="$TESTKIT_ROOT/compose.yaml"
 PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-$(pwd -P)}"
 PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"compose_missing"}\n'
+  exit 2
+fi
+
+set +e
+EXECUTOR_CAPABILITIES="$(testkit_executor_capabilities_probe \
+  bash realpath mktemp docker docker-daemon docker-compose writable-tmp)"
+CAPABILITY_RC=$?
+set -e
+if [[ "$CAPABILITY_RC" -ne 0 ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"executor_capability_missing","executor_capabilities":%s}\n' \
+    "$EXECUTOR_CAPABILITIES"
   exit 2
 fi
 
@@ -127,15 +172,16 @@ native_rc=$?
 set -e
 
 if [[ ! -f "$result_path" ]]; then
-  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"missing_result_file","request_id":"%s","suite":"%s","execution_backend":"host_native","exit_code":%d,"stdout_present":%s,"stderr_present":%s}\n' \
-    "$request_id" "${admitted[6]}" "$native_rc" "$([[ -s "$stdout_file" ]] && echo true || echo false)" "$([[ -s "$stderr_file" ]] && echo true || echo false)"
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"missing_result_file","request_id":"%s","suite":"%s","execution_backend":"host_native","exit_code":%d,"stdout_present":%s,"stderr_present":%s,"executor_capabilities":%s}\n' \
+    "$request_id" "${admitted[6]}" "$native_rc" "$([[ -s "$stdout_file" ]] && echo true || echo false)" "$([[ -s "$stderr_file" ]] && echo true || echo false)" "$EXECUTOR_CAPABILITIES"
   exit 2
 fi
 
 set +e
 php -r '
 $e=json_decode(file_get_contents($argv[1]),true);
-if(!is_array($e)||json_last_error()!==JSON_ERROR_NONE) exit(2);
+$c=json_decode($argv[10],true);
+if(!is_array($e)||json_last_error()!==JSON_ERROR_NONE||!is_array($c)) exit(2);
 $pass=((int)$argv[2]===0)&&strtoupper((string)($e["status"]??""))==="PASS";
 $p=[
  "schema"=>"testkit.remote-host-native-agent.v1",
@@ -143,10 +189,10 @@ $p=[
  "request_id"=>$argv[3],"target"=>$argv[4],"suite"=>$argv[5],"risk"=>$argv[6],
  "execution_backend"=>"host_native","exit_code"=>(int)$argv[2],
  "stdout_present"=>filesize($argv[7])>0,"stderr_present"=>filesize($argv[8])>0,
- "result_file"=>$argv[9],"evidence"=>$e,
+ "result_file"=>$argv[9],"executor_capabilities"=>$c,"evidence"=>$e,
 ];
 echo json_encode($p,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),PHP_EOL;
-exit($pass?0:1);' "$result_path" "$native_rc" "$request_id" "$TARGET" "${admitted[6]}" "${admitted[7]}" "$stdout_file" "$stderr_file" "${admitted[4]}"
+exit($pass?0:1);' "$result_path" "$native_rc" "$request_id" "$TARGET" "${admitted[6]}" "${admitted[7]}" "$stdout_file" "$stderr_file" "${admitted[4]}" "$EXECUTOR_CAPABILITIES"
 final_rc=$?
 set -e
 exit "$final_rc"
