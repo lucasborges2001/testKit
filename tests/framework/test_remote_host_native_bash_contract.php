@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
 $bridge = $root . '/bin/testkit-remote-host-native-agent';
+$capabilities = $root . '/lib/bash/executor_capabilities.sh';
 $runner = $root . '/runners/runRemoteHostAgent.php';
 $errors = [];
 $assert = static function (bool $condition, string $message) use (&$errors): void {
@@ -10,9 +11,16 @@ $assert = static function (bool $condition, string $message) use (&$errors): voi
 };
 
 $assert(is_file($bridge), 'Bash host-native remote agent entrypoint missing');
+$assert(is_file($capabilities), 'Executor capabilities helper missing');
 $source = is_file($bridge) ? (string)file_get_contents($bridge) : '';
+$capabilitySource = is_file($capabilities) ? (string)file_get_contents($capabilities) : '';
 foreach ([
     'set -euo pipefail',
+    'executor_capabilities.sh',
+    'testkit_executor_capabilities_probe',
+    'executor_capability_missing',
+    'executor_capabilities',
+    'capabilities',
     'compose -f "$COMPOSE_FILE"',
     'run --rm --no-deps -T',
     'TESTKIT_WRAPPER_KIND=bash',
@@ -28,6 +36,9 @@ foreach ([
     'stderr_present',
 ] as $fragment) {
     $assert(str_contains($source, $fragment), 'missing Bash host-native bridge fragment: ' . $fragment);
+}
+foreach (['docker-daemon', 'docker-compose', 'writable-tmp', 'sha256sum', 'python3', 'flock'] as $fragment) {
+    $assert(str_contains($capabilitySource, $fragment), 'missing executor capability: ' . $fragment);
 }
 foreach (['--allow-disposable', '--allow-network', '--allow-persistent', '--allow-hardware'] as $flag) {
     $assert(str_contains($source, $flag), 'missing local risk opt-in: ' . $flag);
@@ -46,4 +57,4 @@ if ($errors !== []) {
     exit(1);
 }
 
-echo "PASS remote_host_native_bash admission=container host_execution=bash allowlisted_paths=1 result_json=1 arbitrary_eval=0 git_sync=0\n";
+echo "PASS remote_host_native_bash admission=container host_execution=bash allowlisted_paths=1 result_json=1 executor_capabilities=1 arbitrary_eval=0 git_sync=0\n";
