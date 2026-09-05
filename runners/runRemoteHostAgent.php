@@ -170,12 +170,13 @@ function tk_remote_suite_metadata(string $configFile, string $suiteKey): array
                 throw new RuntimeException('Remote host-native suite requires host_native metadata.');
             }
             $kind = (string)($candidate['kind'] ?? '');
-            if ($kind !== 'powershell') {
+            if (!in_array($kind, ['powershell', 'bash'], true)) {
                 throw new RuntimeException('Remote host-native kind is unsupported: ' . $kind);
             }
             $script = tk_remote_relative_host_path((string)($candidate['script'] ?? ''), 'script');
-            if (!str_ends_with(strtolower($script), '.ps1')) {
-                throw new RuntimeException('Remote host-native script must end with .ps1.');
+            $expectedExtension = $kind === 'powershell' ? '.ps1' : '.sh';
+            if (!str_ends_with(strtolower($script), $expectedExtension)) {
+                throw new RuntimeException('Remote host-native ' . $kind . ' script must end with ' . $expectedExtension . '.');
             }
             $resultFile = tk_remote_relative_host_path((string)($candidate['result_file'] ?? ''), 'result_file');
             if (!str_ends_with(strtolower($resultFile), '.json')) {
@@ -288,7 +289,7 @@ try {
     }
 
     if ($metadata['execution_backend'] !== 'container') {
-        tk_remote_fail('host_native_requires_bridge', 'Host-native suites must execute through the PowerShell host-native bridge.', $args['json']);
+        tk_remote_fail('host_native_requires_bridge', 'Host-native suites must execute through a matching host-native bridge.', $args['json']);
     }
 
     $testkitRoot = str_replace('\\', '/', realpath(dirname(__DIR__)) ?: dirname(__DIR__));

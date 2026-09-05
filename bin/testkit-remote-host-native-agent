@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_PATH="${1:-}"
+REQUEST_PATH="${2:-}"
+shift $(( $# >= 2 ? 2 : $# ))
+
+TARGET="${TESTKIT_REMOTE_TARGET:-$(hostname -s 2>/dev/null || hostname)}"
+ALLOW_DISPOSABLE=0
+ALLOW_NETWORK=0
+ALLOW_PERSISTENT=0
+ALLOW_HARDWARE=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --allow-disposable) ALLOW_DISPOSABLE=1 ;;
+    --allow-network) ALLOW_NETWORK=1 ;;
+    --allow-persistent) ALLOW_PERSISTENT=1 ;;
+    --allow-hardware) ALLOW_HARDWARE=1 ;;
+    --json) ;;
+    *) printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"unsupported_option"}\n'; exit 2 ;;
+  esac
+done
+
+if [[ -z "$CONFIG_PATH" || -z "$REQUEST_PATH" ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"invalid_arguments"}\n'
+  exit 2
+fi
+if ! [[ "$TARGET" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"invalid_target"}\n'
+  exit 2
+fi
+
+TESTKIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+COMPOSE_FILE="$TESTKIT_ROOT/compose.yaml"
+PROJECT_ROOT="${TESTKIT_PROJECT_ROOT:-$(pwd -P)}"
+PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
+
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"compose_missing"}\n'
+  exit 2
+fi
+
+admission_args=(
+  compose -f "$COMPOSE_FILE"
+  run --rm --no-deps -T
+  -e TESTKIT_WRAPPER_KIND=bash
+  testkit
+  env "TESTKIT_REMOTE_TARGET=$TARGET"
+  php /workspace/testkit/runners/runRemoteHostAgent.php
+  "$CONFIG_PATH" "$REQUEST_PATH" --json --admit-only
+)
+(( ALLOW_DISPOSABLE )) && admission_args+=(--allow-disposable)
+(( ALLOW_NETWORK )) && admission_args+=(--allow-network)
+(( ALLOW_PERSISTENT )) && admission_args+=(--allow-persistent)
+(( ALLOW_HARDWARE )) && admission_args+=(--allow-hardware)
+
+admission_stdout="$(mktemp)"
+admission_stderr="$(mktemp)"
+cleanup_tmp() {
+  rm -f -- "$admission_stdout" "$admission_stderr"
+}
+trap cleanup_tmp EXIT
+
+set +e
+docker "${admission_args[@]}" >"$admission_stdout" 2>"$admission_stderr"
+admission_rc=$?
+set -e
+admission_json="$(grep -E '^\{.*\}$' "$admission_stdout" | tail -n 1 || true)"
+if [[ -z "$admission_json" ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"invalid_admission_evidence","admission_exit_code":%d,"admission_stderr_present":%s}\n' \
+    "$admission_rc" "$([[ -s "$admission_stderr" ]] && echo true || echo false)"
+  exit 2
+fi
+
+readarray -t admitted < <(php -r '
+$j=json_decode(stream_get_contents(STDIN),true);
+if(!is_array($j)) exit(2);
+printf("%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+(string)($j["status"]??""),(string)($j["execution_backend"]??""),(string)($j["host_native"]["kind"]??""),
+(string)($j["host_native"]["script"]??""),(string)($j["host_native"]["result_file"]??""),(string)($j["request_id"]??""),
+(string)($j["suite"]??""),(string)($j["risk"]??""));' <<<"$admission_json")
+
+if [[ "$admission_rc" -ne 0 || "${admitted[0]:-}" != ADMITTED ]]; then
+  printf '%s\n' "$admission_json"
+  exit 2
+fi
+if [[ "${admitted[1]:-}" != host_native || "${admitted[2]:-}" != bash ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"unsupported_host_native_kind"}\n'
+  exit 2
+fi
+
+resolve_project_path() {
+  local relative="$1" must_exist="$2" candidate parent
+  [[ -n "$relative" && "$relative" != /* && ! "$relative" =~ (^|/)\.\.?(/|$) ]] || return 2
+  candidate="$PROJECT_ROOT/$relative"
+  if [[ "$must_exist" == 1 ]]; then
+    [[ -f "$candidate" ]] || return 2
+    candidate="$(realpath "$candidate")"
+  else
+    parent="$(dirname "$candidate")"
+    mkdir -p -- "$parent"
+    parent="$(realpath "$parent")"
+    candidate="$parent/$(basename "$candidate")"
+  fi
+  [[ "$candidate" == "$PROJECT_ROOT/"* ]] || return 2
+  printf '%s\n' "$candidate"
+}
+
+script_path="$(resolve_project_path "${admitted[3]}" 1)" || { printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"unsafe_script_path"}\n'; exit 2; }
+result_path="$(resolve_project_path "${admitted[4]}" 0)" || { printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"unsafe_result_path"}\n'; exit 2; }
+rm -f -- "$result_path"
+
+log_dir="$PROJECT_ROOT/.testkit/remote-host-native"
+mkdir -p -- "$log_dir"
+request_id="${admitted[5]}"
+stdout_file="$log_dir/$request_id.stdout.log"
+stderr_file="$log_dir/$request_id.stderr.log"
+rm -f -- "$stdout_file" "$stderr_file"
+
+set +e
+(
+  cd "$PROJECT_ROOT"
+  /usr/bin/env bash "$script_path"
+) >"$stdout_file" 2>"$stderr_file"
+native_rc=$?
+set -e
+
+if [[ ! -f "$result_path" ]]; then
+  printf '{"schema":"testkit.remote-host-native-agent.v1","status":"ERROR","code":"missing_result_file","request_id":"%s","suite":"%s","execution_backend":"host_native","exit_code":%d,"stdout_present":%s,"stderr_present":%s}\n' \
+    "$request_id" "${admitted[6]}" "$native_rc" "$([[ -s "$stdout_file" ]] && echo true || echo false)" "$([[ -s "$stderr_file" ]] && echo true || echo false)"
+  exit 2
+fi
+
+set +e
+php -r '
+$e=json_decode(file_get_contents($argv[1]),true);
+if(!is_array($e)||json_last_error()!==JSON_ERROR_NONE) exit(2);
+$pass=((int)$argv[2]===0)&&strtoupper((string)($e["status"]??""))==="PASS";
+$p=[
+ "schema"=>"testkit.remote-host-native-agent.v1",
+ "status"=>$pass?"PASS":"FAIL",
+ "request_id"=>$argv[3],"target"=>$argv[4],"suite"=>$argv[5],"risk"=>$argv[6],
+ "execution_backend"=>"host_native","exit_code"=>(int)$argv[2],
+ "stdout_present"=>filesize($argv[7])>0,"stderr_present"=>filesize($argv[8])>0,
+ "result_file"=>$argv[9],"evidence"=>$e,
+];
+echo json_encode($p,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),PHP_EOL;
+exit($pass?0:1);' "$result_path" "$native_rc" "$request_id" "$TARGET" "${admitted[6]}" "${admitted[7]}" "$stdout_file" "$stderr_file" "${admitted[4]}"
+final_rc=$?
+set -e
+exit "$final_rc"

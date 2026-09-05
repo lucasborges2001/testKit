@@ -61,4 +61,5 @@ self-test:
 	bash tests/framework/test_remote_host_agent.sh
 	php tests/framework/test_remote_host_agent_powershell_contract.php
 	php tests/framework/test_remote_host_native_powershell_contract.php
+	php tests/framework/test_remote_host_native_bash_contract.php
 	bash tests/framework/test_suite_config_entrypoint.sh
